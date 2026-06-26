@@ -3,13 +3,25 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]
+def _require(key: str) -> str:
+    val = os.environ.get(key)
+    if not val:
+        raise RuntimeError(f"Missing required env var: {key}. Copy .env.example to .env and fill it in.")
+    return val
+
+DISCORD_TOKEN = _require("DISCORD_TOKEN")
 LLM_BASE_URL = "http://192.168.1.70:30068/v1"
 LLM_MODEL = "gemma4-e4b-131k:latest"
 
+_owner_raw = _require("OWNER_ID")
+_husband_raw = _require("HUSBAND_ID")
+
+if not _owner_raw.isdigit() or not _husband_raw.isdigit():
+    raise RuntimeError("OWNER_ID and HUSBAND_ID must be numeric Discord user IDs.")
+
 WHITELIST: dict[str, int] = {
-    "owner": int(os.environ["OWNER_ID"]),
-    "husband": int(os.environ["HUSBAND_ID"]),
+    "owner": int(_owner_raw),
+    "husband": int(_husband_raw),
 }
 
 ID_TO_NAME: dict[int, str] = {v: k for k, v in WHITELIST.items()}
