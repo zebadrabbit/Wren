@@ -33,37 +33,46 @@ async def on_message(message: discord.Message):
     if not text:
         return
 
-    result = brain.detect_intent(user_id, text)
-    intent = result.get("intent", "chat")
-    content = result.get("content", text)
-    tags = result.get("tags", [])
-    person = result.get("person")
+    try:
+        result = brain.detect_intent(user_id, text)
+        intent = result.get("intent", "chat")
+        content = result.get("content", text)
+        tags = result.get("tags", [])
+        person = result.get("person")
 
-    if intent == "save_note":
-        notes.save(user_id, content, tags)
-        await message.channel.send("Saved.")
+        if intent == "save_note":
+            notes.save(user_id, content, tags)
+            await message.channel.send("Saved.")
 
-    elif intent == "recall_notes":
-        matches = notes.search(user_id, tags=tags if tags else None)
-        if not matches:
-            await message.channel.send("No notes found.")
-        else:
-            summary = brain.recall(matches, content)
-            await message.channel.send(summary)
+        elif intent == "recall_notes":
+            matches = notes.search(user_id, tags=tags if tags else None)
+            if not matches:
+                await message.channel.send("No notes found.")
+            else:
+                summary = brain.recall(matches, content)
+                await message.channel.send(summary)
 
-    elif intent == "send_to_person":
-        target_name = (person or "").lower()
-        target_id = config.WHITELIST.get(target_name)
-        if not target_id:
-            await message.channel.send("I don't know how to reach them.")
-            return
-        notes.save(user_id, content, tags)
-        target_user = await client.fetch_user(target_id)
-        await target_user.send(f"From {config.ID_TO_NAME.get(user_id, 'someone')}: {content}")
-        await message.channel.send(f"Sent to {target_name}.")
+        elif intent == "send_to_person":
+            target_name = (person or "").lower()
+            target_id = config.WHITELIST.get(target_name)
+            if not target_id:
+                await message.channel.send("I don't know how to reach them.")
+                return
+            notes.save(user_id, content, tags)
+            try:
+                target_user = await client.fetch_user(target_id)
+                await target_user.send(f"From {config.ID_TO_NAME.get(user_id, 'someone')}: {content}")
+                await message.channel.send(f"Sent to {target_name}.")
+            except (discord.NotFound, discord.Forbidden) as e:
+                logging.error(f"Could not DM {target_name}: {e}")
+                await message.channel.send(f"Couldn't reach {target_name} — their DMs may be closed.")
+                return
 
-    else:  # chat
-        reply = brain.chat(text)
-        await message.channel.send(reply)
+        else:  # chat
+            reply = brain.chat(text)
+            await message.channel.send(reply)
+    except Exception as e:
+        logging.error(f"Error handling message from {user_id}: {e}")
+        await message.channel.send("Something went wrong, try again.")
 
 client.run(config.DISCORD_TOKEN)
