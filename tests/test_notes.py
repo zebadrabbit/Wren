@@ -43,3 +43,35 @@ def test_search_tag_is_exact_not_substring():
     results = notes.search(1, tags=["home"])
     assert len(results) == 1
     assert results[0]["content"] == "note about home"
+
+def test_delete_existing_note():
+    note_id = notes.save(1, "buy milk", ["grocery"])
+    assert notes.delete(note_id) is True
+    assert notes.list_recent(1) == []
+
+def test_delete_nonexistent_returns_false():
+    assert notes.delete(9999) is False
+
+def test_find_matches_substring_case_insensitive():
+    notes.save(1, "Build a treehouse for the kids", ["idea"])
+    notes.save(1, "Learn to bake bread", ["idea"])
+    results = notes.find(1, "TREEHOUSE", tags=["idea"])
+    assert len(results) == 1
+    assert "treehouse" in results[0]["content"].lower()
+
+def test_find_no_match_returns_empty():
+    notes.save(1, "Build a treehouse", ["idea"])
+    results = notes.find(1, "spaceship", tags=["idea"])
+    assert results == []
+
+def test_find_multiple_matches():
+    notes.save(1, "treehouse idea one", ["idea"])
+    notes.save(1, "treehouse idea two", ["idea"])
+    results = notes.find(1, "treehouse", tags=["idea"])
+    assert len(results) == 2
+
+def test_find_respects_owner_scope():
+    notes.save(1, "treehouse for me", ["idea"])
+    notes.save(2, "treehouse for them", ["idea"])
+    results = notes.find(1, "treehouse", tags=["idea"])
+    assert len(results) == 1

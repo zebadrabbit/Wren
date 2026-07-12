@@ -51,3 +51,13 @@ def list_recent(owner_id: int, n: int = 10) -> list[dict]:
             (str(owner_id), n),
         ).fetchall()
     return [dict(r) for r in rows]
+
+def delete(note_id: int) -> bool:
+    with _conn() as con:
+        cur = con.execute("DELETE FROM notes WHERE id=?", (note_id,))
+        return cur.rowcount > 0
+
+def find(owner_id: int, substring: str, tags: list[str] | None = None) -> list[dict]:
+    results = search(owner_id, tags=tags)
+    needle = substring.lower()
+    return [r for r in results if needle in r["content"].lower()]
