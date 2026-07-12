@@ -9,6 +9,7 @@ os.environ.setdefault("LMSTUDIO_MODEL", "test-model")
 import plugins
 import notes_plugin
 import shopping_plugin
+import email_plugin
 
 def test_all_intents_includes_both_plugins():
     intents = plugins.all_intents()
@@ -50,3 +51,11 @@ def test_start_all_does_not_block_on_long_running_plugin(monkeypatch):
                 task.cancel()
 
     asyncio.run(run())
+
+def test_email_plugin_registered():
+    assert email_plugin in plugins.PLUGINS
+
+def test_all_intents_unaffected_by_event_only_email_plugin():
+    intents = plugins.all_intents()
+    assert "save_note" in intents
+    assert "add_shopping_item" in intents
