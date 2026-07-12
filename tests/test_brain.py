@@ -78,3 +78,50 @@ def test_chat_raises_when_all_providers_fail():
     with patch.object(brain, "_get_client", return_value=_client_raising(RuntimeError("down"))):
         with pytest.raises(RuntimeError):
             brain.chat("hey")
+
+def test_detect_intent_add_shopping_item():
+    payload = json.dumps({
+        "intent": "add_shopping_item",
+        "content": "potatoes",
+        "tags": [],
+        "person": None
+    })
+    with patch.object(brain, "_get_client", return_value=_client_returning(payload)):
+        result = brain.detect_intent(1, "add potatoes to shopping")
+    assert result["intent"] == "add_shopping_item"
+    assert result["content"] == "potatoes"
+
+def test_detect_intent_remove_shopping_item():
+    payload = json.dumps({
+        "intent": "remove_shopping_item",
+        "content": "potatoes",
+        "tags": [],
+        "person": None
+    })
+    with patch.object(brain, "_get_client", return_value=_client_returning(payload)):
+        result = brain.detect_intent(1, "got the potatoes")
+    assert result["intent"] == "remove_shopping_item"
+    assert result["content"] == "potatoes"
+
+def test_detect_intent_recall_shopping():
+    payload = json.dumps({
+        "intent": "recall_shopping",
+        "content": "",
+        "tags": [],
+        "person": None
+    })
+    with patch.object(brain, "_get_client", return_value=_client_returning(payload)):
+        result = brain.detect_intent(1, "what's on the shopping list")
+    assert result["intent"] == "recall_shopping"
+
+def test_detect_intent_send_shopping_list():
+    payload = json.dumps({
+        "intent": "send_shopping_list",
+        "content": "",
+        "tags": [],
+        "person": "husband"
+    })
+    with patch.object(brain, "_get_client", return_value=_client_returning(payload)):
+        result = brain.detect_intent(1, "send shopping to husband")
+    assert result["intent"] == "send_shopping_list"
+    assert result["person"] == "husband"

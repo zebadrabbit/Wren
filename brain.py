@@ -10,7 +10,7 @@ Today is {date}.
 
 When classifying intent, respond ONLY with valid JSON matching this schema:
 {{
-  "intent": "save_note" | "recall_notes" | "send_to_person" | "chat",
+  "intent": "save_note" | "recall_notes" | "send_to_person" | "add_shopping_item" | "remove_shopping_item" | "recall_shopping" | "send_shopping_list" | "chat",
   "content": "<extracted note or message content>",
   "tags": ["<tag1>", "<tag2>"],
   "person": "<name from whitelist or null>"
@@ -22,9 +22,13 @@ Guidelines:
 - save_note: user is capturing something for later (grocery item, plan, idea, reminder)
 - recall_notes: user wants to retrieve or search past notes
 - send_to_person: user wants to send a message or note to someone
+- add_shopping_item: user wants to add an item to the shared shopping list
+- remove_shopping_item: user got/bought/already has an item and wants it off the shopping list
+- recall_shopping: user wants to see the current shopping list
+- send_shopping_list: user wants to send the whole shopping list to someone
 - chat: anything else (questions, casual conversation)
 - tags: 1-3 lowercase single-word tags relevant to the content
-- person: only set for send_to_person intent, use the contact name as given
+- person: only set for send_to_person and send_shopping_list intents, use the contact name as given
 """
 
 def _now() -> str:
