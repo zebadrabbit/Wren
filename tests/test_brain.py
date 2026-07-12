@@ -125,3 +125,56 @@ def test_detect_intent_send_shopping_list():
         result = brain.detect_intent(1, "send shopping to husband")
     assert result["intent"] == "send_shopping_list"
     assert result["person"] == "husband"
+
+def test_detect_intent_save_idea():
+    payload = json.dumps({
+        "intent": "save_idea",
+        "content": "build a treehouse",
+        "tags": [],
+        "person": None
+    })
+    with patch.object(brain, "_get_client", return_value=_client_returning(payload)):
+        result = brain.detect_intent(1, "remember this idea: build a treehouse")
+    assert result["intent"] == "save_idea"
+    assert result["content"] == "build a treehouse"
+
+def test_detect_intent_recall_ideas():
+    payload = json.dumps({
+        "intent": "recall_ideas",
+        "content": "",
+        "tags": [],
+        "person": None
+    })
+    with patch.object(brain, "_get_client", return_value=_client_returning(payload)):
+        result = brain.detect_intent(1, "what ideas have I saved")
+    assert result["intent"] == "recall_ideas"
+
+def test_detect_intent_discard_idea():
+    payload = json.dumps({
+        "intent": "discard_idea",
+        "content": "treehouse",
+        "tags": [],
+        "person": None
+    })
+    with patch.object(brain, "_get_client", return_value=_client_returning(payload)):
+        result = brain.detect_intent(1, "discard the treehouse idea")
+    assert result["intent"] == "discard_idea"
+    assert result["content"] == "treehouse"
+
+def test_detect_intent_expand_idea():
+    payload = json.dumps({
+        "intent": "expand_idea",
+        "content": "treehouse",
+        "tags": [],
+        "person": None
+    })
+    with patch.object(brain, "_get_client", return_value=_client_returning(payload)):
+        result = brain.detect_intent(1, "expand on the treehouse idea")
+    assert result["intent"] == "expand_idea"
+    assert result["content"] == "treehouse"
+
+def test_expand_returns_string():
+    with patch.object(brain, "_get_client", return_value=_client_returning("Here's how to build it...")):
+        result = brain.expand("build a treehouse")
+    assert isinstance(result, str)
+    assert len(result) > 0

@@ -10,7 +10,7 @@ Today is {date}.
 
 When classifying intent, respond ONLY with valid JSON matching this schema:
 {{
-  "intent": "save_note" | "recall_notes" | "send_to_person" | "add_shopping_item" | "remove_shopping_item" | "recall_shopping" | "send_shopping_list" | "chat",
+  "intent": "save_note" | "recall_notes" | "send_to_person" | "add_shopping_item" | "remove_shopping_item" | "recall_shopping" | "send_shopping_list" | "save_idea" | "recall_ideas" | "discard_idea" | "expand_idea" | "chat",
   "content": "<extracted note or message content>",
   "tags": ["<tag1>", "<tag2>"],
   "person": "<name from whitelist or null>"
@@ -19,13 +19,17 @@ When classifying intent, respond ONLY with valid JSON matching this schema:
 Known contacts: {contacts}
 
 Guidelines:
-- save_note: user is capturing something for later (grocery item, plan, idea, reminder)
+- save_note: user is capturing something for later (grocery item, plan, reminder)
 - recall_notes: user wants to retrieve or search past notes
 - send_to_person: user wants to send a message or note to someone
 - add_shopping_item: user wants to add an item to the shared shopping list
 - remove_shopping_item: user got/bought/already has an item and wants it off the shopping list
 - recall_shopping: user wants to see the current shopping list
 - send_shopping_list: user wants to send the whole shopping list to someone
+- save_idea: user explicitly wants to remember/capture an idea to revisit or expand later (e.g. "remember this idea...", "idea:..."), distinct from save_note's reminders/grocery items/plans
+- recall_ideas: user wants to see all their saved ideas
+- discard_idea: user wants to delete a previously saved idea; content is a short phrase identifying which idea, not the full idea text
+- expand_idea: user wants Wren to elaborate/brainstorm further on a previously saved idea; content is a short phrase identifying which idea, not the full idea text
 - chat: anything else (questions, casual conversation)
 - tags: 1-3 lowercase single-word tags relevant to the content
 - person: only set for send_to_person and send_shopping_list intents, use the contact name as given
@@ -99,4 +103,13 @@ def chat(text: str) -> str:
             {"role": "user", "content": text},
         ],
         temperature=0.7,
+    )
+
+def expand(idea_text: str) -> str:
+    return _complete(
+        [
+            {"role": "system", "content": "You are Wren. Short, structured, ready. No filler. Elaborate on the user's idea with concrete next steps or angles they might not have considered."},
+            {"role": "user", "content": f"Idea: {idea_text}\n\nExpand on this."},
+        ],
+        temperature=0.5,
     )
