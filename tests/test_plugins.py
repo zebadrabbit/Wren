@@ -1,4 +1,4 @@
-import os, asyncio
+import os, asyncio, types
 os.environ.setdefault("DISCORD_TOKEN", "test")
 os.environ.setdefault("OWNER_ID", "1")
 os.environ.setdefault("HUSBAND_ID", "2")
@@ -27,3 +27,26 @@ def test_all_guidelines_includes_both_plugins_text():
 def test_start_all_noop_when_no_plugin_defines_start():
     # neither notes_plugin nor shopping_plugin defines start() yet
     asyncio.run(plugins.start_all(None))  # should not raise
+
+def test_event_only_plugin_contributes_nothing_to_intents_or_guidelines(monkeypatch):
+    intents_before = plugins.all_intents()
+    guidelines_before = plugins.all_guidelines()
+    fake = types.SimpleNamespace()  # no INTENTS, no PROMPT_GUIDELINES, no handle
+    monkeypatch.setattr(plugins, "PLUGINS", plugins.PLUGINS + [fake])
+    assert plugins.all_intents() == intents_before
+    assert plugins.all_guidelines() == guidelines_before
+
+def test_start_all_does_not_block_on_long_running_plugin(monkeypatch):
+    class SlowPlugin:
+        async def start(self, client):
+            await asyncio.sleep(3600)
+
+    monkeypatch.setattr(plugins, "PLUGINS", [SlowPlugin()])
+
+    async def run():
+        await asyncio.wait_for(plugins.start_all(None), timeout=1)
+        for task in asyncio.all_tasks():
+            if task is not asyncio.current_task():
+                task.cancel()
+
+    asyncio.run(run())
