@@ -36,3 +36,10 @@ def test_owner_isolation():
     notes.save(2, "their note", ["personal"])
     assert len(notes.list_recent(1)) == 1
     assert len(notes.list_recent(2)) == 1
+
+def test_search_tag_is_exact_not_substring():
+    notes.save(1, "note about home", ["home"])
+    notes.save(1, "note about homework", ["homework"])
+    results = notes.search(1, tags=["home"])
+    assert len(results) == 1
+    assert results[0]["content"] == "note about home"

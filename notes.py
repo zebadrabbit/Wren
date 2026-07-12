@@ -30,19 +30,18 @@ def save(owner_id: int, content: str, tags: list[str]) -> int:
 def search(owner_id: int, tags: list[str] | None = None) -> list[dict]:
     with _conn() as con:
         con.row_factory = sqlite3.Row
-        if tags:
-            like_clauses = " OR ".join("tags LIKE ?" for _ in tags)
-            params = [f"%{t}%" for t in tags] + [str(owner_id)]
-            rows = con.execute(
-                f"SELECT * FROM notes WHERE ({like_clauses}) AND owner_id=? ORDER BY created_at DESC",
-                params,
-            ).fetchall()
-        else:
-            rows = con.execute(
-                "SELECT * FROM notes WHERE owner_id=? ORDER BY created_at DESC",
-                (str(owner_id),),
-            ).fetchall()
-    return [dict(r) for r in rows]
+        rows = con.execute(
+            "SELECT * FROM notes WHERE owner_id=? ORDER BY created_at DESC",
+            (str(owner_id),),
+        ).fetchall()
+    results = [dict(r) for r in rows]
+    if tags:
+        wanted = set(tags)
+        results = [
+            r for r in results
+            if wanted & set(filter(None, r["tags"].split(",")))
+        ]
+    return results
 
 def list_recent(owner_id: int, n: int = 10) -> list[dict]:
     with _conn() as con:
