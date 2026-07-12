@@ -1,10 +1,8 @@
 import json
+import logging
 from datetime import datetime, timezone
 from openai import OpenAI
 import config
-
-_provider = config.LLM_CHAIN[0]
-_client = OpenAI(base_url=_provider["base_url"], api_key=_provider["api_key"])
 
 _SYSTEM = """You are Wren, a private personal assistant. You are short, structured, and ready. No filler, no affirmations.
 
@@ -35,18 +33,39 @@ def _now() -> str:
 def _contacts() -> str:
     return ", ".join(config.WHITELIST.keys())
 
+_clients: dict[str, OpenAI] = {}
+
+def _get_client(provider: dict) -> OpenAI:
+    if provider["name"] not in _clients:
+        _clients[provider["name"]] = OpenAI(base_url=provider["base_url"], api_key=provider["api_key"])
+    return _clients[provider["name"]]
+
+def _complete(messages: list[dict], temperature: float) -> str:
+    last_exc: Exception | None = None
+    for provider in config.LLM_CHAIN:
+        try:
+            client = _get_client(provider)
+            resp = client.chat.completions.create(
+                model=provider["model"],
+                messages=messages,
+                temperature=temperature,
+            )
+            return resp.choices[0].message.content.strip()
+        except Exception as e:
+            logging.warning(f"LLM provider '{provider['name']}' failed: {e}")
+            last_exc = e
+    raise last_exc
+
 def detect_intent(user_id: int, text: str) -> dict:
     system = _SYSTEM.format(date=_now(), contacts=_contacts())
     try:
-        resp = _client.chat.completions.create(
-            model=_provider["model"],
-            messages=[
+        raw = _complete(
+            [
                 {"role": "system", "content": system},
                 {"role": "user", "content": text},
             ],
             temperature=0.1,
         )
-        raw = resp.choices[0].message.content.strip()
         if raw.startswith("```"):
             raw = raw.split("```")[1]
             if raw.startswith("json"):
@@ -61,23 +80,19 @@ def recall(notes: list[dict], query: str) -> str:
         for n in notes
     )
     prompt = f"User's notes:\n{notes_text}\n\nUser asked: {query}\n\nAnswer directly using only what's in the notes."
-    resp = _client.chat.completions.create(
-        model=_provider["model"],
-        messages=[
-            {"role": "system", "content": f"You are Wren. Short, structured, ready. No filler."},
+    return _complete(
+        [
+            {"role": "system", "content": "You are Wren. Short, structured, ready. No filler."},
             {"role": "user", "content": prompt},
         ],
         temperature=0.3,
     )
-    return resp.choices[0].message.content.strip()
 
 def chat(text: str) -> str:
-    resp = _client.chat.completions.create(
-        model=_provider["model"],
-        messages=[
+    return _complete(
+        [
             {"role": "system", "content": f"You are Wren, a personal assistant. Short, structured, ready. No filler. Today is {_now()}."},
             {"role": "user", "content": text},
         ],
         temperature=0.7,
     )
-    return resp.choices[0].message.content.strip()
