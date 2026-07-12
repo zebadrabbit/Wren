@@ -34,3 +34,21 @@ WHITELIST: dict[str, int] = {
 }
 
 ID_TO_NAME: dict[int, str] = {v: k for k, v in WHITELIST.items()}
+
+
+def _parse_email_watch(raw: str) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for pair in raw.split(","):
+        pair = pair.strip()
+        if not pair:
+            continue
+        addr, name = pair.split(":", 1)
+        result[addr.strip().lower()] = name.strip().lower()
+    return result
+
+
+IMAP_HOST = os.environ.get("IMAP_HOST", "")
+IMAP_USER = os.environ.get("IMAP_USER", "")
+IMAP_PASSWORD = os.environ.get("IMAP_PASSWORD", "")
+EMAIL_POLL_SECONDS = int(os.environ.get("EMAIL_POLL_SECONDS", "60"))
+EMAIL_WATCH: dict[str, str] = _parse_email_watch(os.environ.get("EMAIL_WATCH", ""))
