@@ -20,7 +20,14 @@ def all_guidelines() -> str:
         if (text := getattr(plugin, "PROMPT_GUIDELINES", ""))
     )
 
+_started_plugins: set = set()
+_tasks: list = []
+
 async def start_all(client) -> None:
     for plugin in PLUGINS:
-        if hasattr(plugin, "start"):
-            asyncio.create_task(plugin.start(client))
+        if not hasattr(plugin, "start"):
+            continue
+        if plugin in _started_plugins:
+            continue
+        _started_plugins.add(plugin)
+        _tasks.append(asyncio.create_task(plugin.start(client)))

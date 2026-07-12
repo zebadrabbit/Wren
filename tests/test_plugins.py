@@ -25,8 +25,11 @@ def test_all_guidelines_includes_both_plugins_text():
     assert "save_note" in guidelines
     assert "add_shopping_item" in guidelines
 
-def test_start_all_noop_when_no_plugin_defines_start():
+def test_start_all_noop_when_no_plugin_defines_start(monkeypatch):
     # neither notes_plugin nor shopping_plugin defines start() yet
+    # (email_plugin does, but its start() is a no-op when EMAIL_WATCH is unset)
+    monkeypatch.setattr(plugins, "_started_plugins", set())
+    monkeypatch.setattr(plugins, "_tasks", [])
     asyncio.run(plugins.start_all(None))  # should not raise
 
 def test_event_only_plugin_contributes_nothing_to_intents_or_guidelines(monkeypatch):
@@ -43,9 +46,39 @@ def test_start_all_does_not_block_on_long_running_plugin(monkeypatch):
             await asyncio.sleep(3600)
 
     monkeypatch.setattr(plugins, "PLUGINS", [SlowPlugin()])
+    monkeypatch.setattr(plugins, "_started_plugins", set())
+    monkeypatch.setattr(plugins, "_tasks", [])
 
     async def run():
         await asyncio.wait_for(plugins.start_all(None), timeout=1)
+        for task in asyncio.all_tasks():
+            if task is not asyncio.current_task():
+                task.cancel()
+
+    asyncio.run(run())
+
+def test_start_all_is_idempotent_across_repeated_calls(monkeypatch):
+    # Simulates discord.py's on_ready re-firing on reconnect/RESUME: start_all
+    # may be invoked more than once per process, but a given plugin's start()
+    # must only ever be scheduled once.
+    call_count = 0
+
+    class CountingPlugin:
+        async def start(self, client):
+            nonlocal call_count
+            call_count += 1
+            await asyncio.sleep(3600)
+
+    monkeypatch.setattr(plugins, "PLUGINS", [CountingPlugin()])
+    monkeypatch.setattr(plugins, "_started_plugins", set())
+    monkeypatch.setattr(plugins, "_tasks", [])
+
+    async def run():
+        await asyncio.wait_for(plugins.start_all(None), timeout=1)
+        await asyncio.wait_for(plugins.start_all(None), timeout=1)
+        # give the scheduled task(s) a tick to actually start running
+        await asyncio.sleep(0)
+        assert call_count == 1
         for task in asyncio.all_tasks():
             if task is not asyncio.current_task():
                 task.cancel()
