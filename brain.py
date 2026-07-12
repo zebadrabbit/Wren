@@ -3,7 +3,8 @@ from datetime import datetime, timezone
 from openai import OpenAI
 import config
 
-_client = OpenAI(base_url=config.LLM_BASE_URL, api_key="local")
+_provider = config.LLM_CHAIN[0]
+_client = OpenAI(base_url=_provider["base_url"], api_key=_provider["api_key"])
 
 _SYSTEM = """You are Wren, a private personal assistant. You are short, structured, and ready. No filler, no affirmations.
 
@@ -38,7 +39,7 @@ def detect_intent(user_id: int, text: str) -> dict:
     system = _SYSTEM.format(date=_now(), contacts=_contacts())
     try:
         resp = _client.chat.completions.create(
-            model=config.LLM_MODEL,
+            model=_provider["model"],
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": text},
@@ -61,7 +62,7 @@ def recall(notes: list[dict], query: str) -> str:
     )
     prompt = f"User's notes:\n{notes_text}\n\nUser asked: {query}\n\nAnswer directly using only what's in the notes."
     resp = _client.chat.completions.create(
-        model=config.LLM_MODEL,
+        model=_provider["model"],
         messages=[
             {"role": "system", "content": f"You are Wren. Short, structured, ready. No filler."},
             {"role": "user", "content": prompt},
@@ -72,7 +73,7 @@ def recall(notes: list[dict], query: str) -> str:
 
 def chat(text: str) -> str:
     resp = _client.chat.completions.create(
-        model=config.LLM_MODEL,
+        model=_provider["model"],
         messages=[
             {"role": "system", "content": f"You are Wren, a personal assistant. Short, structured, ready. No filler. Today is {_now()}."},
             {"role": "user", "content": text},

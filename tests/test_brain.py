@@ -2,6 +2,9 @@ import os, json, pytest
 os.environ.setdefault("DISCORD_TOKEN", "test")
 os.environ.setdefault("OWNER_ID", "1")
 os.environ.setdefault("HUSBAND_ID", "2")
+os.environ.setdefault("LLM_PROVIDERS", "lmstudio")
+os.environ.setdefault("LMSTUDIO_BASE_URL", "http://localhost:1234")
+os.environ.setdefault("LMSTUDIO_MODEL", "test-model")
 
 from unittest.mock import patch, MagicMock
 import brain

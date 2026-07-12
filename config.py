@@ -1,6 +1,8 @@
 import os
 from dotenv import load_dotenv
 
+import providers
+
 load_dotenv()
 
 def _require(key: str) -> str:
@@ -10,8 +12,15 @@ def _require(key: str) -> str:
     return val
 
 DISCORD_TOKEN = _require("DISCORD_TOKEN")
-LLM_BASE_URL = "http://192.168.1.70:30068/v1"
-LLM_MODEL = "gemma4-e4b-131k:latest"
+
+_provider_names = [p.strip() for p in os.environ.get("LLM_PROVIDERS", "").split(",") if p.strip()]
+LLM_CHAIN = [c for c in (providers.resolve(name) for name in _provider_names) if c is not None]
+if not LLM_CHAIN:
+    raise RuntimeError(
+        "No usable LLM providers configured. Set LLM_PROVIDERS in .env to a "
+        "comma-separated list (e.g. lmstudio,openai) and set that provider's "
+        "base_url/api_key/model env vars."
+    )
 
 _owner_raw = _require("OWNER_ID")
 _husband_raw = _require("HUSBAND_ID")
