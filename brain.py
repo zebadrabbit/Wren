@@ -10,7 +10,7 @@ Today is {date}.
 
 When classifying intent, respond ONLY with valid JSON matching this schema:
 {{
-  "intent": "save_note" | "recall_notes" | "send_to_person" | "add_shopping_item" | "remove_shopping_item" | "recall_shopping" | "send_shopping_list" | "save_idea" | "recall_ideas" | "discard_idea" | "expand_idea" | "chat",
+  "intent": "send_to_person" | {plugin_intents} | "chat",
   "content": "<extracted note or message content>",
   "tags": ["<tag1>", "<tag2>"],
   "person": "<name from whitelist or null>"
@@ -19,20 +19,11 @@ When classifying intent, respond ONLY with valid JSON matching this schema:
 Known contacts: {contacts}
 
 Guidelines:
-- save_note: user is capturing something for later (grocery item, plan, reminder)
-- recall_notes: user wants to retrieve or search past notes
 - send_to_person: user wants to send a message or note to someone
-- add_shopping_item: user wants to add an item to the shared shopping list
-- remove_shopping_item: user got/bought/already has an item and wants it off the shopping list
-- recall_shopping: user wants to see the current shopping list
-- send_shopping_list: user wants to send the whole shopping list to someone
-- save_idea: user explicitly wants to remember/capture an idea to revisit or expand later (e.g. "remember this idea...", "idea:..."), distinct from save_note's reminders/grocery items/plans
-- recall_ideas: user wants to see all their saved ideas
-- discard_idea: user wants to delete a previously saved idea; content is a short phrase identifying which idea, not the full idea text
-- expand_idea: user wants Wren to elaborate/brainstorm further on a previously saved idea; content is a short phrase identifying which idea, not the full idea text
+{plugin_guidelines}
 - chat: anything else (questions, casual conversation)
 - tags: 1-3 lowercase single-word tags relevant to the content
-- person: only set for send_to_person and send_shopping_list intents, use the contact name as given
+- person: only set when the intent is about contacting or sending something to someone else, use the contact name as given
 """
 
 def _now() -> str:
@@ -40,6 +31,14 @@ def _now() -> str:
 
 def _contacts() -> str:
     return ", ".join(config.WHITELIST.keys())
+
+_plugin_intents: list[str] = []
+_plugin_guidelines: str = ""
+
+def register_plugins(intents: list[str], guidelines: str) -> None:
+    global _plugin_intents, _plugin_guidelines
+    _plugin_intents = intents
+    _plugin_guidelines = guidelines
 
 _clients: dict[str, OpenAI] = {}
 
@@ -65,7 +64,11 @@ def _complete(messages: list[dict], temperature: float) -> str:
     raise last_exc
 
 def detect_intent(user_id: int, text: str) -> dict:
-    system = _SYSTEM.format(date=_now(), contacts=_contacts())
+    plugin_intent_enum = " | ".join(f'"{i}"' for i in _plugin_intents)
+    system = _SYSTEM.format(
+        date=_now(), contacts=_contacts(),
+        plugin_intents=plugin_intent_enum, plugin_guidelines=_plugin_guidelines,
+    )
     try:
         raw = _complete(
             [

@@ -178,3 +178,21 @@ def test_expand_returns_string():
         result = brain.expand("build a treehouse")
     assert isinstance(result, str)
     assert len(result) > 0
+
+def test_register_plugins_included_in_prompt():
+    brain.register_plugins(["custom_intent"], "- custom_intent: does a custom thing")
+    captured = {}
+
+    def fake_create(**kwargs):
+        captured["messages"] = kwargs["messages"]
+        return _mock_completion(json.dumps({"intent": "chat", "content": "hi", "tags": [], "person": None}))
+
+    client = MagicMock()
+    client.chat.completions.create.side_effect = fake_create
+    with patch.object(brain, "_get_client", return_value=client):
+        brain.detect_intent(1, "hello")
+
+    system_content = captured["messages"][0]["content"]
+    assert "custom_intent" in system_content
+    assert "does a custom thing" in system_content
+    brain.register_plugins([], "")  # reset so later tests aren't affected
