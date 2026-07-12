@@ -119,6 +119,39 @@ async def on_message(message: discord.Message):
                 await message.channel.send(f"Couldn't reach {target_name} — their DMs may be closed.")
                 return
 
+        elif intent == "save_idea":
+            notes.save(user_id, content, ["idea"])
+            await message.channel.send("Saved that idea.")
+
+        elif intent == "recall_ideas":
+            ideas = notes.search(user_id, tags=["idea"])
+            if not ideas:
+                await message.channel.send("No ideas saved.")
+            else:
+                await message.channel.send("\n".join(f"- {i['content']}" for i in ideas))
+
+        elif intent == "discard_idea":
+            matches = notes.find(user_id, content, tags=["idea"])
+            if not matches:
+                await message.channel.send("No idea found matching that.")
+            elif len(matches) > 1:
+                listing = "\n".join(f"- {m['content']}" for m in matches)
+                await message.channel.send(f"Found more than one match, be more specific.\n{listing}")
+            else:
+                notes.delete(matches[0]["id"])
+                await message.channel.send(f"Discarded: {matches[0]['content']}.")
+
+        elif intent == "expand_idea":
+            matches = notes.find(user_id, content, tags=["idea"])
+            if not matches:
+                await message.channel.send("No idea found matching that.")
+            elif len(matches) > 1:
+                listing = "\n".join(f"- {m['content']}" for m in matches)
+                await message.channel.send(f"Found more than one match, be more specific.\n{listing}")
+            else:
+                expansion = brain.expand(matches[0]["content"])
+                await message.channel.send(expansion)
+
         else:  # chat
             reply = brain.chat(text)
             await message.channel.send(reply)
