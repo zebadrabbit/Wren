@@ -1,0 +1,14 @@
+[Unit]
+Description=Wren Discord Bot
+After=network.target
+
+[Service]
+Type=simple
+User=winter
+WorkingDirectory=/home/winter/work/Wren
+ExecStart=/home/winter/work/Wren/venv/bin/python3 /home/winter/work/Wren/bot.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
