@@ -120,8 +120,11 @@ async def on_message(message: discord.Message):
                 return
 
         elif intent == "save_idea":
-            notes.save(user_id, content, ["idea"])
-            await message.channel.send("Saved that idea.")
+            if not content.strip():
+                await message.channel.send("What idea should I save?")
+            else:
+                notes.save(user_id, content, ["idea"])
+                await message.channel.send("Saved that idea.")
 
         elif intent == "recall_ideas":
             ideas = notes.search(user_id, tags=["idea"])
@@ -131,26 +134,32 @@ async def on_message(message: discord.Message):
                 await message.channel.send("\n".join(f"- {i['content']}" for i in ideas))
 
         elif intent == "discard_idea":
-            matches = notes.find(user_id, content, tags=["idea"])
-            if not matches:
-                await message.channel.send("No idea found matching that.")
-            elif len(matches) > 1:
-                listing = "\n".join(f"- {m['content']}" for m in matches)
-                await message.channel.send(f"Found more than one match, be more specific.\n{listing}")
+            if not content.strip():
+                await message.channel.send("Which idea do you want to discard?")
             else:
-                notes.delete(matches[0]["id"])
-                await message.channel.send(f"Discarded: {matches[0]['content']}.")
+                matches = notes.find(user_id, content, tags=["idea"])
+                if not matches:
+                    await message.channel.send("No idea found matching that.")
+                elif len(matches) > 1:
+                    listing = "\n".join(f"- {m['content']}" for m in matches)
+                    await message.channel.send(f"Found more than one match, be more specific.\n{listing}")
+                else:
+                    notes.delete(matches[0]["id"])
+                    await message.channel.send(f"Discarded: {matches[0]['content']}.")
 
         elif intent == "expand_idea":
-            matches = notes.find(user_id, content, tags=["idea"])
-            if not matches:
-                await message.channel.send("No idea found matching that.")
-            elif len(matches) > 1:
-                listing = "\n".join(f"- {m['content']}" for m in matches)
-                await message.channel.send(f"Found more than one match, be more specific.\n{listing}")
+            if not content.strip():
+                await message.channel.send("Which idea do you want to expand on?")
             else:
-                expansion = brain.expand(matches[0]["content"])
-                await message.channel.send(expansion)
+                matches = notes.find(user_id, content, tags=["idea"])
+                if not matches:
+                    await message.channel.send("No idea found matching that.")
+                elif len(matches) > 1:
+                    listing = "\n".join(f"- {m['content']}" for m in matches)
+                    await message.channel.send(f"Found more than one match, be more specific.\n{listing}")
+                else:
+                    expansion = brain.expand(matches[0]["content"])
+                    await message.channel.send(expansion)
 
         else:  # chat
             reply = brain.chat(text)
