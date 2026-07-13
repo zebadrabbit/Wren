@@ -37,6 +37,9 @@ HELP_TEXT = """Here's what I can actually do:
 **Messaging**
 - "tell husband dinner's at 7" — DMs the other whitelisted contact
 
+**Status**
+- "show status" / "what backend are you using" / "show model" — reports the active LLM backend, endpoint, uptime, and token usage
+
 Anything else just falls through to open-ended chat."""
 
 _START_TIME = time.monotonic()

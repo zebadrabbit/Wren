@@ -94,6 +94,11 @@ alternatives with the same profile.
 - "tell husband dinner's at 7" — DMs the other whitelisted contact
 - anything else falls through to open-ended chat
 
+**Status**
+- "show status" / "what backend are you using" / "show model" — reports the
+  active LLM backend/model/endpoint, process uptime, and token usage since
+  the last restart (resets on restart, not persisted)
+
 ## Email-arrival watcher (optional)
 
 Set `EMAIL_WATCH=alice@example.com:owner,bob@example.com:husband` plus
