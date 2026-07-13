@@ -47,6 +47,17 @@ provider in the list. If every provider in the chain fails, the request
 fails too — this is a liveness fallback across endpoints, not a
 retry/backoff mechanism.
 
+**Model choice (local models via `lmstudio`/`ollama`):** use a plain
+instruct model, not a "thinking"/reasoning model. Reasoning models (e.g.
+Qwen3's default thinking mode) emit long chain-of-thought before answering
+and can churn for a very long time on even a simple message — bad fit for
+fast intent classification + short replies. `brain.py` sets `max_tokens` and
+adds a `/no_think` hint as a safety net, but the model itself matters more.
+Known-good, tested here: [`Qwen2.5-7B-Instruct-GGUF`](https://huggingface.co/lmstudio-community/Qwen2.5-7B-Instruct-GGUF)
+(not Qwen3) — fast, follows JSON-schema instructions cleanly, no reasoning
+overhead. `Llama-3.1-8B-Instruct` and `Mistral-7B-Instruct-v0.3` are solid
+alternatives with the same profile.
+
 ## What you can say
 
 **Notes**
