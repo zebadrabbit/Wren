@@ -14,10 +14,17 @@ just chat.
    - `LLM_PROVIDERS` — an ordered, comma-separated list of LLM providers to
      try (see below). At least one must resolve or Wren refuses to start.
    - Everything else in `.env.example` is optional.
-4. `python3 -m wren.bot`
+4. In the [Discord Developer Portal](https://discord.com/developers/applications/),
+   select your bot application → **Bot** tab → under **Privileged Gateway
+   Intents**, enable **MESSAGE CONTENT INTENT** and save. Wren reads DM text
+   to detect intent, and Discord treats that as a privileged intent that
+   must be turned on here — without it, the bot crashes on startup with
+   `discord.errors.PrivilegedIntentsRequired`.
+5. `python3 -m wren.bot`
 
 Alternatively, run `./setup.sh` for an interactive walkthrough that does all
-of the above plus optional systemd install.
+of the above except the Developer Portal step (that one's manual, Discord
+doesn't expose it via API) plus optional systemd install.
 
 Wren only responds to DMs from the two whitelisted Discord user IDs. Any
 other message is ignored.
