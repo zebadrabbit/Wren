@@ -4,6 +4,7 @@ from . import config
 from . import brain
 from . import notes
 from . import shopping
+from . import reminders
 from . import plugins
 from . import discord_utils
 
@@ -20,6 +21,11 @@ HELP_TEXT = """Here's what I can actually do:
 - "what ideas have I saved"
 - "discard the idea about the treehouse"
 - "expand on the treehouse idea"
+
+**Reminders**
+- "remind me to take out the trash at 6pm" / "in 20 minutes" / "tomorrow morning"
+- "what are my reminders" — shows all upcoming reminders with times
+- "cancel the trash reminder" — matches by phrase, asks for specifics if needed
 
 **Shopping** (one shared list)
 - "add potatoes to shopping"
@@ -42,6 +48,7 @@ client = discord.Client(intents=intents)
 async def on_ready():
     notes.init_db()
     shopping.init_db()
+    reminders.init_db()
     await plugins.start_all(client)
     logging.info(f"Wren online as {client.user}")
 
