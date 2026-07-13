@@ -40,6 +40,13 @@ def test_resolve_target_strips_trailing_period():
 def test_resolve_target_strips_wrapping_paren():
     assert web_plugin._resolve_target("see (http://x.com/y)", RESULTS) == "http://x.com/y"
 
+def test_resolve_target_keeps_balanced_parens_in_url():
+    url = "read https://en.wikipedia.org/wiki/Python_(programming_language)"
+    assert web_plugin._resolve_target(url, RESULTS) == "https://en.wikipedia.org/wiki/Python_(programming_language)"
+
+def test_resolve_target_strips_unbalanced_trailing_paren():
+    assert web_plugin._resolve_target("see (http://x.com/y)", RESULTS) == "http://x.com/y"
+
 def test_resolve_target_ordinal_not_matched_inside_larger_number():
     # "21st" must NOT be treated as "first"; 21 is out of range -> None
     assert web_plugin._resolve_target("read the 21st article", RESULTS) is None

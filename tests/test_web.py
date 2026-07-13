@@ -70,3 +70,11 @@ def test_scrape_sends_bearer_when_key_set(monkeypatch):
     monkeypatch.setattr(web.httpx, "post", fake_post)
     web.scrape("http://example.com")
     assert captured["headers"]["Authorization"] == "Bearer fc-secret"
+
+def test_scrape_caps_large_markdown(monkeypatch):
+    monkeypatch.setattr(config, "FIRECRAWL_URL", "http://fc.local")
+    monkeypatch.setattr(config, "FIRECRAWL_API_KEY", "")
+    big = "x" * (web.MAX_SCRAPE_CHARS + 5000)
+    monkeypatch.setattr(web.httpx, "post", lambda *a, **k: _resp({"data": {"markdown": big}}))
+    out = web.scrape("http://example.com")
+    assert len(out) == web.MAX_SCRAPE_CHARS

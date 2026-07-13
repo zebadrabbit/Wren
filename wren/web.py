@@ -3,6 +3,7 @@ from . import config
 
 SEARCH_TIMEOUT = 10.0
 SCRAPE_TIMEOUT = 30.0
+MAX_SCRAPE_CHARS = 12000
 
 def search(query: str, limit: int = 5) -> list[dict]:
     if not config.SEARXNG_URL:
@@ -30,4 +31,7 @@ def scrape(url: str) -> str:
         timeout=SCRAPE_TIMEOUT,
     )
     resp.raise_for_status()
-    return resp.json().get("data", {}).get("markdown", "")
+    md = resp.json().get("data", {}).get("markdown", "")
+    # ponytail: cap so a huge page can't blow the LLM context/token budget in
+    # summarize_web. Raise the cap if real long-doc reading ever needs it.
+    return md[:MAX_SCRAPE_CHARS]

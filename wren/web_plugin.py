@@ -23,10 +23,19 @@ _ORDINALS = {
     "fifth": 4, "5th": 4,
 }
 
+def _clean_url(url: str) -> str:
+    url = url.rstrip(".,;:!?\"'")
+    # strip a trailing bracket only when it's unbalanced — keeps
+    # ".../Python_(programming_language)" intact while cleaning "(http://x)"
+    for close, open_ in ((")", "("), ("]", "["), ("}", "{")):
+        while url.endswith(close) and url.count(close) > url.count(open_):
+            url = url[:-1]
+    return url
+
 def _resolve_target(content: str, results: list[dict]) -> str | None:
     m = _URL_RE.search(content)
     if m:
-        return m.group(0).rstrip(".,;:!?)]}\"'")
+        return _clean_url(m.group(0))
     if not results:
         return None
     low = content.lower()
