@@ -140,6 +140,28 @@ pytest -q
 Design docs and implementation plans for each feature live in
 `docs/superpowers/specs/` and `docs/superpowers/plans/`.
 
+**Never run ad-hoc/throwaway scripts against the real `wren.db`.**
+`notes.py`/`shopping.py`/`reminders.py` all hardcode `DB_PATH = "wren.db"`
+(a relative path, no env override) — the same path the deployed bot uses.
+A manual verification script run from the repo root touches the *live*
+database, not a disposable one, even if you didn't mean to. This has
+already caused real data loss once (a "throwaway" check that ran
+`reminders.init_db()` against the real path, then deleted the file
+afterward believing it was self-created test output — it was actually the
+production DB).
+
+Always isolate manual checks the same way the test suite does:
+```python
+import tempfile, os
+from wren import notes  # or shopping / reminders
+notes.DB_PATH = os.path.join(tempfile.mkdtemp(), "test.db")
+notes.init_db()
+# ... now safe to read/write/delete this path
+```
+Never delete `wren.db` (or any file you didn't create within that same
+script) without first confirming its provenance — `git status`/`ls -la`/
+`stat` to check it isn't the real, currently-in-use database.
+
 ## Deployment
 
 `wren.service` is a sample systemd unit (adjust `User`/paths for your
