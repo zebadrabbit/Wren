@@ -126,9 +126,9 @@ All source lives in the `wren/` package (run as `python3 -m wren.bot`):
 
 Adding a new intent-handling plugin: write a module in `wren/` exposing
 `INTENTS`, `PROMPT_GUIDELINES`, and `async handle(intent, message, client,
-user_id, content, tags, person)`, then add it to `plugins.py`'s `PLUGINS`
-list. An event-only plugin (background task, no user commands) only needs
-an optional `async start(client)`.
+user_id, content, tags, person, when)`, then add it to `plugins.py`'s
+`PLUGINS` list. An event-only plugin (background task, no user commands)
+only needs an optional `async start(client)`.
 
 ## Development
 
