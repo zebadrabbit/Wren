@@ -45,6 +45,12 @@ async def on_ready():
     await plugins.start_all(client)
     logging.info(f"Wren online as {client.user}")
 
+async def _react(message: discord.Message, emoji: str) -> None:
+    try:
+        await message.add_reaction(emoji)
+    except Exception as e:
+        logging.warning(f"Could not react with {emoji}: {e}")
+
 @client.event
 async def on_message(message: discord.Message):
     # ignore own messages and non-DMs
@@ -62,6 +68,8 @@ async def on_message(message: discord.Message):
     text = message.content.strip()
     if not text:
         return
+
+    await _react(message, "👀")
 
     try:
         result = brain.detect_intent(user_id, text)
@@ -82,22 +90,25 @@ async def on_message(message: discord.Message):
             target_name = (person or "").lower()
             if target_name not in config.WHITELIST:
                 await message.channel.send("I don't know how to reach them.")
-                return
-            notes.save(user_id, content, tags)
-            ok = await discord_utils.notify(
-                client, target_name,
-                f"From {config.ID_TO_NAME.get(user_id, 'someone')}: {content}",
-            )
-            if ok:
-                await message.channel.send(f"Sent to {target_name}.")
             else:
-                await message.channel.send(f"Couldn't reach {target_name} — their DMs may be closed.")
+                notes.save(user_id, content, tags)
+                ok = await discord_utils.notify(
+                    client, target_name,
+                    f"From {config.ID_TO_NAME.get(user_id, 'someone')}: {content}",
+                )
+                if ok:
+                    await message.channel.send(f"Sent to {target_name}.")
+                else:
+                    await message.channel.send(f"Couldn't reach {target_name} — their DMs may be closed.")
 
         else:  # chat
             reply = brain.chat(text)
             await message.channel.send(reply)
+
+        await _react(message, "✅")
     except Exception as e:
         logging.error(f"Error handling message from {user_id}: {e}")
         await message.channel.send("Something went wrong, try again.")
+        await _react(message, "❌")
 
 client.run(config.DISCORD_TOKEN)
