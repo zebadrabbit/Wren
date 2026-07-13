@@ -1,0 +1,74 @@
+import asyncio
+import logging
+import re
+from . import web
+from . import brain
+from . import config
+
+INTENTS = ["web_search", "read_page"]
+
+PROMPT_GUIDELINES = """- web_search: user wants current/live/real-world information — news, weather, prices, "what's happening with X", "look up X", "search for X"; distinct from chat which handles timeless questions and casual conversation
+- read_page: user wants Wren to read a specific web page in full — a pasted URL, or a follow-up like "read me the first one"/"more detail on #2" after a search"""
+
+_last_results: dict[int, list[dict]] = {}
+# ponytail: in-memory, lost on restart — fine for "read the first one"
+# follow-ups. Persist only if that limitation actually bites.
+
+_URL_RE = re.compile(r"https?://\S+")
+_ORDINALS = {
+    "first": 0, "1st": 0,
+    "second": 1, "2nd": 1,
+    "third": 2, "3rd": 2,
+    "fourth": 3, "4th": 3,
+    "fifth": 4, "5th": 4,
+}
+
+def _resolve_target(content: str, results: list[dict]) -> str | None:
+    m = _URL_RE.search(content)
+    if m:
+        return m.group(0)
+    if not results:
+        return None
+    low = content.lower()
+    for word, idx in _ORDINALS.items():
+        if word in low:
+            return results[idx]["url"] if idx < len(results) else None
+    m = re.search(r"#?(\d+)", content)
+    if m:
+        idx = int(m.group(1)) - 1
+        return results[idx]["url"] if 0 <= idx < len(results) else None
+    return results[0]["url"]  # no explicit reference -> default to top hit
+
+async def handle(intent, message, client, user_id, content, tags, person, when):
+    if not config.SEARXNG_URL:
+        await message.channel.send("Web lookup isn't configured.")
+        return
+
+    if intent == "web_search":
+        try:
+            results = await asyncio.to_thread(web.search, content)
+        except Exception as e:
+            logging.warning(f"web search failed: {e}")
+            await message.channel.send("Search is unavailable right now.")
+            return
+        if not results:
+            await message.channel.send("Couldn't find anything on that.")
+            return
+        _last_results[user_id] = results
+        summary = await asyncio.to_thread(brain.summarize_web, content, results)
+        links = "\n".join(f"{i+1}. {r['title']} — {r['url']}" for i, r in enumerate(results))
+        await message.channel.send(f"{summary}\n\n{links}")
+
+    elif intent == "read_page":
+        url = _resolve_target(content, _last_results.get(user_id, []))
+        if not url:
+            await message.channel.send("Search for something first, or paste a link.")
+            return
+        try:
+            markdown = await asyncio.to_thread(web.scrape, url)
+        except Exception as e:
+            logging.warning(f"scrape failed: {e}")
+            await message.channel.send("Couldn't fetch that page.")
+            return
+        summary = await asyncio.to_thread(brain.summarize_web, content or url, markdown)
+        await message.channel.send(summary)
