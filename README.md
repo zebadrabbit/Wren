@@ -16,6 +16,9 @@ just chat.
    - Everything else in `.env.example` is optional.
 4. `python3 bot.py`
 
+Alternatively, run `./setup.sh` for an interactive walkthrough that does all
+of the above plus optional systemd install.
+
 Wren only responds to DMs from the two whitelisted Discord user IDs. Any
 other message is ignored.
 
@@ -119,3 +122,8 @@ sudo cp wren.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now wren
 ```
+
+Once installed (e.g. via `./setup.sh`'s systemd-install prompt, which
+templates the unit's paths/user for you), use `./manage.sh
+{start|stop|restart|status|logs}` as the day-to-day way to control the
+running service.

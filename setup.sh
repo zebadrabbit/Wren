@@ -140,7 +140,9 @@ echo ".env written."
 # 6. Optional systemd install
 read -rp "Install and enable the systemd service now? (y/N): " want_systemd
 if [[ "$want_systemd" =~ ^[Yy]$ ]]; then
-    sudo cp wren.service /etc/systemd/system/
+    REPO_DIR="$(pwd)"
+    CURRENT_USER="$(whoami)"
+    sed -e "s#/home/winter/work/Wren#${REPO_DIR}#g" -e "s/^User=.*/User=${CURRENT_USER}/" wren.service | sudo tee /etc/systemd/system/wren.service > /dev/null
     sudo systemctl daemon-reload
     sudo systemctl enable --now wren
     echo "wren.service installed and started."
