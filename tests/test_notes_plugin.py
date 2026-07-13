@@ -47,8 +47,20 @@ def test_recall_notes_falls_back_when_guessed_tag_does_not_match():
     notes.save(1, "how awesome you are", ["self", "motivation"])
     message = _message()
     with patch.object(brain, "recall", return_value="You're awesome."):
-        asyncio.run(notes_plugin.handle("recall_notes", message, None, 1, "", ["notes"], None))
+        asyncio.run(notes_plugin.handle("recall_notes", message, None, 1, "tell me something nice", ["notes"], None))
     message.channel.send.assert_awaited_once_with("You're awesome.")
+
+def test_recall_notes_plain_listing_sends_one_message_per_note():
+    # A bare "show my notes" (empty content) lists notes directly, one
+    # Discord message per note, instead of routing through the LLM.
+    notes.save(1, "buy milk", ["grocery"])
+    notes.save(1, "how awesome you are", ["self", "motivation"])
+    message = _message()
+    asyncio.run(notes_plugin.handle("recall_notes", message, None, 1, "", [], None))
+    assert message.channel.send.await_count == 2
+    sent_texts = [c.args[0] for c in message.channel.send.await_args_list]
+    assert any("buy milk" in t and "(tags: grocery)" in t for t in sent_texts)
+    assert any("how awesome you are" in t and "(tags: self,motivation)" in t for t in sent_texts)
 
 def test_recall_notes_respects_real_tag_match():
     notes.save(1, "buy milk", ["grocery"])
@@ -84,6 +96,16 @@ def test_recall_ideas_with_items():
     message = _message()
     asyncio.run(notes_plugin.handle("recall_ideas", message, None, 1, "", [], None))
     message.channel.send.assert_awaited_once_with("- build a treehouse")
+
+def test_recall_ideas_multiple_items_sends_one_message_each():
+    notes.save(1, "build a treehouse", ["idea"])
+    notes.save(1, "learn to bake bread", ["idea"])
+    message = _message()
+    asyncio.run(notes_plugin.handle("recall_ideas", message, None, 1, "", [], None))
+    assert message.channel.send.await_count == 2
+    sent_texts = [c.args[0] for c in message.channel.send.await_args_list]
+    assert "- build a treehouse" in sent_texts
+    assert "- learn to bake bread" in sent_texts
 
 def test_discard_idea_empty_content_guarded():
     message = _message()

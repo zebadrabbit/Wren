@@ -24,9 +24,17 @@ async def handle(intent, message, client, user_id, content, tags, person):
             matches = notes.search(user_id, tags=None)
         if not matches:
             await message.channel.send("No notes found.")
-        else:
+        elif content.strip():
+            # a specific question — let the LLM answer using the notes
             summary = brain.recall(matches, content)
             await message.channel.send(summary)
+        else:
+            # a plain "show me everything" request — list notes directly,
+            # one per message, rather than routing a bare listing through
+            # the LLM (which tends to just recite them back poorly formatted)
+            for n in matches:
+                tag_suffix = f" (tags: {n['tags']})" if n["tags"] else ""
+                await message.channel.send(f"[{n['created_at'][:10]}] {n['content']}{tag_suffix}")
 
     elif intent == "save_idea":
         if not content.strip():
@@ -40,7 +48,8 @@ async def handle(intent, message, client, user_id, content, tags, person):
         if not ideas:
             await message.channel.send("No ideas saved.")
         else:
-            await message.channel.send("\n".join(f"- {i['content']}" for i in ideas))
+            for i in ideas:
+                await message.channel.send(f"- {i['content']}")
 
     elif intent == "discard_idea":
         if not content.strip():
