@@ -1,4 +1,5 @@
 import os
+import zoneinfo
 from dotenv import load_dotenv
 
 from . import providers
@@ -59,3 +60,14 @@ EMAIL_POLL_SECONDS = int(os.environ.get("EMAIL_POLL_SECONDS", "60"))
 EMAIL_WATCH: dict[str, str] = _parse_email_watch(os.environ.get("EMAIL_WATCH", ""))
 
 REMINDER_POLL_SECONDS = int(os.environ.get("REMINDER_POLL_SECONDS", "30"))
+
+
+def _validate_timezone(raw: str) -> str:
+    try:
+        zoneinfo.ZoneInfo(raw)
+    except zoneinfo.ZoneInfoNotFoundError:
+        raise RuntimeError(f"TIMEZONE '{raw}' is not a valid IANA timezone name (e.g. America/Chicago).")
+    return raw
+
+
+TIMEZONE = _validate_timezone(os.environ.get("TIMEZONE", "UTC"))

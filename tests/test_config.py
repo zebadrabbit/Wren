@@ -39,3 +39,13 @@ def test_parse_email_watch_whitespace_and_case_tolerant():
 
 def test_email_poll_seconds_default():
     assert config.EMAIL_POLL_SECONDS == 60
+
+def test_timezone_default_is_utc():
+    assert config.TIMEZONE == "UTC"
+
+def test_validate_timezone_valid():
+    assert config._validate_timezone("America/Chicago") == "America/Chicago"
+
+def test_validate_timezone_invalid_raises():
+    with pytest.raises(RuntimeError):
+        config._validate_timezone("Not/AZone")
