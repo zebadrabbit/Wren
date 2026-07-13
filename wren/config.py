@@ -63,9 +63,10 @@ REMINDER_POLL_SECONDS = int(os.environ.get("REMINDER_POLL_SECONDS", "30"))
 
 
 def _validate_timezone(raw: str) -> str:
+    raw = raw.strip()
     try:
         zoneinfo.ZoneInfo(raw)
-    except zoneinfo.ZoneInfoNotFoundError:
+    except (zoneinfo.ZoneInfoNotFoundError, ValueError):
         raise RuntimeError(f"TIMEZONE '{raw}' is not a valid IANA timezone name (e.g. America/Chicago).")
     return raw
 

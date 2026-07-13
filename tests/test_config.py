@@ -49,3 +49,10 @@ def test_validate_timezone_valid():
 def test_validate_timezone_invalid_raises():
     with pytest.raises(RuntimeError):
         config._validate_timezone("Not/AZone")
+
+def test_validate_timezone_empty_raises():
+    with pytest.raises(RuntimeError):
+        config._validate_timezone("")
+
+def test_validate_timezone_strips_whitespace():
+    assert config._validate_timezone(" America/Chicago ") == "America/Chicago"
