@@ -179,6 +179,17 @@ def test_expand_returns_string():
     assert isinstance(result, str)
     assert len(result) > 0
 
+def test_detect_intent_help():
+    payload = json.dumps({
+        "intent": "help",
+        "content": "",
+        "tags": [],
+        "person": None
+    })
+    with patch.object(brain, "_get_client", return_value=_client_returning(payload)):
+        result = brain.detect_intent(1, "show commands")
+    assert result["intent"] == "help"
+
 def test_detect_intent_caps_max_tokens():
     payload = json.dumps({"intent": "chat", "content": "hi", "tags": [], "person": None})
     client = _client_returning(payload)

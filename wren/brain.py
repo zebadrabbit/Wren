@@ -13,7 +13,7 @@ Today is {date}.
 
 When classifying intent, respond ONLY with valid JSON matching this schema:
 {{
-  "intent": "send_to_person" | {plugin_intents} | "chat",
+  "intent": "send_to_person" | "help" | {plugin_intents} | "chat",
   "content": "<extracted note or message content>",
   "tags": ["<tag1>", "<tag2>"],
   "person": "<name from whitelist or null>"
@@ -23,6 +23,7 @@ Known contacts: {contacts}
 
 Guidelines:
 - send_to_person: user wants to send a message or note to someone
+- help: user wants to know what Wren can do, asks for help, or asks to see available commands
 {plugin_guidelines}
 - chat: anything else (questions, casual conversation)
 - tags: 1-3 lowercase single-word tags relevant to the content

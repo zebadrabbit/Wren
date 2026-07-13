@@ -9,6 +9,29 @@ from . import discord_utils
 
 logging.basicConfig(level=logging.INFO)
 
+HELP_TEXT = """Here's what I can actually do:
+
+**Notes**
+- "remind me to call the plumber" — saves a note
+- "what do I need to do" — recalls and answers from your notes
+
+**Ideas** (separate from notes — for things to revisit or expand later)
+- "remember this idea: build a treehouse"
+- "what ideas have I saved"
+- "discard the idea about the treehouse"
+- "expand on the treehouse idea"
+
+**Shopping** (one shared list)
+- "add potatoes to shopping"
+- "got the potatoes" / "remove potatoes from shopping"
+- "what's on the shopping list"
+- "send shopping to husband"
+
+**Messaging**
+- "tell husband dinner's at 7" — DMs the other whitelisted contact
+
+Anything else just falls through to open-ended chat."""
+
 brain.register_plugins(plugins.all_intents(), plugins.all_guidelines())
 
 intents = discord.Intents.default()
@@ -51,6 +74,9 @@ async def on_message(message: discord.Message):
             await plugins.INTENT_HANDLERS[intent].handle(
                 intent, message, client, user_id, content, tags, person
             )
+
+        elif intent == "help":
+            await message.channel.send(HELP_TEXT)
 
         elif intent == "send_to_person":
             target_name = (person or "").lower()
