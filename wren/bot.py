@@ -1,4 +1,5 @@
 import logging
+import time
 import discord
 from . import config
 from . import brain
@@ -38,6 +39,8 @@ HELP_TEXT = """Here's what I can actually do:
 
 Anything else just falls through to open-ended chat."""
 
+_START_TIME = time.monotonic()
+
 brain.register_plugins(plugins.all_intents(), plugins.all_guidelines())
 
 intents = discord.Intents.default()
@@ -57,6 +60,19 @@ async def _react(message: discord.Message, emoji: str) -> None:
         await message.add_reaction(emoji)
     except Exception as e:
         logging.warning(f"Could not react with {emoji}: {e}")
+
+def _format_uptime(seconds: float) -> str:
+    seconds = int(seconds)
+    days, seconds = divmod(seconds, 86400)
+    hours, seconds = divmod(seconds, 3600)
+    minutes, _ = divmod(seconds, 60)
+    parts = []
+    if days:
+        parts.append(f"{days}d")
+    if days or hours:
+        parts.append(f"{hours}h")
+    parts.append(f"{minutes}m")
+    return " ".join(parts)
 
 @client.event
 async def on_message(message: discord.Message):
@@ -93,6 +109,19 @@ async def on_message(message: discord.Message):
 
         elif intent == "help":
             await message.channel.send(HELP_TEXT)
+
+        elif intent == "status":
+            info = brain.status()
+            provider = info["provider"]
+            tokens = info["tokens"]
+            uptime = _format_uptime(time.monotonic() - _START_TIME)
+            lines = [
+                f"Backend: {provider['name']} ({provider['model']})",
+                f"Endpoint: {provider['base_url']}",
+                f"Uptime: {uptime}",
+                f"Tokens this session: {tokens['total']:,} ({tokens['prompt']:,} prompt / {tokens['completion']:,} completion)",
+            ]
+            await message.channel.send("\n".join(lines))
 
         elif intent == "send_to_person":
             target_name = (person or "").lower()
