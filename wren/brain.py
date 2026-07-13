@@ -145,3 +145,24 @@ def expand(idea_text: str) -> str:
         temperature=0.5,
         max_tokens=600,
     )
+
+def summarize_web(query: str, content) -> str:
+    if isinstance(content, str):
+        context = content
+    else:
+        context = "\n".join(
+            f"- {r['title']}: {r['snippet']} ({r['url']})" for r in content
+        )
+    prompt = (
+        f"Web results for '{query}':\n{context}\n\n"
+        "Answer the user's query using only these results. Cite sources by "
+        "title when useful. If the results don't answer it, say so plainly."
+    )
+    return _complete(
+        [
+            {"role": "system", "content": "You are Wren. Short, structured, ready. No filler. Answer directly using ONLY the provided web content — do not invent facts. No reasoning shown. /no_think"},
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0.3,
+        max_tokens=500,
+    )

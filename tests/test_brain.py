@@ -314,3 +314,28 @@ def test_now_reflects_configured_timezone(monkeypatch):
     monkeypatch.setattr(config, "TIMEZONE", "America/Chicago")
     result = brain._now()
     assert "UTC" not in result
+
+def test_summarize_web_from_results_returns_string():
+    results = [{"title": "T", "snippet": "it is sunny", "url": "http://a"}]
+    with patch.object(brain, "_get_client", return_value=_client_returning("It's sunny.")):
+        out = brain.summarize_web("weather", results)
+    assert isinstance(out, str) and len(out) > 0
+
+def test_summarize_web_from_markdown_returns_string():
+    with patch.object(brain, "_get_client", return_value=_client_returning("Summary.")):
+        out = brain.summarize_web("read it", "# Article\nlong body text")
+    assert isinstance(out, str) and len(out) > 0
+
+def test_summarize_web_puts_content_in_prompt():
+    results = [{"title": "Port news", "snippet": "strike ended", "url": "http://a"}]
+    captured = {}
+    def fake_create(**kwargs):
+        captured["messages"] = kwargs["messages"]
+        return _mock_completion("ok")
+    client = MagicMock()
+    client.chat.completions.create.side_effect = fake_create
+    with patch.object(brain, "_get_client", return_value=client):
+        brain.summarize_web("port strike", results)
+    user_msg = captured["messages"][1]["content"]
+    assert "strike ended" in user_msg
+    assert "port strike" in user_msg
