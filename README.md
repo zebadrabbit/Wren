@@ -10,9 +10,12 @@ just chat.
 1. `python3 -m venv venv && source venv/bin/activate`
 2. `pip install -r requirements.txt`
 3. `cp .env.example .env` and fill in:
-   - `DISCORD_TOKEN`, `OWNER_ID`, `HUSBAND_ID` — required.
+   - `DISCORD_TOKEN`, `OWNER_ID` — required.
    - `LLM_PROVIDERS` — an ordered, comma-separated list of LLM providers to
      try (see below). At least one must resolve or Wren refuses to start.
+   - `HUSBAND_ID` — optional, a second whitelisted contact. Leave unset for
+     owner-only use (a DM command to add contacts at runtime is planned,
+     to replace hand-editing this).
    - Everything else in `.env.example` is optional.
 4. In the [Discord Developer Portal](https://discord.com/developers/applications/),
    select your bot application → **Bot** tab → under **Privileged Gateway
@@ -26,8 +29,8 @@ Alternatively, run `./setup.sh` for an interactive walkthrough that does all
 of the above except the Developer Portal step (that one's manual, Discord
 doesn't expose it via API) plus optional systemd install.
 
-Wren only responds to DMs from the two whitelisted Discord user IDs. Any
-other message is ignored.
+Wren only responds to DMs from whitelisted Discord user IDs (`owner`, plus
+`husband` if configured). Any other message is ignored.
 
 ## LLM providers and fallback
 

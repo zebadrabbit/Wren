@@ -22,16 +22,21 @@ if not LLM_CHAIN:
         "base_url/api_key/model env vars."
     )
 
+def _build_whitelist(owner_raw: str, husband_raw: str) -> dict[str, int]:
+    if not owner_raw.isdigit():
+        raise RuntimeError("OWNER_ID must be a numeric Discord user ID.")
+    whitelist = {"owner": int(owner_raw)}
+    if husband_raw:
+        if not husband_raw.isdigit():
+            raise RuntimeError("HUSBAND_ID must be a numeric Discord user ID.")
+        whitelist["husband"] = int(husband_raw)
+    return whitelist
+
+
 _owner_raw = _require("OWNER_ID")
-_husband_raw = _require("HUSBAND_ID")
+_husband_raw = os.environ.get("HUSBAND_ID", "")
 
-if not _owner_raw.isdigit() or not _husband_raw.isdigit():
-    raise RuntimeError("OWNER_ID and HUSBAND_ID must be numeric Discord user IDs.")
-
-WHITELIST: dict[str, int] = {
-    "owner": int(_owner_raw),
-    "husband": int(_husband_raw),
-}
+WHITELIST: dict[str, int] = _build_whitelist(_owner_raw, _husband_raw)
 
 ID_TO_NAME: dict[int, str] = {v: k for k, v in WHITELIST.items()}
 

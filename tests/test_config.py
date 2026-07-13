@@ -6,7 +6,22 @@ os.environ.setdefault("LLM_PROVIDERS", "lmstudio")
 os.environ.setdefault("LMSTUDIO_BASE_URL", "http://test")
 os.environ.setdefault("LMSTUDIO_MODEL", "test-model")
 
+import pytest
 from wren import config
+
+def test_build_whitelist_owner_only():
+    assert config._build_whitelist("1", "") == {"owner": 1}
+
+def test_build_whitelist_with_husband():
+    assert config._build_whitelist("1", "2") == {"owner": 1, "husband": 2}
+
+def test_build_whitelist_invalid_owner_raises():
+    with pytest.raises(RuntimeError):
+        config._build_whitelist("abc", "")
+
+def test_build_whitelist_invalid_husband_raises():
+    with pytest.raises(RuntimeError):
+        config._build_whitelist("1", "abc")
 
 def test_parse_email_watch_empty():
     assert config._parse_email_watch("") == {}

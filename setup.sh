@@ -44,7 +44,6 @@ prompt_numeric() {
 # 2. core values
 prompt DISCORD_TOKEN "Discord bot token"
 prompt_numeric OWNER_ID "Owner Discord user ID"
-prompt_numeric HUSBAND_ID "Husband Discord user ID"
 
 # 3. LLM providers
 VALID_PROVIDERS="lmstudio ollama openai claude openrouter"
@@ -124,7 +123,6 @@ fi
 {
     echo "DISCORD_TOKEN=$DISCORD_TOKEN"
     echo "OWNER_ID=$OWNER_ID"
-    echo "HUSBAND_ID=$HUSBAND_ID"
     echo ""
     echo "LLM_PROVIDERS=$LLM_PROVIDERS"
     echo ""
