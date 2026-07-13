@@ -10,6 +10,7 @@ from wren import plugins
 from wren import notes_plugin
 from wren import shopping_plugin
 from wren import email_plugin
+from wren import reminder_plugin
 
 def test_all_intents_includes_both_plugins():
     intents = plugins.all_intents()
@@ -92,3 +93,11 @@ def test_all_intents_unaffected_by_event_only_email_plugin():
     intents = plugins.all_intents()
     assert "save_note" in intents
     assert "add_shopping_item" in intents
+
+def test_reminder_plugin_registered():
+    assert reminder_plugin in plugins.PLUGINS
+
+def test_all_intents_includes_reminder_intents():
+    intents = plugins.all_intents()
+    for intent in reminder_plugin.INTENTS:
+        assert intent in intents

@@ -2,8 +2,9 @@ import asyncio
 from . import notes_plugin
 from . import shopping_plugin
 from . import email_plugin
+from . import reminder_plugin
 
-PLUGINS = [notes_plugin, shopping_plugin, email_plugin]
+PLUGINS = [notes_plugin, shopping_plugin, email_plugin, reminder_plugin]
 
 INTENT_HANDLERS = {
     intent: plugin
