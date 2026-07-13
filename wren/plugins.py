@@ -1,7 +1,7 @@
 import asyncio
-import notes_plugin
-import shopping_plugin
-import email_plugin
+from . import notes_plugin
+from . import shopping_plugin
+from . import email_plugin
 
 PLUGINS = [notes_plugin, shopping_plugin, email_plugin]
 

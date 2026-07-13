@@ -6,10 +6,10 @@ os.environ.setdefault("LLM_PROVIDERS", "lmstudio")
 os.environ.setdefault("LMSTUDIO_BASE_URL", "http://test")
 os.environ.setdefault("LMSTUDIO_MODEL", "test-model")
 
-import plugins
-import notes_plugin
-import shopping_plugin
-import email_plugin
+from wren import plugins
+from wren import notes_plugin
+from wren import shopping_plugin
+from wren import email_plugin
 
 def test_all_intents_includes_both_plugins():
     intents = plugins.all_intents()

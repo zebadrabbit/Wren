@@ -1,6 +1,6 @@
 import os
 from unittest.mock import patch
-import providers
+from wren import providers
 
 def test_resolve_unknown_provider_returns_none():
     assert providers.resolve("not-a-real-provider") is None

@@ -1,11 +1,11 @@
 import logging
 import discord
-import config
-import brain
-import notes
-import shopping
-import plugins
-import discord_utils
+from . import config
+from . import brain
+from . import notes
+from . import shopping
+from . import plugins
+from . import discord_utils
 
 logging.basicConfig(level=logging.INFO)
 

@@ -7,9 +7,9 @@ os.environ.setdefault("LMSTUDIO_BASE_URL", "http://test")
 os.environ.setdefault("LMSTUDIO_MODEL", "test-model")
 
 from unittest.mock import MagicMock, AsyncMock, patch
-import config
-import discord_utils
-import email_plugin
+from wren import config
+from wren import discord_utils
+from wren import email_plugin
 
 def _raw_email(from_addr: str, subject: str) -> bytes:
     return f"From: {from_addr}\r\nSubject: {subject}\r\n\r\nBody text.".encode()

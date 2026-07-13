@@ -3,7 +3,7 @@ os.environ.setdefault("DISCORD_TOKEN", "test")
 os.environ.setdefault("OWNER_ID", "1")
 os.environ.setdefault("HUSBAND_ID", "2")
 
-import shopping
+from wren import shopping
 
 @pytest.fixture(autouse=True)
 def tmp_db(tmp_path, monkeypatch):

@@ -8,7 +8,7 @@ os.environ.setdefault("LMSTUDIO_MODEL", "test-model")
 
 from unittest.mock import MagicMock, AsyncMock
 import discord
-import discord_utils
+from wren import discord_utils
 
 def test_notify_success():
     client = MagicMock()

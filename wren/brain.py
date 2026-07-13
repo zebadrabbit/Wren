@@ -2,7 +2,7 @@ import json
 import logging
 from datetime import datetime, timezone
 from openai import OpenAI
-import config
+from . import config
 
 _SYSTEM = """You are Wren, a private personal assistant. You are short, structured, and ready. No filler, no affirmations.
 

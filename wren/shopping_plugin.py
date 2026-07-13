@@ -1,6 +1,6 @@
-import config
-import shopping
-import discord_utils
+from . import config
+from . import shopping
+from . import discord_utils
 
 INTENTS = ["add_shopping_item", "remove_shopping_item", "recall_shopping", "send_shopping_list"]
 

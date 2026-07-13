@@ -3,8 +3,8 @@ import email
 import email.utils
 import imaplib
 import logging
-import config
-import discord_utils
+from . import config
+from . import discord_utils
 
 def _connect() -> imaplib.IMAP4_SSL:
     conn = imaplib.IMAP4_SSL(config.IMAP_HOST)

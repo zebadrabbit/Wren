@@ -1,5 +1,5 @@
-import notes
-import brain
+from . import notes
+from . import brain
 
 INTENTS = ["save_note", "recall_notes", "save_idea", "recall_ideas", "discard_idea", "expand_idea"]
 

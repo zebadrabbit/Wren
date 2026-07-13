@@ -8,7 +8,7 @@ os.environ.setdefault("LMSTUDIO_MODEL", "test-model-1")
 os.environ.setdefault("OLLAMA_MODEL", "test-model-2")
 
 from unittest.mock import patch, MagicMock
-import brain
+from wren import brain
 
 def _mock_completion(content: str):
     msg = MagicMock()

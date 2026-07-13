@@ -1,6 +1,6 @@
 import logging
 import discord
-import config
+from . import config
 
 async def notify(client: discord.Client, contact_name: str, text: str) -> bool:
     target_id = config.WHITELIST.get(contact_name.lower())

@@ -14,7 +14,7 @@ just chat.
    - `LLM_PROVIDERS` — an ordered, comma-separated list of LLM providers to
      try (see below). At least one must resolve or Wren refuses to start.
    - Everything else in `.env.example` is optional.
-4. `python3 bot.py`
+4. `python3 -m wren.bot`
 
 Alternatively, run `./setup.sh` for an interactive walkthrough that does all
 of the above plus optional systemd install.
@@ -73,34 +73,36 @@ nothing else about the bot depends on it.
 
 ## Architecture
 
-- `bot.py` — Discord client, whitelist gate, and dispatch: routes a
+All source lives in the `wren/` package (run as `python3 -m wren.bot`):
+
+- `wren/bot.py` — Discord client, whitelist gate, and dispatch: routes a
   detected intent to whichever plugin owns it, or handles `send_to_person`/
   `chat` directly as core (non-plugin) behavior.
-- `brain.py` — LLM intent detection (`detect_intent`), the fallback chain
-  across providers (`_complete`), and one-off LLM calls used by plugins
-  (`recall`, `expand`, `chat`).
-- `config.py` / `providers.py` — env-driven configuration, including the
-  provider chain and the email watcher's IMAP settings.
-- `notes.py` / `shopping.py` — SQLite storage. Notes are per-owner; the
-  shopping list is one shared table with no owner scoping.
-- `notes_plugin.py` / `shopping_plugin.py` — own their respective intents:
-  declare the intent names, the LLM prompt guideline text for them, and an
-  async `handle(...)` dispatch function.
-- `email_plugin.py` — an event-only plugin (no user-invoked intents): its
-  `start()` hook runs the IMAP poll loop in the background.
-- `plugins.py` — the registry composing all plugins: builds the combined
-  intent list and prompt text `brain.py` needs, dispatches intents to the
-  right plugin, and starts each plugin's optional background task exactly
-  once per process (guards against Discord's `on_ready` re-firing on
-  reconnect).
-- `discord_utils.py` — shared whitelist-lookup/DM-send helper used by
+- `wren/brain.py` — LLM intent detection (`detect_intent`), the fallback
+  chain across providers (`_complete`), and one-off LLM calls used by
+  plugins (`recall`, `expand`, `chat`).
+- `wren/config.py` / `wren/providers.py` — env-driven configuration,
+  including the provider chain and the email watcher's IMAP settings.
+- `wren/notes.py` / `wren/shopping.py` — SQLite storage. Notes are
+  per-owner; the shopping list is one shared table with no owner scoping.
+- `wren/notes_plugin.py` / `wren/shopping_plugin.py` — own their respective
+  intents: declare the intent names, the LLM prompt guideline text for
+  them, and an async `handle(...)` dispatch function.
+- `wren/email_plugin.py` — an event-only plugin (no user-invoked intents):
+  its `start()` hook runs the IMAP poll loop in the background.
+- `wren/plugins.py` — the registry composing all plugins: builds the
+  combined intent list and prompt text `brain.py` needs, dispatches
+  intents to the right plugin, and starts each plugin's optional
+  background task exactly once per process (guards against Discord's
+  `on_ready` re-firing on reconnect).
+- `wren/discord_utils.py` — shared whitelist-lookup/DM-send helper used by
   `bot.py` and the shopping plugin.
 
-Adding a new intent-handling plugin: write a module exposing `INTENTS`,
-`PROMPT_GUIDELINES`, and `async handle(intent, message, client, user_id,
-content, tags, person)`, then add it to `plugins.py`'s `PLUGINS` list. An
-event-only plugin (background task, no user commands) only needs an
-optional `async start(client)`.
+Adding a new intent-handling plugin: write a module in `wren/` exposing
+`INTENTS`, `PROMPT_GUIDELINES`, and `async handle(intent, message, client,
+user_id, content, tags, person)`, then add it to `plugins.py`'s `PLUGINS`
+list. An event-only plugin (background task, no user commands) only needs
+an optional `async start(client)`.
 
 ## Development
 

@@ -6,7 +6,7 @@ After=network.target
 Type=simple
 User=winter
 WorkingDirectory=/home/winter/work/Wren
-ExecStart=/home/winter/work/Wren/venv/bin/python3 /home/winter/work/Wren/bot.py
+ExecStart=/home/winter/work/Wren/venv/bin/python3 -m wren.bot
 Restart=on-failure
 RestartSec=5
 

@@ -6,7 +6,7 @@ os.environ.setdefault("LLM_PROVIDERS", "lmstudio")
 os.environ.setdefault("LMSTUDIO_BASE_URL", "http://test")
 os.environ.setdefault("LMSTUDIO_MODEL", "test-model")
 
-import config
+from wren import config
 
 def test_parse_email_watch_empty():
     assert config._parse_email_watch("") == {}

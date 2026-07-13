@@ -7,9 +7,9 @@ os.environ.setdefault("LMSTUDIO_BASE_URL", "http://test")
 os.environ.setdefault("LMSTUDIO_MODEL", "test-model")
 
 from unittest.mock import MagicMock, AsyncMock, patch
-import shopping
-import shopping_plugin
-import discord_utils
+from wren import shopping
+from wren import shopping_plugin
+from wren import discord_utils
 
 @pytest.fixture(autouse=True)
 def tmp_db(tmp_path, monkeypatch):
