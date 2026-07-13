@@ -72,3 +72,7 @@ def _validate_timezone(raw: str) -> str:
 
 
 TIMEZONE = _validate_timezone(os.environ.get("TIMEZONE", "UTC"))
+
+SEARXNG_URL = os.environ.get("SEARXNG_URL", "")
+FIRECRAWL_URL = os.environ.get("FIRECRAWL_URL", "")
+FIRECRAWL_API_KEY = os.environ.get("FIRECRAWL_API_KEY", "")
