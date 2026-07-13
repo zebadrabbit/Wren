@@ -26,12 +26,12 @@ _ORDINALS = {
 def _resolve_target(content: str, results: list[dict]) -> str | None:
     m = _URL_RE.search(content)
     if m:
-        return m.group(0)
+        return m.group(0).rstrip(".,;:!?)]}\"'")
     if not results:
         return None
     low = content.lower()
     for word, idx in _ORDINALS.items():
-        if word in low:
+        if re.search(rf"\b{word}\b", low):
             return results[idx]["url"] if idx < len(results) else None
     m = re.search(r"#?(\d+)", content)
     if m:

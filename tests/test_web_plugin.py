@@ -34,6 +34,19 @@ def test_resolve_target_defaults_to_first():
 def test_resolve_target_none_without_results_or_url():
     assert web_plugin._resolve_target("read the first one", []) is None
 
+def test_resolve_target_strips_trailing_period():
+    assert web_plugin._resolve_target("read http://x.com/page.", RESULTS) == "http://x.com/page"
+
+def test_resolve_target_strips_wrapping_paren():
+    assert web_plugin._resolve_target("see (http://x.com/y)", RESULTS) == "http://x.com/y"
+
+def test_resolve_target_ordinal_not_matched_inside_larger_number():
+    # "21st" must NOT be treated as "first"; 21 is out of range -> None
+    assert web_plugin._resolve_target("read the 21st article", RESULTS) is None
+
+def test_resolve_target_first_still_works():
+    assert web_plugin._resolve_target("read the first one", RESULTS) == "http://a"
+
 def test_web_search_stores_results_and_replies(monkeypatch):
     monkeypatch.setattr(config, "SEARXNG_URL", "http://searx.local/")
     web_plugin._last_results.clear()
