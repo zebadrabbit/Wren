@@ -14,7 +14,7 @@ Today is {date}.
 
 When classifying intent, respond ONLY with valid JSON matching this schema:
 {{
-  "intent": "send_to_person" | "help" | {plugin_intents} | "chat",
+  "intent": "send_to_person" | "help" | "status" | {plugin_intents} | "chat",
   "content": "<extracted note or message content>",
   "tags": ["<tag1>", "<tag2>"],
   "person": "<name from whitelist or null>",
@@ -26,6 +26,7 @@ Known contacts: {contacts}
 Guidelines:
 - send_to_person: user wants to send a message or note to someone
 - help: user wants to know what Wren can do, asks for help, or asks to see available commands
+- status: user wants to know Wren's operational status — active LLM backend/model/endpoint, uptime, token usage
 {plugin_guidelines}
 - chat: anything else (questions, casual conversation)
 - tags: 1-3 lowercase single-word tags relevant to the content
@@ -47,6 +48,9 @@ def register_plugins(intents: list[str], guidelines: str) -> None:
     _plugin_intents = intents
     _plugin_guidelines = guidelines
 
+_last_provider: dict | None = None
+_token_usage = {"prompt": 0, "completion": 0, "total": 0}
+
 _clients: dict[str, OpenAI] = {}
 
 def _get_client(provider: dict) -> OpenAI:
@@ -55,6 +59,7 @@ def _get_client(provider: dict) -> OpenAI:
     return _clients[provider["name"]]
 
 def _complete(messages: list[dict], temperature: float, max_tokens: int = 400) -> str:
+    global _last_provider
     last_exc: Exception | None = None
     for provider in config.LLM_CHAIN:
         try:
@@ -65,11 +70,23 @@ def _complete(messages: list[dict], temperature: float, max_tokens: int = 400) -
                 temperature=temperature,
                 max_tokens=max_tokens,
             )
+            usage = getattr(resp, "usage", None)
+            if usage is not None:
+                _token_usage["prompt"] += usage.prompt_tokens or 0
+                _token_usage["completion"] += usage.completion_tokens or 0
+                _token_usage["total"] += usage.total_tokens or 0
+            _last_provider = provider
             return resp.choices[0].message.content.strip()
         except Exception as e:
             logging.warning(f"LLM provider '{provider['name']}' failed: {e}")
             last_exc = e
     raise last_exc
+
+def status() -> dict:
+    return {
+        "provider": _last_provider or config.LLM_CHAIN[0],
+        "tokens": dict(_token_usage),
+    }
 
 def detect_intent(user_id: int, text: str) -> dict:
     plugin_intent_enum = " | ".join(f'"{i}"' for i in _plugin_intents)

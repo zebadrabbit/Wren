@@ -18,6 +18,7 @@ def _mock_completion(content: str):
     choice.message = msg
     resp = MagicMock()
     resp.choices = [choice]
+    resp.usage = None
     return resp
 
 def _client_returning(content: str) -> MagicMock:
@@ -238,6 +239,73 @@ def test_detect_intent_prompt_includes_when_field():
     system_content = captured["messages"][0]["content"]
     assert '"when"' in system_content
     assert "set_reminder" in system_content
+
+def test_complete_tracks_token_usage(monkeypatch):
+    monkeypatch.setattr(brain, "_token_usage", {"prompt": 0, "completion": 0, "total": 0})
+    monkeypatch.setattr(brain, "_last_provider", None)
+    resp = _mock_completion("hi")
+    resp.usage = MagicMock(prompt_tokens=10, completion_tokens=5, total_tokens=15)
+    client = MagicMock()
+    client.chat.completions.create.return_value = resp
+    with patch.object(brain, "_get_client", return_value=client):
+        brain.chat("hello")
+    assert brain._token_usage == {"prompt": 10, "completion": 5, "total": 15}
+
+def test_complete_handles_missing_usage_gracefully(monkeypatch):
+    monkeypatch.setattr(brain, "_token_usage", {"prompt": 0, "completion": 0, "total": 0})
+    monkeypatch.setattr(brain, "_last_provider", None)
+    with patch.object(brain, "_get_client", return_value=_client_returning("hi")):
+        brain.chat("hello")
+    assert brain._token_usage == {"prompt": 0, "completion": 0, "total": 0}
+
+def test_complete_updates_last_provider_on_success(monkeypatch):
+    monkeypatch.setattr(brain, "_last_provider", None)
+    with patch.object(brain, "_get_client", return_value=_client_returning("hi")):
+        brain.chat("hello")
+    assert brain._last_provider["name"] == "lmstudio"
+
+def test_complete_updates_last_provider_after_fallback(monkeypatch):
+    monkeypatch.setattr(brain, "_last_provider", None)
+    primary = _client_raising(RuntimeError("primary down"))
+    secondary = _client_returning("fallback reply")
+
+    def fake_get_client(provider):
+        return primary if provider["name"] == "lmstudio" else secondary
+
+    with patch.object(brain, "_get_client", side_effect=fake_get_client):
+        brain.chat("hey")
+    assert brain._last_provider["name"] == "ollama"
+
+def test_status_before_any_call_uses_configured_primary(monkeypatch):
+    monkeypatch.setattr(brain, "_last_provider", None)
+    monkeypatch.setattr(brain, "_token_usage", {"prompt": 0, "completion": 0, "total": 0})
+    result = brain.status()
+    assert result["provider"]["name"] == config.LLM_CHAIN[0]["name"]
+    assert result["tokens"] == {"prompt": 0, "completion": 0, "total": 0}
+
+def test_status_after_call_uses_last_provider(monkeypatch):
+    monkeypatch.setattr(brain, "_last_provider", None)
+    monkeypatch.setattr(brain, "_token_usage", {"prompt": 0, "completion": 0, "total": 0})
+    with patch.object(brain, "_get_client", return_value=_client_returning("hi")):
+        brain.chat("hello")
+    result = brain.status()
+    assert result["provider"]["name"] == "lmstudio"
+
+def test_detect_intent_prompt_includes_status_intent():
+    payload = json.dumps({"intent": "chat", "content": "hi", "tags": [], "person": None})
+    captured = {}
+
+    def fake_create(**kwargs):
+        captured["messages"] = kwargs["messages"]
+        return _mock_completion(payload)
+
+    client = MagicMock()
+    client.chat.completions.create.side_effect = fake_create
+    with patch.object(brain, "_get_client", return_value=client):
+        brain.detect_intent(1, "hello")
+
+    system_content = captured["messages"][0]["content"]
+    assert '"status"' in system_content
 
 def test_now_uses_utc_by_default():
     assert "UTC" in brain._now()
