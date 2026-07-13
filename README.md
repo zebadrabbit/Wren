@@ -104,6 +104,11 @@ alternatives with the same profile.
 Enable web search and page reading by setting `SEARXNG_URL` (and optionally
 `FIRECRAWL_URL`) in `.env`. See `.env.example` for details.
 
+Your SearXNG must expose its JSON API — add `json` to `search.formats` in its
+`settings.yml` (not on by default) and, since its bot limiter 429s non-browser
+callers, set `server.limiter: false` on a private LAN. Otherwise every search
+just reports "Search is unavailable right now." Firecrawl works out of the box.
+
 - "what's the weather in Chicago tomorrow" / "any news on the port strike" —
   searches the web and summarizes the results with links
 - "read me the first one" / "read https://…" — fetches a page in full and
