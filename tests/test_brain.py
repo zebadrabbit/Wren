@@ -220,3 +220,20 @@ def test_register_plugins_included_in_prompt():
     assert "custom_intent" in system_content
     assert "does a custom thing" in system_content
     brain.register_plugins([], "")  # reset so later tests aren't affected
+
+def test_detect_intent_prompt_includes_when_field():
+    payload = json.dumps({"intent": "chat", "content": "hi", "tags": [], "person": None, "when": None})
+    captured = {}
+
+    def fake_create(**kwargs):
+        captured["messages"] = kwargs["messages"]
+        return _mock_completion(payload)
+
+    client = MagicMock()
+    client.chat.completions.create.side_effect = fake_create
+    with patch.object(brain, "_get_client", return_value=client):
+        brain.detect_intent(1, "hello")
+
+    system_content = captured["messages"][0]["content"]
+    assert '"when"' in system_content
+    assert "set_reminder" in system_content

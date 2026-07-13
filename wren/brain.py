@@ -16,7 +16,8 @@ When classifying intent, respond ONLY with valid JSON matching this schema:
   "intent": "send_to_person" | "help" | {plugin_intents} | "chat",
   "content": "<extracted note or message content>",
   "tags": ["<tag1>", "<tag2>"],
-  "person": "<name from whitelist or null>"
+  "person": "<name from whitelist or null>",
+  "when": "<ISO 8601 UTC datetime for set_reminder, or null>"
 }}
 
 Known contacts: {contacts}
@@ -28,6 +29,7 @@ Guidelines:
 - chat: anything else (questions, casual conversation)
 - tags: 1-3 lowercase single-word tags relevant to the content
 - person: only set when the intent is about contacting or sending something to someone else, use the contact name as given
+- when: only set for set_reminder — an absolute ISO 8601 UTC datetime computed from the user's relative/absolute time phrase and the current date/time above; null otherwise
 """
 
 def _now() -> str:
