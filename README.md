@@ -72,6 +72,11 @@ alternatives with the same profile.
 - "expand on the treehouse idea" — Wren elaborates via the LLM; nothing is
   saved back
 
+**Reminders**
+- "remind me to take out the trash at 6pm" / "in 20 minutes" / "tomorrow morning"
+- "what are my reminders" — shows all upcoming reminders with times
+- "cancel the trash reminder" — matches by phrase, asks for specifics if needed
+
 **Shopping** (one shared list across the whole household)
 - "add potatoes to shopping"
 - "got the potatoes" / "remove potatoes from shopping"
