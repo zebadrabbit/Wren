@@ -8,7 +8,7 @@ os.environ.setdefault("LMSTUDIO_MODEL", "test-model-1")
 os.environ.setdefault("OLLAMA_MODEL", "test-model-2")
 
 from unittest.mock import patch, MagicMock
-from wren import brain
+from wren import brain, config
 
 def _mock_completion(content: str):
     msg = MagicMock()
@@ -237,3 +237,11 @@ def test_detect_intent_prompt_includes_when_field():
     system_content = captured["messages"][0]["content"]
     assert '"when"' in system_content
     assert "set_reminder" in system_content
+
+def test_now_uses_utc_by_default():
+    assert "UTC" in brain._now()
+
+def test_now_reflects_configured_timezone(monkeypatch):
+    monkeypatch.setattr(config, "TIMEZONE", "America/Chicago")
+    result = brain._now()
+    assert "UTC" not in result
