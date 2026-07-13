@@ -179,6 +179,19 @@ def test_expand_returns_string():
     assert isinstance(result, str)
     assert len(result) > 0
 
+def test_detect_intent_caps_max_tokens():
+    payload = json.dumps({"intent": "chat", "content": "hi", "tags": [], "person": None})
+    client = _client_returning(payload)
+    with patch.object(brain, "_get_client", return_value=client):
+        brain.detect_intent(1, "hello")
+    assert client.chat.completions.create.call_args.kwargs["max_tokens"] == 200
+
+def test_chat_caps_max_tokens():
+    client = _client_returning("Hello.")
+    with patch.object(brain, "_get_client", return_value=client):
+        brain.chat("hey")
+    assert client.chat.completions.create.call_args.kwargs["max_tokens"] == 400
+
 def test_register_plugins_included_in_prompt():
     brain.register_plugins(["custom_intent"], "- custom_intent: does a custom thing")
     captured = {}

@@ -6,6 +6,9 @@ from . import config
 
 _SYSTEM = """You are Wren, a private personal assistant. You are short, structured, and ready. No filler, no affirmations.
 
+Answer directly. Do not show reasoning, planning, or a thinking process —
+no <think> tags, no step-by-step deliberation, just the final output. /no_think
+
 Today is {date}.
 
 When classifying intent, respond ONLY with valid JSON matching this schema:
@@ -47,7 +50,7 @@ def _get_client(provider: dict) -> OpenAI:
         _clients[provider["name"]] = OpenAI(base_url=provider["base_url"], api_key=provider["api_key"])
     return _clients[provider["name"]]
 
-def _complete(messages: list[dict], temperature: float) -> str:
+def _complete(messages: list[dict], temperature: float, max_tokens: int = 400) -> str:
     last_exc: Exception | None = None
     for provider in config.LLM_CHAIN:
         try:
@@ -56,6 +59,7 @@ def _complete(messages: list[dict], temperature: float) -> str:
                 model=provider["model"],
                 messages=messages,
                 temperature=temperature,
+                max_tokens=max_tokens,
             )
             return resp.choices[0].message.content.strip()
         except Exception as e:
@@ -76,6 +80,7 @@ def detect_intent(user_id: int, text: str) -> dict:
                 {"role": "user", "content": text},
             ],
             temperature=0.1,
+            max_tokens=200,
         )
         if raw.startswith("```"):
             raw = raw.split("```")[1]
@@ -93,26 +98,29 @@ def recall(notes: list[dict], query: str) -> str:
     prompt = f"User's notes:\n{notes_text}\n\nUser asked: {query}\n\nAnswer directly using only what's in the notes."
     return _complete(
         [
-            {"role": "system", "content": "You are Wren. Short, structured, ready. No filler."},
+            {"role": "system", "content": "You are Wren. Short, structured, ready. No filler. Answer directly, no reasoning or thinking process shown. /no_think"},
             {"role": "user", "content": prompt},
         ],
         temperature=0.3,
+        max_tokens=400,
     )
 
 def chat(text: str) -> str:
     return _complete(
         [
-            {"role": "system", "content": f"You are Wren, a personal assistant. Short, structured, ready. No filler. Today is {_now()}."},
+            {"role": "system", "content": f"You are Wren, a personal assistant. Short, structured, ready. No filler. Answer directly, no reasoning or thinking process shown. /no_think Today is {_now()}."},
             {"role": "user", "content": text},
         ],
         temperature=0.7,
+        max_tokens=400,
     )
 
 def expand(idea_text: str) -> str:
     return _complete(
         [
-            {"role": "system", "content": "You are Wren. Short, structured, ready. No filler. Elaborate on the user's idea with concrete next steps or angles they might not have considered."},
+            {"role": "system", "content": "You are Wren. Short, structured, ready. No filler. Answer directly, no reasoning or thinking process shown. /no_think Elaborate on the user's idea with concrete next steps or angles they might not have considered."},
             {"role": "user", "content": f"Idea: {idea_text}\n\nExpand on this."},
         ],
         temperature=0.5,
+        max_tokens=600,
     )
