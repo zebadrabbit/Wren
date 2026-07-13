@@ -5,6 +5,7 @@ os.environ.setdefault("HUSBAND_ID", "2")
 os.environ.setdefault("LLM_PROVIDERS", "lmstudio")
 os.environ.setdefault("LMSTUDIO_BASE_URL", "http://test")
 os.environ.setdefault("LMSTUDIO_MODEL", "test-model")
+os.environ.setdefault("TIMEZONE", "UTC")
 
 import pytest
 from wren import config

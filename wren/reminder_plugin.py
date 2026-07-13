@@ -32,6 +32,19 @@ def _format_local(fire_at_utc_iso: str) -> str:
     dt = datetime.fromisoformat(fire_at_utc_iso).astimezone(ZoneInfo(config.TIMEZONE))
     return dt.strftime("%Y-%m-%d %H:%M %Z")
 
+def _resolve_reminder(user_id: int, phrase: str) -> list[dict]:
+    # The model often extracts a non-literal reference ("the last reminder",
+    # "the 9am one") rather than words that literally appear in the saved
+    # content, so a plain substring search finds nothing. If there's only
+    # one pending reminder, there's nothing else the phrase could mean, so
+    # fall back to it. With 2+ pending reminders an unmatched phrase still
+    # correctly reports no match rather than guessing which one to cancel.
+    items = reminders.pending(user_id)
+    matches = reminders.find_pending(user_id, phrase)
+    if not matches and len(items) == 1:
+        matches = items
+    return matches
+
 async def handle(intent, message, client, user_id, content, tags, person, when):
     if intent == "set_reminder":
         parsed_utc = _parse_when(when)
@@ -54,7 +67,7 @@ async def handle(intent, message, client, user_id, content, tags, person, when):
         if not content.strip():
             await message.channel.send("Which reminder do you want to cancel?")
         else:
-            matches = reminders.find_pending(user_id, content)
+            matches = _resolve_reminder(user_id, content)
             if not matches:
                 await message.channel.send("No reminder found matching that.")
             elif len(matches) > 1:

@@ -6,6 +6,7 @@ os.environ.setdefault("LLM_PROVIDERS", "lmstudio,ollama")
 os.environ.setdefault("LMSTUDIO_BASE_URL", "http://test-primary")
 os.environ.setdefault("LMSTUDIO_MODEL", "test-model-1")
 os.environ.setdefault("OLLAMA_MODEL", "test-model-2")
+os.environ.setdefault("TIMEZONE", "UTC")
 
 from unittest.mock import patch, MagicMock
 from wren import brain, config

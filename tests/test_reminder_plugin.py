@@ -5,6 +5,7 @@ os.environ.setdefault("HUSBAND_ID", "2")
 os.environ.setdefault("LLM_PROVIDERS", "lmstudio")
 os.environ.setdefault("LMSTUDIO_BASE_URL", "http://test")
 os.environ.setdefault("LMSTUDIO_MODEL", "test-model")
+os.environ.setdefault("TIMEZONE", "UTC")
 
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
@@ -88,6 +89,24 @@ def test_cancel_reminder_single_match():
     asyncio.run(reminder_plugin.handle("cancel_reminder", message, None, 1, "oven", [], None, None))
     message.channel.send.assert_awaited_once_with("Cancelled: check the oven.")
     assert reminders.pending(1) == []
+
+def test_cancel_reminder_nonliteral_phrase_resolves_when_only_one_pending():
+    # Regression test: the model often extracts a paraphrase ("the last
+    # reminder", "the 9am one") rather than words literally present in the
+    # saved content. With only one pending reminder, that's still resolvable.
+    reminders.save(1, "message me at 9am my time to confirm", _future_iso())
+    message = _message()
+    asyncio.run(reminder_plugin.handle("cancel_reminder", message, None, 1, "the last reminder", [], None, None))
+    message.channel.send.assert_awaited_once_with("Cancelled: message me at 9am my time to confirm.")
+    assert reminders.pending(1) == []
+
+def test_cancel_reminder_nonliteral_phrase_stays_ambiguous_with_multiple_pending():
+    reminders.save(1, "check the oven", _future_iso())
+    reminders.save(1, "call mom", _future_iso())
+    message = _message()
+    asyncio.run(reminder_plugin.handle("cancel_reminder", message, None, 1, "the last reminder", [], None, None))
+    message.channel.send.assert_awaited_once_with("No reminder found matching that.")
+    assert len(reminders.pending(1)) == 2
 
 def test_cancel_reminder_multiple_matches():
     reminders.save(1, "check the oven at noon", _future_iso())
