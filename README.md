@@ -2,8 +2,8 @@
 
 A private Discord assistant for a small household whitelist. DM it plain
 English and it figures out the intent — save a note, manage a shared
-shopping list, capture an idea, message someone else on the whitelist, or
-just chat.
+shopping list, capture an idea, search the web, message someone else on the
+whitelist, or just chat.
 
 ## Setup
 
@@ -98,6 +98,16 @@ alternatives with the same profile.
 - "show status" / "what backend are you using" / "show model" — reports the
   active LLM backend/model/endpoint, process uptime, and token usage since
   the last restart (resets on restart, not persisted)
+
+## Web lookup (optional)
+
+Enable web search and page reading by setting `SEARXNG_URL` (and optionally
+`FIRECRAWL_URL`) in `.env`. See `.env.example` for details.
+
+- "what's the weather in Chicago tomorrow" / "any news on the port strike" —
+  searches the web and summarizes the results with links
+- "read me the first one" / "read https://…" — fetches a page in full and
+  summarizes it
 
 ## Email-arrival watcher (optional)
 

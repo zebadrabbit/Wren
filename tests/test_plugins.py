@@ -101,3 +101,9 @@ def test_all_intents_includes_reminder_intents():
     intents = plugins.all_intents()
     for intent in reminder_plugin.INTENTS:
         assert intent in intents
+
+def test_web_intents_registered():
+    from wren import plugins, web_plugin
+    for intent in ("web_search", "read_page"):
+        assert intent in plugins.all_intents()
+        assert plugins.INTENT_HANDLERS[intent] is web_plugin
