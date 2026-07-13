@@ -16,6 +16,9 @@ just chat.
    - `HUSBAND_ID` — optional, a second whitelisted contact. Leave unset for
      owner-only use (a DM command to add contacts at runtime is planned,
      to replace hand-editing this).
+   - `TIMEZONE` — optional, default UTC. Set to your IANA timezone (e.g.
+     `America/Chicago`) so reminder times like "9am" are interpreted
+     correctly.
    - Everything else in `.env.example` is optional.
 4. In the [Discord Developer Portal](https://discord.com/developers/applications/),
    select your bot application → **Bot** tab → under **Privileged Gateway
@@ -76,6 +79,8 @@ alternatives with the same profile.
 - "remind me to take out the trash at 6pm" / "in 20 minutes" / "tomorrow morning"
 - "what are my reminders" — shows all upcoming reminders with times
 - "cancel the trash reminder" — matches by phrase, asks for specifics if needed
+- Times are interpreted in the configured `TIMEZONE` (default UTC) — set
+  it in `.env` to your local zone.
 
 **Shopping** (one shared list across the whole household)
 - "add potatoes to shopping"

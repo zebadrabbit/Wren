@@ -7,10 +7,12 @@ os.environ.setdefault("LMSTUDIO_BASE_URL", "http://test")
 os.environ.setdefault("LMSTUDIO_MODEL", "test-model")
 
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 from unittest.mock import MagicMock, AsyncMock, patch
 from wren import reminders
 from wren import reminder_plugin
 from wren import discord_utils
+from wren import config
 
 @pytest.fixture(autouse=True)
 def tmp_db(tmp_path, monkeypatch):
@@ -111,6 +113,33 @@ def test_start_fires_due_reminder_and_marks_fired():
     mock_notify = asyncio.run(run_one_iteration())
     mock_notify.assert_awaited_once()
     assert reminders.pending(1) == []
+
+def test_parse_when_naive_datetime_localized_to_configured_timezone(monkeypatch):
+    monkeypatch.setattr(config, "TIMEZONE", "America/Chicago")
+    # Jan 1 2030, 9am Chicago time (CST, UTC-6 — no DST ambiguity), no offset in the string
+    result = reminder_plugin._parse_when("2030-01-01T09:00:00")
+    assert result is not None
+    assert result.isoformat(timespec="seconds") == "2030-01-01T15:00:00+00:00"
+
+def test_parse_when_offset_aware_input_unaffected_by_timezone_config(monkeypatch):
+    monkeypatch.setattr(config, "TIMEZONE", "America/Chicago")
+    # already has an explicit UTC offset — config.TIMEZONE must not touch it
+    result = reminder_plugin._parse_when("2030-01-01T15:00:00+00:00")
+    assert result.isoformat(timespec="seconds") == "2030-01-01T15:00:00+00:00"
+
+def test_format_local_converts_utc_to_configured_timezone(monkeypatch):
+    monkeypatch.setattr(config, "TIMEZONE", "America/Chicago")
+    # July -> Chicago is CDT (UTC-5), no DST ambiguity
+    result = reminder_plugin._format_local("2026-07-13T12:00:00+00:00")
+    assert result == "2026-07-13 07:00 CDT"
+
+def test_set_reminder_confirmation_shows_local_time(monkeypatch):
+    monkeypatch.setattr(config, "TIMEZONE", "America/Chicago")
+    message = _message()
+    asyncio.run(reminder_plugin.handle("set_reminder", message, None, 1, "check the oven", [], None, "2030-01-01T09:00:00"))
+    sent = message.channel.send.call_args[0][0]
+    assert "2030-01-01 09:00 CST" in sent
+    assert "UTC" not in sent
 
 def test_start_does_not_fire_future_reminder():
     reminders.save(1, "check the oven", _future_iso(3600))
