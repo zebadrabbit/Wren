@@ -4,7 +4,7 @@ from . import brain
 INTENTS = ["save_note", "recall_notes", "save_idea", "recall_ideas", "discard_idea", "expand_idea"]
 
 PROMPT_GUIDELINES = """- save_note: user is capturing something for later (grocery item, plan, reminder)
-- recall_notes: user wants to retrieve or search past notes
+- recall_notes: user wants to retrieve or search past notes; only set tags if the user explicitly names a category to filter by (e.g. "show my grocery notes") — otherwise leave tags empty to see everything, since you don't know what tags were used when notes were saved
 - save_idea: user explicitly wants to remember/capture an idea to revisit or expand later (e.g. "remember this idea...", "idea:..."), distinct from save_note's reminders/grocery items/plans
 - recall_ideas: user wants to see all their saved ideas
 - discard_idea: user wants to delete a previously saved idea; content is a short phrase identifying which idea, not the full idea text
@@ -17,6 +17,11 @@ async def handle(intent, message, client, user_id, content, tags, person):
 
     elif intent == "recall_notes":
         matches = notes.search(user_id, tags=tags if tags else None)
+        if not matches and tags:
+            # the model's guessed tag may not match what was actually used
+            # when the note was saved — fall back to an unfiltered search
+            # rather than falsely reporting no notes at all
+            matches = notes.search(user_id, tags=None)
         if not matches:
             await message.channel.send("No notes found.")
         else:

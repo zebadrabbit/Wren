@@ -39,6 +39,29 @@ def test_recall_notes_with_matches():
         asyncio.run(notes_plugin.handle("recall_notes", message, None, 1, "what groceries", [], None))
     message.channel.send.assert_awaited_once_with("You need milk.")
 
+def test_recall_notes_falls_back_when_guessed_tag_does_not_match():
+    # Regression test: the LLM may guess a tag for the recall query itself
+    # (e.g. "notes") that doesn't match the tags actually used when the note
+    # was saved (e.g. "self,motivation") — recall_notes must not report "No
+    # notes found." just because that guessed tag doesn't overlap.
+    notes.save(1, "how awesome you are", ["self", "motivation"])
+    message = _message()
+    with patch.object(brain, "recall", return_value="You're awesome."):
+        asyncio.run(notes_plugin.handle("recall_notes", message, None, 1, "", ["notes"], None))
+    message.channel.send.assert_awaited_once_with("You're awesome.")
+
+def test_recall_notes_respects_real_tag_match():
+    notes.save(1, "buy milk", ["grocery"])
+    notes.save(1, "fix the fence", ["home"])
+    message = _message()
+    with patch.object(brain, "recall", return_value="You need milk.") as mock_recall:
+        asyncio.run(notes_plugin.handle("recall_notes", message, None, 1, "groceries", ["grocery"], None))
+    message.channel.send.assert_awaited_once_with("You need milk.")
+    # only the grocery-tagged note should have been passed to brain.recall
+    passed_notes = mock_recall.call_args[0][0]
+    assert len(passed_notes) == 1
+    assert passed_notes[0]["content"] == "buy milk"
+
 def test_save_idea_empty_content_guarded():
     message = _message()
     asyncio.run(notes_plugin.handle("save_idea", message, None, 1, "  ", [], None))
