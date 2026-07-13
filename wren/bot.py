@@ -40,6 +40,10 @@ HELP_TEXT = """Here's what I can actually do:
 **Status**
 - "show status" / "what backend are you using" / "show model" — reports the active LLM backend, endpoint, uptime, and token usage
 
+**Web** (when configured)
+- "what's the weather in Chicago tomorrow" / "any news on the port strike" — searches the web and summarizes with links
+- "read me the first one" / "read https://…" — fetches a page in full and summarizes
+
 Anything else just falls through to open-ended chat."""
 
 _START_TIME = time.monotonic()
