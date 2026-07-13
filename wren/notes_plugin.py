@@ -10,7 +10,7 @@ PROMPT_GUIDELINES = """- save_note: user is capturing something for later (groce
 - discard_idea: user wants to delete a previously saved idea; content is a short phrase identifying which idea, not the full idea text
 - expand_idea: user wants Wren to elaborate/brainstorm further on a previously saved idea; content is a short phrase identifying which idea, not the full idea text"""
 
-async def handle(intent, message, client, user_id, content, tags, person):
+async def handle(intent, message, client, user_id, content, tags, person, when):
     if intent == "save_note":
         notes.save(user_id, content, tags)
         await message.channel.send("Saved.")

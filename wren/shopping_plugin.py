@@ -9,7 +9,7 @@ PROMPT_GUIDELINES = """- add_shopping_item: user wants to add an item to the sha
 - recall_shopping: user wants to see the current shopping list
 - send_shopping_list: user wants to send the whole shopping list to someone"""
 
-async def handle(intent, message, client, user_id, content, tags, person):
+async def handle(intent, message, client, user_id, content, tags, person, when):
     if intent == "add_shopping_item":
         _, was_new = shopping.add(content, added_by=config.ID_TO_NAME[user_id])
         if was_new:

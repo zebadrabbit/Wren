@@ -77,10 +77,11 @@ async def on_message(message: discord.Message):
         content = result.get("content", text)
         tags = result.get("tags", [])
         person = result.get("person")
+        when = result.get("when")
 
         if intent in plugins.INTENT_HANDLERS:
             await plugins.INTENT_HANDLERS[intent].handle(
-                intent, message, client, user_id, content, tags, person
+                intent, message, client, user_id, content, tags, person, when
             )
 
         elif intent == "help":
