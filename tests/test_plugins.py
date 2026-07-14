@@ -11,6 +11,7 @@ from wren import notes_plugin
 from wren import shopping_plugin
 from wren import email_plugin
 from wren import reminder_plugin
+from wren import contacts_plugin
 
 def test_all_intents_includes_both_plugins():
     intents = plugins.all_intents()
@@ -107,3 +108,11 @@ def test_web_intents_registered():
     for intent in ("web_search", "read_page"):
         assert intent in plugins.all_intents()
         assert plugins.INTENT_HANDLERS[intent] is web_plugin
+
+def test_contacts_plugin_registered():
+    assert contacts_plugin in plugins.PLUGINS
+
+def test_all_intents_includes_contacts_intents():
+    intents = plugins.all_intents()
+    for intent in contacts_plugin.INTENTS:
+        assert intent in intents

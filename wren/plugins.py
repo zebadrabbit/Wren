@@ -4,8 +4,9 @@ from . import shopping_plugin
 from . import email_plugin
 from . import reminder_plugin
 from . import web_plugin
+from . import contacts_plugin
 
-PLUGINS = [notes_plugin, shopping_plugin, email_plugin, reminder_plugin, web_plugin]
+PLUGINS = [notes_plugin, shopping_plugin, email_plugin, reminder_plugin, web_plugin, contacts_plugin]
 
 INTENT_HANDLERS = {
     intent: plugin

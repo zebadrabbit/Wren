@@ -6,6 +6,7 @@ from . import brain
 from . import notes
 from . import shopping
 from . import reminders
+from . import contacts
 from . import plugins
 from . import discord_utils
 
@@ -32,10 +33,15 @@ HELP_TEXT = """Here's what I can actually do:
 - "add potatoes to shopping"
 - "got the potatoes" / "remove potatoes from shopping"
 - "what's on the shopping list"
-- "send shopping to husband"
+- "send shopping to hubby"
 
 **Messaging**
-- "tell husband dinner's at 7" — DMs the other whitelisted contact
+- "tell hubby dinner's at 7" — DMs a whitelisted contact by name
+
+**Contacts** (owner only)
+- "add 123456789012345678 as hubby" — whitelists a new contact
+- "remove hubby" — un-whitelists a contact
+- "who's whitelisted" — lists current contacts
 
 **Status**
 - "show status" / "what backend are you using" / "show model" — reports the active LLM backend, endpoint, uptime, and token usage
@@ -59,6 +65,7 @@ async def on_ready():
     notes.init_db()
     shopping.init_db()
     reminders.init_db()
+    contacts.init_db()
     await plugins.start_all(client)
     logging.info(f"Wren online as {client.user}")
 
