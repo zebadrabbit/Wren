@@ -6,6 +6,8 @@ os.environ.setdefault("LLM_PROVIDERS", "lmstudio")
 os.environ.setdefault("LMSTUDIO_BASE_URL", "http://test")
 os.environ.setdefault("LMSTUDIO_MODEL", "test-model")
 
+import io
+import discord
 from unittest.mock import MagicMock, AsyncMock, patch
 from wren import notes
 from wren import brain
@@ -143,3 +145,55 @@ def test_expand_idea_single_match():
     with patch.object(brain, "expand", return_value="Here's how..."):
         asyncio.run(notes_plugin.handle("expand_idea", message, None, 1, "treehouse", [], None, None))
     message.channel.send.assert_awaited_once_with("Here's how...")
+
+def test_export_notes_empty():
+    message = _message()
+    asyncio.run(notes_plugin.handle("export_notes", message, None, 1, "", [], None, None))
+    message.channel.send.assert_awaited_once_with("Nothing to export yet.")
+    assert "file" not in message.channel.send.call_args.kwargs
+
+def _sent_file_text(message):
+    call = message.channel.send.call_args
+    file_obj = call.kwargs["file"]
+    file_obj.fp.seek(0)
+    return file_obj.fp.read().decode("utf-8"), file_obj.filename
+
+def test_export_notes_notes_only():
+    notes.save(1, "buy milk", ["grocery"])
+    message = _message()
+    asyncio.run(notes_plugin.handle("export_notes", message, None, 1, "", [], None, None))
+    message.channel.send.assert_awaited_once()
+    text, filename = _sent_file_text(message)
+    assert filename.startswith("notes-export-") and filename.endswith(".md")
+    assert "## Notes" in text
+    assert "buy milk" in text
+    assert "(tags: grocery)" in text
+    assert "## Ideas\n_None._" in text
+
+def test_export_notes_ideas_only():
+    notes.save(1, "build a treehouse", ["idea"])
+    message = _message()
+    asyncio.run(notes_plugin.handle("export_notes", message, None, 1, "", [], None, None))
+    text, _ = _sent_file_text(message)
+    assert "## Notes\n_None._" in text
+    assert "## Ideas" in text
+    assert "- build a treehouse" in text
+
+def test_export_notes_both():
+    notes.save(1, "buy milk", ["grocery"])
+    notes.save(1, "build a treehouse", ["idea"])
+    message = _message()
+    asyncio.run(notes_plugin.handle("export_notes", message, None, 1, "", [], None, None))
+    text, _ = _sent_file_text(message)
+    assert "buy milk" in text
+    assert "- build a treehouse" in text
+    assert "_None._" not in text
+
+def test_export_notes_owner_isolation():
+    notes.save(1, "my note", ["personal"])
+    notes.save(2, "their note", ["personal"])
+    message = _message()
+    asyncio.run(notes_plugin.handle("export_notes", message, None, 1, "", [], None, None))
+    text, _ = _sent_file_text(message)
+    assert "my note" in text
+    assert "their note" not in text

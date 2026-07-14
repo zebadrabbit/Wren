@@ -1,14 +1,44 @@
+import io
+from datetime import datetime
+from zoneinfo import ZoneInfo
+import discord
 from . import notes
 from . import brain
+from . import config
 
-INTENTS = ["save_note", "recall_notes", "save_idea", "recall_ideas", "discard_idea", "expand_idea"]
+INTENTS = ["save_note", "recall_notes", "save_idea", "recall_ideas", "discard_idea", "expand_idea", "export_notes"]
 
 PROMPT_GUIDELINES = """- save_note: user is capturing something for later (grocery item, plan, reminder)
 - recall_notes: user wants to retrieve or search past notes; only set tags if the user explicitly names a category to filter by (e.g. "show my grocery notes") — otherwise leave tags empty to see everything, since you don't know what tags were used when notes were saved
 - save_idea: user explicitly wants to remember/capture an idea to revisit or expand later (e.g. "remember this idea...", "idea:..."), distinct from save_note's reminders/grocery items/plans
 - recall_ideas: user wants to see all their saved ideas
 - discard_idea: user wants to delete a previously saved idea; content is a short phrase identifying which idea, not the full idea text
-- expand_idea: user wants Wren to elaborate/brainstorm further on a previously saved idea; content is a short phrase identifying which idea, not the full idea text"""
+- expand_idea: user wants Wren to elaborate/brainstorm further on a previously saved idea; content is a short phrase identifying which idea, not the full idea text
+- export_notes: user wants their notes/ideas as a downloadable file to use elsewhere (e.g. "send my notes as a file", "export my ideas so I can paste them into X")"""
+
+def _build_export(user_id: int) -> str | None:
+    all_notes = notes.search(user_id)
+    plain = [n for n in all_notes if "idea" not in n["tags"].split(",")]
+    ideas = [n for n in all_notes if "idea" in n["tags"].split(",")]
+    if not plain and not ideas:
+        return None
+
+    today = datetime.now(ZoneInfo(config.TIMEZONE)).strftime("%Y-%m-%d")
+    lines = [f"# Wren Notes Export — {today}", "", "## Notes"]
+    if plain:
+        for n in plain:
+            tag_suffix = f" (tags: {n['tags']})" if n["tags"] else ""
+            lines.append(f"- [{n['created_at'][:10]}] {n['content']}{tag_suffix}")
+    else:
+        lines.append("_None._")
+    lines.append("")
+    lines.append("## Ideas")
+    if ideas:
+        for i in ideas:
+            lines.append(f"- {i['content']}")
+    else:
+        lines.append("_None._")
+    return "\n".join(lines) + "\n"
 
 async def handle(intent, message, client, user_id, content, tags, person, when):
     if intent == "save_note":
@@ -78,3 +108,12 @@ async def handle(intent, message, client, user_id, content, tags, person, when):
             else:
                 expansion = brain.expand(matches[0]["content"])
                 await message.channel.send(expansion)
+
+    elif intent == "export_notes":
+        export_text = _build_export(user_id)
+        if export_text is None:
+            await message.channel.send("Nothing to export yet.")
+        else:
+            today = datetime.now(ZoneInfo(config.TIMEZONE)).strftime("%Y-%m-%d")
+            buf = io.BytesIO(export_text.encode("utf-8"))
+            await message.channel.send(file=discord.File(buf, filename=f"notes-export-{today}.md"))
