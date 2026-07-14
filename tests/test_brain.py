@@ -212,6 +212,37 @@ def test_chat_caps_max_tokens():
         brain.chat("hey")
     assert client.chat.completions.create.call_args.kwargs["max_tokens"] == 400
 
+def test_chat_without_history_matches_original_shape():
+    client = _client_returning("Hello.")
+    with patch.object(brain, "_get_client", return_value=client):
+        brain.chat("hey")
+    messages = client.chat.completions.create.call_args.kwargs["messages"]
+    assert len(messages) == 2
+    assert messages[0]["role"] == "system"
+    assert messages[1] == {"role": "user", "content": "hey"}
+
+def test_chat_with_history_inserts_between_system_and_final_user_message():
+    client = _client_returning("Hello.")
+    history = [
+        {"role": "user", "content": "earlier question"},
+        {"role": "assistant", "content": "earlier reply"},
+    ]
+    with patch.object(brain, "_get_client", return_value=client):
+        brain.chat("follow-up question", history=history)
+    messages = client.chat.completions.create.call_args.kwargs["messages"]
+    assert len(messages) == 4
+    assert messages[0]["role"] == "system"
+    assert messages[1] == {"role": "user", "content": "earlier question"}
+    assert messages[2] == {"role": "assistant", "content": "earlier reply"}
+    assert messages[3] == {"role": "user", "content": "follow-up question"}
+
+def test_chat_with_empty_history_list_matches_no_history_shape():
+    client = _client_returning("Hello.")
+    with patch.object(brain, "_get_client", return_value=client):
+        brain.chat("hey", history=[])
+    messages = client.chat.completions.create.call_args.kwargs["messages"]
+    assert len(messages) == 2
+
 def test_register_plugins_included_in_prompt():
     brain.register_plugins(["custom_intent"], "- custom_intent: does a custom thing")
     captured = {}

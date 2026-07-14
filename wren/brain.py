@@ -126,15 +126,14 @@ def recall(notes: list[dict], query: str) -> str:
         max_tokens=400,
     )
 
-def chat(text: str) -> str:
-    return _complete(
-        [
-            {"role": "system", "content": f"You are Wren, a personal assistant. Short, structured, ready. No filler. Answer directly, no reasoning or thinking process shown. /no_think Today is {_now()}."},
-            {"role": "user", "content": text},
-        ],
-        temperature=0.7,
-        max_tokens=400,
-    )
+def chat(text: str, history: list[dict] | None = None) -> str:
+    messages = [
+        {"role": "system", "content": f"You are Wren, a personal assistant. Short, structured, ready. No filler. Answer directly, no reasoning or thinking process shown. /no_think Today is {_now()}."},
+    ]
+    if history:
+        messages.extend(history)
+    messages.append({"role": "user", "content": text})
+    return _complete(messages, temperature=0.7, max_tokens=400)
 
 def expand(idea_text: str) -> str:
     return _complete(
