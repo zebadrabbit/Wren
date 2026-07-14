@@ -154,7 +154,13 @@ async def on_message(message: discord.Message):
                     await message.channel.send(f"Couldn't reach {target_name} — their DMs may be closed.")
 
         else:  # chat
-            reply = brain.chat(text)
+            try:
+                raw_history = [m async for m in message.channel.history(limit=10, before=message)]
+                history = discord_utils.history_to_messages(raw_history, client.user.id)
+            except Exception as e:
+                logging.warning(f"Could not fetch history: {e}")
+                history = None
+            reply = brain.chat(text, history)
             await message.channel.send(reply)
 
         await _react(message, "✅")
