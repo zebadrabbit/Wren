@@ -6,6 +6,11 @@ import logging
 from . import config
 from . import discord_utils
 
+PLUGIN_NAME = "Email Watcher"
+
+def is_active() -> bool:
+    return bool(config.EMAIL_WATCH)
+
 def _connect() -> imaplib.IMAP4_SSL:
     conn = imaplib.IMAP4_SSL(config.IMAP_HOST)
     conn.login(config.IMAP_USER, config.IMAP_PASSWORD)

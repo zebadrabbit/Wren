@@ -4,6 +4,7 @@ from . import config
 from . import contacts
 
 INTENTS = ["add_contact", "remove_contact", "list_contacts"]
+PLUGIN_NAME = "Contacts"
 
 PROMPT_GUIDELINES = """- add_contact: owner wants to add a new whitelisted contact (e.g. "add 123456789012345678 as hubby"); content is the raw numeric Discord ID, person is the alias
 - remove_contact: owner wants to remove a whitelisted contact (e.g. "remove hubby"); person is the alias to remove

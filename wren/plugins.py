@@ -24,6 +24,12 @@ def all_guidelines() -> str:
         if (text := getattr(plugin, "PROMPT_GUIDELINES", ""))
     )
 
+def plugin_status() -> list[tuple[str, bool]]:
+    return [
+        (p.PLUGIN_NAME if hasattr(p, "PLUGIN_NAME") else p.__name__, getattr(p, "is_active", lambda: True)())
+        for p in PLUGINS
+    ]
+
 _started_plugins: set = set()
 _tasks: list = []
 

@@ -3,6 +3,7 @@ from . import shopping
 from . import discord_utils
 
 INTENTS = ["add_shopping_item", "remove_shopping_item", "recall_shopping", "send_shopping_list"]
+PLUGIN_NAME = "Shopping List"
 
 PROMPT_GUIDELINES = """- add_shopping_item: user wants to add an item to the shared shopping list
 - remove_shopping_item: user got/bought/already has an item and wants it off the shopping list

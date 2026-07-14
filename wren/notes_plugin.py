@@ -7,6 +7,7 @@ from . import brain
 from . import config
 
 INTENTS = ["save_note", "recall_notes", "save_idea", "recall_ideas", "discard_idea", "expand_idea", "export_notes"]
+PLUGIN_NAME = "Notes & Ideas"
 
 PROMPT_GUIDELINES = """- save_note: user is capturing something for later (grocery item, plan, reminder)
 - recall_notes: user wants to retrieve or search past notes; only set tags if the user explicitly names a category to filter by (e.g. "show my grocery notes") — otherwise leave tags empty to see everything, since you don't know what tags were used when notes were saved
