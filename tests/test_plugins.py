@@ -12,6 +12,7 @@ from wren import shopping_plugin
 from wren import email_plugin
 from wren import reminder_plugin
 from wren import contacts_plugin
+from wren import pins_plugin
 
 def test_all_intents_includes_both_plugins():
     intents = plugins.all_intents()
@@ -115,4 +116,12 @@ def test_contacts_plugin_registered():
 def test_all_intents_includes_contacts_intents():
     intents = plugins.all_intents()
     for intent in contacts_plugin.INTENTS:
+        assert intent in intents
+
+def test_pins_plugin_registered():
+    assert pins_plugin in plugins.PLUGINS
+
+def test_all_intents_includes_pins_intents():
+    intents = plugins.all_intents()
+    for intent in pins_plugin.INTENTS:
         assert intent in intents

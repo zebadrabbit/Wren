@@ -51,6 +51,11 @@ HELP_TEXT = """Here's what I can actually do:
 - "what's the weather in Chicago tomorrow" / "any news on the port strike" — searches the web and summarizes with links
 - "read me the first one" / "read https://…" — fetches a page in full and summarizes
 
+**Pins**
+- "pin: wifi password is 12345" — pins an important note for quick access
+- "unpin the wifi one" — removes a pin, asks for specifics if more than one matches
+- "what's pinned" — lists current pins
+
 Anything else just falls through to open-ended chat."""
 
 _START_TIME = time.monotonic()
