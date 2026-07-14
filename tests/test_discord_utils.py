@@ -85,3 +85,37 @@ def test_notify_id_not_found_returns_false():
     result = asyncio.run(discord_utils.notify_id(client, 42, "hello"))
 
     assert result is False
+
+def _fake_message(author_id: int, content: str):
+    msg = MagicMock()
+    msg.author.id = author_id
+    msg.content = content
+    return msg
+
+def test_history_to_messages_empty_list():
+    assert discord_utils.history_to_messages([], bot_user_id=99) == []
+
+def test_history_to_messages_reverses_to_chronological_order():
+    # channel.history() yields newest-first; input here is [newest, ..., oldest]
+    newest = _fake_message(1, "second thing I said")
+    oldest = _fake_message(1, "first thing I said")
+    result = discord_utils.history_to_messages([newest, oldest], bot_user_id=99)
+    assert result == [
+        {"role": "user", "content": "first thing I said"},
+        {"role": "user", "content": "second thing I said"},
+    ]
+
+def test_history_to_messages_assigns_assistant_role_to_bot_author():
+    bot_msg = _fake_message(99, "Wren's reply")
+    user_msg = _fake_message(1, "user's message")
+    result = discord_utils.history_to_messages([user_msg, bot_msg], bot_user_id=99)
+    assert result == [
+        {"role": "assistant", "content": "Wren's reply"},
+        {"role": "user", "content": "user's message"},
+    ]
+
+def test_history_to_messages_skips_empty_content():
+    blank = _fake_message(1, "   ")
+    real = _fake_message(1, "hello")
+    result = discord_utils.history_to_messages([real, blank], bot_user_id=99)
+    assert result == [{"role": "user", "content": "hello"}]

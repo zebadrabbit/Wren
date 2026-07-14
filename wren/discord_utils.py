@@ -2,6 +2,15 @@ import logging
 import discord
 from . import config
 
+def history_to_messages(messages: list[discord.Message], bot_user_id: int) -> list[dict]:
+    result = []
+    for m in messages:
+        if not m.content.strip():
+            continue
+        role = "assistant" if m.author.id == bot_user_id else "user"
+        result.append({"role": role, "content": m.content})
+    return list(reversed(result))
+
 async def notify_id(client: discord.Client, user_id: int, text: str) -> bool:
     try:
         target_user = await client.fetch_user(user_id)
