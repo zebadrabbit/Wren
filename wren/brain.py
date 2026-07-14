@@ -14,7 +14,7 @@ Today is {date}.
 
 When classifying intent, respond ONLY with valid JSON matching this schema:
 {{
-  "intent": "send_to_person" | "help" | "status" | {plugin_intents} | "chat",
+  "intent": "send_to_person" | "help" | "status" | "list_plugins" | {plugin_intents} | "chat",
   "content": "<extracted note or message content>",
   "tags": ["<tag1>", "<tag2>"],
   "person": "<name from whitelist or null>",
@@ -27,6 +27,7 @@ Guidelines:
 - send_to_person: user wants to send a message or note to someone
 - help: user wants to know what Wren can do, asks for help, or asks to see available commands
 - status: user wants to know Wren's operational status — active LLM backend/model/endpoint, uptime, token usage
+- list_plugins: user wants to know what plugins/capabilities Wren currently has active (e.g. "what plugins do you have", "what's active")
 {plugin_guidelines}
 - chat: anything else (questions, casual conversation)
 - tags: 1-3 lowercase single-word tags relevant to the content

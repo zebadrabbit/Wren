@@ -143,6 +143,10 @@ async def on_message(message: discord.Message):
             ]
             await message.channel.send("\n".join(lines))
 
+        elif intent == "list_plugins":
+            lines = [f"{'✅' if active else '⏸️'} {name}" for name, active in plugins.plugin_status()]
+            await message.channel.send("\n".join(lines))
+
         elif intent == "send_to_person":
             target_name = (person or "").lower()
             if target_name not in config.whitelist():
