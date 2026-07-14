@@ -8,8 +8,15 @@ os.environ.setdefault("LMSTUDIO_MODEL", "test-model-1")
 os.environ.setdefault("OLLAMA_MODEL", "test-model-2")
 os.environ.setdefault("TIMEZONE", "UTC")
 
+import pytest
 from unittest.mock import patch, MagicMock
 from wren import brain, config
+from wren import contacts
+
+@pytest.fixture(autouse=True)
+def tmp_db(tmp_path, monkeypatch):
+    monkeypatch.setattr(contacts, "DB_PATH", str(tmp_path / "test_contacts.db"))
+    contacts.init_db()
 
 def _mock_completion(content: str):
     msg = MagicMock()

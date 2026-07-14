@@ -12,7 +12,7 @@ async def notify_id(client: discord.Client, user_id: int, text: str) -> bool:
         return False
 
 async def notify(client: discord.Client, contact_name: str, text: str) -> bool:
-    target_id = config.WHITELIST.get(contact_name.lower())
+    target_id = config.whitelist().get(contact_name.lower())
     if not target_id:
         return False
     return await notify_id(client, target_id, text)

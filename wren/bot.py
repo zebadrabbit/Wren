@@ -92,7 +92,7 @@ async def on_message(message: discord.Message):
     user_id = message.author.id
 
     # whitelist gate
-    if user_id not in config.ID_TO_NAME:
+    if user_id not in config.id_to_name():
         return
 
     text = message.content.strip()
@@ -132,13 +132,13 @@ async def on_message(message: discord.Message):
 
         elif intent == "send_to_person":
             target_name = (person or "").lower()
-            if target_name not in config.WHITELIST:
+            if target_name not in config.whitelist():
                 await message.channel.send("I don't know how to reach them.")
             else:
                 notes.save(user_id, content, tags)
                 ok = await discord_utils.notify(
                     client, target_name,
-                    f"From {config.ID_TO_NAME.get(user_id, 'someone')}: {content}",
+                    f"From {config.id_to_name().get(user_id, 'someone')}: {content}",
                 )
                 if ok:
                     await message.channel.send(f"Sent to {target_name}.")

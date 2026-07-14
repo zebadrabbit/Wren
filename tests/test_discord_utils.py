@@ -7,8 +7,16 @@ os.environ.setdefault("LMSTUDIO_BASE_URL", "http://test")
 os.environ.setdefault("LMSTUDIO_MODEL", "test-model")
 
 from unittest.mock import MagicMock, AsyncMock
+import pytest
 import discord
 from wren import discord_utils
+from wren import contacts
+
+@pytest.fixture(autouse=True)
+def tmp_db(tmp_path, monkeypatch):
+    monkeypatch.setattr(contacts, "DB_PATH", str(tmp_path / "test_contacts.db"))
+    contacts.init_db()
+    contacts.add("husband", 2)
 
 def test_notify_success():
     client = MagicMock()

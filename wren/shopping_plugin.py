@@ -11,7 +11,7 @@ PROMPT_GUIDELINES = """- add_shopping_item: user wants to add an item to the sha
 
 async def handle(intent, message, client, user_id, content, tags, person, when):
     if intent == "add_shopping_item":
-        _, was_new = shopping.add(content, added_by=config.ID_TO_NAME[user_id])
+        _, was_new = shopping.add(content, added_by=config.id_to_name()[user_id])
         if was_new:
             await message.channel.send(f"Added {content}.")
         else:
@@ -41,7 +41,7 @@ async def handle(intent, message, client, user_id, content, tags, person, when):
 
     elif intent == "send_shopping_list":
         target_name = (person or "").lower()
-        if target_name not in config.WHITELIST:
+        if target_name not in config.whitelist():
             await message.channel.send("I don't know how to reach them.")
             return
         active = shopping.active_items()
@@ -51,7 +51,7 @@ async def handle(intent, message, client, user_id, content, tags, person, when):
         list_text = ", ".join(i["original_text"] for i in active)
         ok = await discord_utils.notify(
             client, target_name,
-            f"Shopping list from {config.ID_TO_NAME.get(user_id, 'someone')}: {list_text}",
+            f"Shopping list from {config.id_to_name().get(user_id, 'someone')}: {list_text}",
         )
         if ok:
             await message.channel.send(f"Sent to {target_name}.")

@@ -38,7 +38,7 @@ def _now() -> str:
     return datetime.now(ZoneInfo(config.TIMEZONE)).strftime("%A %B %d %Y %H:%M %Z")
 
 def _contacts() -> str:
-    return ", ".join(config.WHITELIST.keys())
+    return ", ".join(config.whitelist().keys())
 
 _plugin_intents: list[str] = []
 _plugin_guidelines: str = ""

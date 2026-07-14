@@ -10,11 +10,15 @@ from unittest.mock import MagicMock, AsyncMock, patch
 from wren import shopping
 from wren import shopping_plugin
 from wren import discord_utils
+from wren import contacts
 
 @pytest.fixture(autouse=True)
 def tmp_db(tmp_path, monkeypatch):
     monkeypatch.setattr(shopping, "DB_PATH", str(tmp_path / "test.db"))
+    monkeypatch.setattr(contacts, "DB_PATH", str(tmp_path / "test_contacts.db"))
     shopping.init_db()
+    contacts.init_db()
+    contacts.add("husband", 2)
 
 def _message():
     message = MagicMock()
