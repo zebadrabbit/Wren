@@ -38,6 +38,19 @@ def test_owner_add_contact_non_numeric_id():
     message.channel.send.assert_awaited_once_with("That doesn't look like a Discord ID.")
     assert contacts.all() == {}
 
+def test_owner_add_contact_empty_alias():
+    message = _message()
+    asyncio.run(contacts_plugin.handle("add_contact", message, None, 1, "222222222222222222", [], "", None))
+    message.channel.send.assert_awaited_once_with("Who should I add?")
+    assert contacts.all() == {}
+
+def test_owner_add_contact_duplicate_discord_id():
+    contacts.add("hubby", 222222222222222222)
+    message = _message()
+    asyncio.run(contacts_plugin.handle("add_contact", message, None, 1, "222222222222222222", [], "kevin", None))
+    message.channel.send.assert_awaited_once_with("That Discord ID is already registered under another name.")
+    assert contacts.all() == {"hubby": 222222222222222222}
+
 def test_owner_add_contact_taken_alias():
     contacts.add("hubby", 222222222222222222)
     message = _message()

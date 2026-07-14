@@ -1,3 +1,5 @@
+import sqlite3
+
 from . import config
 from . import contacts
 
@@ -16,13 +18,20 @@ async def handle(intent, message, client, user_id, content, tags, person, when):
     if intent == "add_contact":
         alias = (person or "").strip().lower()
         discord_id_raw = (content or "").strip()
+        if not alias:
+            await message.channel.send("Who should I add?")
+            return
         if not discord_id_raw.isdigit():
             await message.channel.send("That doesn't look like a Discord ID.")
             return
         if alias in config.whitelist():
             await message.channel.send("That name's already taken.")
             return
-        contacts.add(alias, int(discord_id_raw))
+        try:
+            contacts.add(alias, int(discord_id_raw))
+        except sqlite3.IntegrityError:
+            await message.channel.send("That Discord ID is already registered under another name.")
+            return
         await message.channel.send(f"Added {alias}.")
 
     elif intent == "remove_contact":
