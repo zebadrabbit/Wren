@@ -10,7 +10,7 @@ INTENTS = ["save_note", "recall_notes", "save_idea", "recall_ideas", "discard_id
 PLUGIN_NAME = "Notes & Ideas"
 
 PROMPT_GUIDELINES = """- save_note: user is capturing something for later (grocery item, plan, reminder)
-- recall_notes: user wants to retrieve or search past notes; only set tags if the user explicitly names a category to filter by (e.g. "show my grocery notes") — otherwise leave tags empty to see everything, since you don't know what tags were used when notes were saved
+- recall_notes: user wants to retrieve or search past SAVED notes (not the same as asking about this conversation/chat itself, e.g. "do you remember what I said" is chat, not recall_notes); only set tags if the user explicitly names a category to filter by (e.g. "show my grocery notes") — otherwise leave tags empty to see everything, since you don't know what tags were used when notes were saved
 - save_idea: user explicitly wants to remember/capture an idea to revisit or expand later (e.g. "remember this idea...", "idea:..."), distinct from save_note's reminders/grocery items/plans
 - recall_ideas: user wants to see all their saved ideas
 - discard_idea: user wants to delete a previously saved idea; content is a short phrase identifying which idea, not the full idea text

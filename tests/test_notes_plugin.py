@@ -197,3 +197,10 @@ def test_export_notes_owner_isolation():
     text, _ = _sent_file_text(message)
     assert "my note" in text
     assert "their note" not in text
+
+def test_recall_notes_guideline_distinguishes_from_conversation():
+    # Regression: "do you retain context from the previous message?" was
+    # misclassified as recall_notes (lexical overlap: "previous"/"past",
+    # "context"/"notes") — the guideline now explicitly excludes questions
+    # about the live conversation itself, not saved notes.
+    assert "conversation" in notes_plugin.PROMPT_GUIDELINES

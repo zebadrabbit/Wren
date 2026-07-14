@@ -29,7 +29,7 @@ Guidelines:
 - status: user wants to know Wren's operational status — active LLM backend/model/endpoint, uptime, token usage
 - list_plugins: user wants to know what plugins/capabilities Wren currently has active (e.g. "what plugins do you have", "what's active")
 {plugin_guidelines}
-- chat: anything else (questions, casual conversation)
+- chat: anything else (questions, casual conversation), including meta-questions about Wren's own conversational memory/capabilities (e.g. "do you remember what I said", "do you have context from before") — these are NOT recall_notes, they're about this live conversation, not saved notes
 - tags: 1-3 lowercase single-word tags relevant to the content
 - person: only set when the intent is about contacting or sending something to someone else, use the contact name as given
 - when: only set for set_reminder — an absolute ISO 8601 datetime in the SAME timezone as "today" above (do not convert to UTC yourself), computed from the user's relative/absolute time phrase; null otherwise

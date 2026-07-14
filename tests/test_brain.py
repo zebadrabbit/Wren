@@ -377,3 +377,19 @@ def test_summarize_web_puts_content_in_prompt():
     user_msg = captured["messages"][1]["content"]
     assert "strike ended" in user_msg
     assert "port strike" in user_msg
+
+def test_chat_guideline_distinguishes_conversation_meta_questions_from_recall():
+    # Regression: "do you retain context from the previous message?" was
+    # misclassified as recall_notes (lexical overlap: "previous"/"past",
+    # "context"/"notes") instead of chat, since chat's guideline had no
+    # positive signal for meta-questions about Wren's own memory.
+    captured = {}
+    def fake_create(**kwargs):
+        captured["messages"] = kwargs["messages"]
+        return _mock_completion(json.dumps({"intent": "chat", "content": "hi", "tags": [], "person": None}))
+    client = MagicMock()
+    client.chat.completions.create.side_effect = fake_create
+    with patch.object(brain, "_get_client", return_value=client):
+        brain.detect_intent(1, "do you remember what I said")
+    system_content = captured["messages"][0]["content"]
+    assert "memory" in system_content or "remember" in system_content
