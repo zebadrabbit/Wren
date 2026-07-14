@@ -3,6 +3,7 @@ import zoneinfo
 from dotenv import load_dotenv
 
 from . import providers
+from . import contacts
 
 load_dotenv()
 
@@ -23,23 +24,23 @@ if not LLM_CHAIN:
         "base_url/api_key/model env vars."
     )
 
-def _build_whitelist(owner_raw: str, husband_raw: str) -> dict[str, int]:
+def _build_whitelist(owner_raw: str) -> dict[str, int]:
     if not owner_raw.isdigit():
         raise RuntimeError("OWNER_ID must be a numeric Discord user ID.")
-    whitelist = {"owner": int(owner_raw)}
-    if husband_raw:
-        if not husband_raw.isdigit():
-            raise RuntimeError("HUSBAND_ID must be a numeric Discord user ID.")
-        whitelist["husband"] = int(husband_raw)
-    return whitelist
+    return {"owner": int(owner_raw)}
 
 
 _owner_raw = _require("OWNER_ID")
-_husband_raw = os.environ.get("HUSBAND_ID", "")
 
-WHITELIST: dict[str, int] = _build_whitelist(_owner_raw, _husband_raw)
+WHITELIST: dict[str, int] = _build_whitelist(_owner_raw)
 
-ID_TO_NAME: dict[int, str] = {v: k for k, v in WHITELIST.items()}
+
+def whitelist() -> dict[str, int]:
+    return {**WHITELIST, **contacts.all()}
+
+
+def id_to_name() -> dict[int, str]:
+    return {v: k for k, v in whitelist().items()}
 
 
 def _parse_email_watch(raw: str) -> dict[str, str]:

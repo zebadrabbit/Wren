@@ -1,28 +1,20 @@
 import os
 os.environ.setdefault("DISCORD_TOKEN", "test")
 os.environ.setdefault("OWNER_ID", "1")
-os.environ.setdefault("HUSBAND_ID", "2")
 os.environ.setdefault("LLM_PROVIDERS", "lmstudio")
 os.environ.setdefault("LMSTUDIO_BASE_URL", "http://test")
 os.environ.setdefault("LMSTUDIO_MODEL", "test-model")
 os.environ.setdefault("TIMEZONE", "UTC")
 
 import pytest
-from wren import config
+from wren import config, contacts
 
 def test_build_whitelist_owner_only():
-    assert config._build_whitelist("1", "") == {"owner": 1}
-
-def test_build_whitelist_with_husband():
-    assert config._build_whitelist("1", "2") == {"owner": 1, "husband": 2}
+    assert config._build_whitelist("1") == {"owner": 1}
 
 def test_build_whitelist_invalid_owner_raises():
     with pytest.raises(RuntimeError):
-        config._build_whitelist("abc", "")
-
-def test_build_whitelist_invalid_husband_raises():
-    with pytest.raises(RuntimeError):
-        config._build_whitelist("1", "abc")
+        config._build_whitelist("abc")
 
 def test_parse_email_watch_empty():
     assert config._parse_email_watch("") == {}
@@ -65,3 +57,24 @@ def test_web_lookup_defaults_empty(monkeypatch):
     assert isinstance(cfg.SEARXNG_URL, str)
     assert isinstance(cfg.FIRECRAWL_URL, str)
     assert isinstance(cfg.FIRECRAWL_API_KEY, str)
+
+@pytest.fixture
+def tmp_contacts_db(tmp_path, monkeypatch):
+    monkeypatch.setattr(contacts, "DB_PATH", str(tmp_path / "test.db"))
+    contacts.init_db()
+
+def test_whitelist_is_owner_only_with_no_contacts(tmp_contacts_db):
+    assert config.whitelist() == {"owner": 1}
+
+def test_whitelist_merges_in_dynamic_contacts(tmp_contacts_db):
+    contacts.add("hubby", 222222222222222222)
+    assert config.whitelist() == {"owner": 1, "hubby": 222222222222222222}
+
+def test_whitelist_reflects_removal_immediately(tmp_contacts_db):
+    contacts.add("hubby", 222222222222222222)
+    contacts.remove("hubby")
+    assert config.whitelist() == {"owner": 1}
+
+def test_id_to_name_is_inverse_of_whitelist(tmp_contacts_db):
+    contacts.add("hubby", 222222222222222222)
+    assert config.id_to_name() == {1: "owner", 222222222222222222: "hubby"}
