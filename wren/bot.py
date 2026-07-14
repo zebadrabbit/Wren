@@ -23,6 +23,7 @@ HELP_TEXT = """Here's what I can actually do:
 - "what ideas have I saved"
 - "discard the idea about the treehouse"
 - "expand on the treehouse idea"
+- "send my notes as a markdown file" — exports all notes and ideas as a downloadable file
 
 **Reminders**
 - "remind me to take out the trash at 6pm" / "in 20 minutes" / "tomorrow morning"
