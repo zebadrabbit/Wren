@@ -9,6 +9,7 @@ from . import reminders
 from . import contacts
 from . import plugins
 from . import discord_utils
+from . import github_state
 
 logging.basicConfig(level=logging.INFO)
 
@@ -17,6 +18,7 @@ HELP_TEXT = """Here's what I can actually do:
 **Notes**
 - "remind me to call the plumber" — saves a note
 - "what do I need to do" — recalls and answers from your notes
+- "show my grocery notes" — filters recalled notes/ideas by tag
 
 **Ideas** (separate from notes — for things to revisit or expand later)
 - "remember this idea: build a treehouse"
@@ -56,6 +58,9 @@ HELP_TEXT = """Here's what I can actually do:
 - "unpin the wifi one" — removes a pin, asks for specifics if more than one matches
 - "what's pinned" — lists current pins
 
+**Plugins**
+- "what plugins do you have" / "what's active" — lists Wren's active capabilities
+
 Anything else just falls through to open-ended chat."""
 
 _START_TIME = time.monotonic()
@@ -72,6 +77,7 @@ async def on_ready():
     shopping.init_db()
     reminders.init_db()
     contacts.init_db()
+    github_state.init_db()
     await plugins.start_all(client)
     logging.info(f"Wren online as {client.user}")
 
