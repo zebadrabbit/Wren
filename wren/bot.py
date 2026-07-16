@@ -115,7 +115,14 @@ async def on_message(message: discord.Message):
     await _react(message, "👀")
 
     try:
-        result = brain.detect_intent(user_id, text)
+        try:
+            raw_history = [m async for m in message.channel.history(limit=10, before=message)]
+            history = discord_utils.history_to_messages(raw_history, client.user.id)
+        except Exception as e:
+            logging.warning(f"Could not fetch history: {e}")
+            history = None
+
+        result = brain.detect_intent(user_id, text, history)
         intent = result.get("intent", "chat")
         content = result.get("content", text)
         tags = result.get("tags", [])
@@ -163,12 +170,6 @@ async def on_message(message: discord.Message):
                     await message.channel.send(f"Couldn't reach {target_name} — their DMs may be closed.")
 
         else:  # chat
-            try:
-                raw_history = [m async for m in message.channel.history(limit=10, before=message)]
-                history = discord_utils.history_to_messages(raw_history, client.user.id)
-            except Exception as e:
-                logging.warning(f"Could not fetch history: {e}")
-                history = None
             reply = brain.chat(text, history)
             await message.channel.send(reply)
 
