@@ -89,21 +89,18 @@ def status() -> dict:
         "tokens": dict(_token_usage),
     }
 
-def detect_intent(user_id: int, text: str) -> dict:
+def detect_intent(user_id: int, text: str, history: list[dict] | None = None) -> dict:
     plugin_intent_enum = " | ".join(f'"{i}"' for i in _plugin_intents)
     system = _SYSTEM.format(
         date=_now(), contacts=_contacts(),
         plugin_intents=plugin_intent_enum, plugin_guidelines=_plugin_guidelines,
     )
+    messages = [{"role": "system", "content": system}]
+    if history:
+        messages.extend(history)
+    messages.append({"role": "user", "content": text})
     try:
-        raw = _complete(
-            [
-                {"role": "system", "content": system},
-                {"role": "user", "content": text},
-            ],
-            temperature=0.1,
-            max_tokens=200,
-        )
+        raw = _complete(messages, temperature=0.1, max_tokens=200)
         if raw.startswith("```"):
             raw = raw.split("```")[1]
             if raw.startswith("json"):

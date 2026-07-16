@@ -243,6 +243,37 @@ def test_chat_with_empty_history_list_matches_no_history_shape():
     messages = client.chat.completions.create.call_args.kwargs["messages"]
     assert len(messages) == 2
 
+def test_detect_intent_without_history_matches_original_shape():
+    client = _client_returning(json.dumps({"intent": "chat", "content": "hi", "tags": [], "person": None}))
+    with patch.object(brain, "_get_client", return_value=client):
+        brain.detect_intent(1, "hello")
+    messages = client.chat.completions.create.call_args.kwargs["messages"]
+    assert len(messages) == 2
+    assert messages[0]["role"] == "system"
+    assert messages[1] == {"role": "user", "content": "hello"}
+
+def test_detect_intent_with_history_inserts_between_system_and_final_user_message():
+    client = _client_returning(json.dumps({"intent": "chat", "content": "follow-up", "tags": [], "person": None}))
+    history = [
+        {"role": "user", "content": "earlier question"},
+        {"role": "assistant", "content": "earlier reply"},
+    ]
+    with patch.object(brain, "_get_client", return_value=client):
+        brain.detect_intent(1, "follow-up", history=history)
+    messages = client.chat.completions.create.call_args.kwargs["messages"]
+    assert len(messages) == 4
+    assert messages[0]["role"] == "system"
+    assert messages[1] == {"role": "user", "content": "earlier question"}
+    assert messages[2] == {"role": "assistant", "content": "earlier reply"}
+    assert messages[3] == {"role": "user", "content": "follow-up"}
+
+def test_detect_intent_with_empty_history_list_matches_no_history_shape():
+    client = _client_returning(json.dumps({"intent": "chat", "content": "hi", "tags": [], "person": None}))
+    with patch.object(brain, "_get_client", return_value=client):
+        brain.detect_intent(1, "hello", history=[])
+    messages = client.chat.completions.create.call_args.kwargs["messages"]
+    assert len(messages) == 2
+
 def test_register_plugins_included_in_prompt():
     brain.register_plugins(["custom_intent"], "- custom_intent: does a custom thing")
     captured = {}
