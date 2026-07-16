@@ -33,6 +33,27 @@ def test_parse_email_watch_whitespace_and_case_tolerant():
 def test_email_poll_seconds_default():
     assert config.EMAIL_POLL_SECONDS == 60
 
+def test_parse_github_watch_empty():
+    assert config._parse_github_watch("") == []
+
+def test_parse_github_watch_single_repo():
+    assert config._parse_github_watch("owner/repo") == ["owner/repo"]
+
+def test_parse_github_watch_multiple_repos():
+    assert config._parse_github_watch("owner/repo-a,owner/repo-b") == ["owner/repo-a", "owner/repo-b"]
+
+def test_parse_github_watch_whitespace_tolerant():
+    assert config._parse_github_watch(" owner/repo-a , owner/repo-b ") == ["owner/repo-a", "owner/repo-b"]
+
+def test_github_token_default_empty():
+    assert config.GITHUB_TOKEN == ""
+
+def test_github_watch_default_empty():
+    assert config.GITHUB_WATCH == []
+
+def test_github_poll_seconds_default():
+    assert config.GITHUB_POLL_SECONDS == 60
+
 def test_timezone_default_is_utc():
     assert config.TIMEZONE == "UTC"
 
