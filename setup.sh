@@ -110,6 +110,19 @@ EMAIL_WATCH=$EMAIL_WATCH
 "
 fi
 
+# 4b. GitHub watcher (optional)
+GITHUB_LINES=""
+read -rp "Configure the GitHub watcher? (y/N): " want_github
+if [[ "$want_github" =~ ^[Yy]$ ]]; then
+    prompt GITHUB_TOKEN "GitHub token (recommended: required for private repos, raises rate limit to 5000/hr)"
+    prompt GITHUB_WATCH "Watch list (owner/repo,owner/repo,...)"
+    prompt GITHUB_POLL_SECONDS "Poll interval in seconds" "60"
+    GITHUB_LINES="GITHUB_TOKEN=$GITHUB_TOKEN
+GITHUB_WATCH=$GITHUB_WATCH
+GITHUB_POLL_SECONDS=$GITHUB_POLL_SECONDS
+"
+fi
+
 # 5. Write .env
 if [ -f .env ]; then
     echo "WARNING: .env already exists."
@@ -130,6 +143,10 @@ fi
     if [ -n "$EMAIL_LINES" ]; then
         echo ""
         printf '%s' "$EMAIL_LINES"
+    fi
+    if [ -n "$GITHUB_LINES" ]; then
+        echo ""
+        printf '%s' "$GITHUB_LINES"
     fi
 } > .env
 
