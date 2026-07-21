@@ -8,6 +8,7 @@ os.environ.setdefault("LMSTUDIO_MODEL", "test-model")
 from unittest.mock import MagicMock, AsyncMock
 from wren import contacts
 from wren import contacts_plugin
+from wren.flourish import EMOTES
 
 @pytest.fixture(autouse=True)
 def tmp_db(tmp_path, monkeypatch):
@@ -19,6 +20,10 @@ def _message():
     message.channel.send = AsyncMock()
     return message
 
+def _assert_flourished(sent: str, prefix: str):
+    assert sent.startswith(prefix + " ")
+    assert sent.rsplit(" ", 1)[1] in EMOTES
+
 # user_id=1 is OWNER_ID; user_id=2 is a non-owner whitelisted contact
 def test_non_owner_cannot_add_contact():
     message = _message()
@@ -29,7 +34,7 @@ def test_non_owner_cannot_add_contact():
 def test_owner_adds_contact():
     message = _message()
     asyncio.run(contacts_plugin.handle("add_contact", message, None, 1, "222222222222222222", [], "hubby", None))
-    message.channel.send.assert_awaited_once_with("Added hubby.")
+    _assert_flourished(message.channel.send.call_args[0][0], "Added hubby.")
     assert contacts.all() == {"hubby": 222222222222222222}
 
 def test_owner_add_contact_non_numeric_id():
@@ -66,7 +71,7 @@ def test_owner_removes_contact():
     contacts.add("hubby", 222222222222222222)
     message = _message()
     asyncio.run(contacts_plugin.handle("remove_contact", message, None, 1, "", [], "hubby", None))
-    message.channel.send.assert_awaited_once_with("Removed hubby.")
+    _assert_flourished(message.channel.send.call_args[0][0], "Removed hubby.")
     assert contacts.all() == {}
 
 def test_owner_removes_unknown_contact():

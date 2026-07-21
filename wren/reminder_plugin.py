@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 from . import config
 from . import reminders
 from . import discord_utils
+from . import flourish
 
 INTENTS = ["set_reminder", "recall_reminders", "cancel_reminder"]
 PLUGIN_NAME = "Reminders"
@@ -54,7 +55,7 @@ async def handle(intent, message, client, user_id, content, tags, person, when):
         else:
             fire_at = parsed_utc.isoformat(timespec="seconds")
             reminders.save(user_id, content, fire_at)
-            await message.channel.send(f"Reminder set for {_format_local(fire_at)}.")
+            await message.channel.send(flourish.flourish(f"Reminder set for {_format_local(fire_at)}."))
 
     elif intent == "recall_reminders":
         items = reminders.pending(user_id)
@@ -76,7 +77,7 @@ async def handle(intent, message, client, user_id, content, tags, person, when):
                 await message.channel.send(f"Found more than one match, be more specific.\n{listing}")
             else:
                 reminders.cancel(matches[0]["id"])
-                await message.channel.send(f"Cancelled: {matches[0]['content']}.")
+                await message.channel.send(flourish.flourish(f"Cancelled: {matches[0]['content']}."))
 
 async def start(client) -> None:
     while True:

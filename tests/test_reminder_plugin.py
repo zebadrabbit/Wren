@@ -14,6 +14,7 @@ from wren import reminders
 from wren import reminder_plugin
 from wren import discord_utils
 from wren import config
+from wren.flourish import EMOTES
 
 @pytest.fixture(autouse=True)
 def tmp_db(tmp_path, monkeypatch):
@@ -27,6 +28,10 @@ def _message():
 
 def _future_iso(seconds=120):
     return (datetime.now(timezone.utc) + timedelta(seconds=seconds)).isoformat(timespec="seconds")
+
+def _assert_flourished(sent: str, prefix: str):
+    assert sent.startswith(prefix + " ")
+    assert sent.rsplit(" ", 1)[1] in EMOTES
 
 def test_set_reminder_valid():
     message = _message()
@@ -87,7 +92,7 @@ def test_cancel_reminder_single_match():
     reminders.save(1, "check the oven", _future_iso())
     message = _message()
     asyncio.run(reminder_plugin.handle("cancel_reminder", message, None, 1, "oven", [], None, None))
-    message.channel.send.assert_awaited_once_with("Cancelled: check the oven.")
+    _assert_flourished(message.channel.send.call_args[0][0], "Cancelled: check the oven.")
     assert reminders.pending(1) == []
 
 def test_cancel_reminder_nonliteral_phrase_resolves_when_only_one_pending():
@@ -97,7 +102,7 @@ def test_cancel_reminder_nonliteral_phrase_resolves_when_only_one_pending():
     reminders.save(1, "message me at 9am my time to confirm", _future_iso())
     message = _message()
     asyncio.run(reminder_plugin.handle("cancel_reminder", message, None, 1, "the last reminder", [], None, None))
-    message.channel.send.assert_awaited_once_with("Cancelled: message me at 9am my time to confirm.")
+    _assert_flourished(message.channel.send.call_args[0][0], "Cancelled: message me at 9am my time to confirm.")
     assert reminders.pending(1) == []
 
 def test_cancel_reminder_nonliteral_phrase_stays_ambiguous_with_multiple_pending():

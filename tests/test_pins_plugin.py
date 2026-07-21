@@ -8,6 +8,7 @@ os.environ.setdefault("LMSTUDIO_MODEL", "test-model")
 from unittest.mock import MagicMock, AsyncMock
 import discord
 from wren import pins_plugin
+from wren.flourish import EMOTES
 
 def _pinned_message(content: str):
     m = MagicMock()
@@ -21,6 +22,10 @@ def _message(pins=None):
     message.channel.send = AsyncMock(return_value=_pinned_message(""))
     message.channel.pins = AsyncMock(return_value=pins or [])
     return message
+
+def _assert_flourished(sent: str, prefix: str):
+    assert sent.startswith(prefix + " ")
+    assert sent.rsplit(" ", 1)[1] in EMOTES
 
 def test_pin_note_empty_content_guarded():
     message = _message()
@@ -61,7 +66,7 @@ def test_unpin_note_single_match():
     message = _message(pins=[target])
     asyncio.run(pins_plugin.handle("unpin_note", message, None, 1, "wifi", [], None, None))
     target.unpin.assert_awaited_once()
-    message.channel.send.assert_awaited_once_with("Unpinned: wifi password is 12345")
+    _assert_flourished(message.channel.send.call_args[0][0], "Unpinned: wifi password is 12345")
 
 def test_unpin_note_multiple_matches():
     first = _pinned_message("wifi password is 12345")

@@ -1,5 +1,6 @@
 import logging
 import discord
+from . import flourish
 
 INTENTS = ["pin_note", "unpin_note", "list_pins"]
 PLUGIN_NAME = "Pins"
@@ -34,7 +35,7 @@ async def handle(intent, message, client, user_id, content, tags, person, when):
             await message.channel.send(f"Found more than one match, be more specific.\n{listing}")
         else:
             await matches[0].unpin()
-            await message.channel.send(f"Unpinned: {matches[0].content}")
+            await message.channel.send(flourish.flourish(f"Unpinned: {matches[0].content}"))
 
     elif intent == "list_pins":
         pins = await message.channel.pins()

@@ -2,6 +2,7 @@ import sqlite3
 
 from . import config
 from . import contacts
+from . import flourish
 
 INTENTS = ["add_contact", "remove_contact", "list_contacts"]
 PLUGIN_NAME = "Contacts"
@@ -33,12 +34,12 @@ async def handle(intent, message, client, user_id, content, tags, person, when):
         except sqlite3.IntegrityError:
             await message.channel.send("That Discord ID is already registered under another name.")
             return
-        await message.channel.send(f"Added {alias}.")
+        await message.channel.send(flourish.flourish(f"Added {alias}."))
 
     elif intent == "remove_contact":
         alias = (person or "").strip().lower()
         if contacts.remove(alias):
-            await message.channel.send(f"Removed {alias}.")
+            await message.channel.send(flourish.flourish(f"Removed {alias}."))
         else:
             await message.channel.send(f"No contact named {alias}.")
 
