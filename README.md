@@ -1,5 +1,5 @@
 
-# <img width="80" height="80" alt="wren" src="https://github.com/user-attachments/assets/7198043c-20ef-41aa-a92e-29164b485306" /> Wren
+# <img width="40" height="40" align="center" alt="wren" src="https://github.com/user-attachments/assets/7198043c-20ef-41aa-a92e-29164b485306" /> Wren
 
 A private Discord assistant for a small household whitelist. DM it plain
 English and it figures out the intent — save a note, manage a shared
