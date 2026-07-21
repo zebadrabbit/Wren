@@ -5,6 +5,7 @@ import discord
 from . import notes
 from . import brain
 from . import config
+from . import flourish
 
 INTENTS = ["save_note", "recall_notes", "save_idea", "recall_ideas", "discard_idea", "expand_idea", "export_notes"]
 PLUGIN_NAME = "Notes & Ideas"
@@ -44,7 +45,7 @@ def _build_export(user_id: int) -> str | None:
 async def handle(intent, message, client, user_id, content, tags, person, when):
     if intent == "save_note":
         notes.save(user_id, content, tags)
-        await message.channel.send("Saved.")
+        await message.channel.send(flourish.flourish("Saved."))
 
     elif intent == "recall_notes":
         matches = notes.search(user_id, tags=tags if tags else None)
@@ -72,7 +73,7 @@ async def handle(intent, message, client, user_id, content, tags, person, when):
             await message.channel.send("What idea should I save?")
         else:
             notes.save(user_id, content, ["idea"])
-            await message.channel.send("Saved that idea.")
+            await message.channel.send(flourish.flourish("Saved that idea."))
 
     elif intent == "recall_ideas":
         ideas = notes.search(user_id, tags=["idea"])
@@ -94,7 +95,7 @@ async def handle(intent, message, client, user_id, content, tags, person, when):
                 await message.channel.send(f"Found more than one match, be more specific.\n{listing}")
             else:
                 notes.delete(matches[0]["id"])
-                await message.channel.send(f"Discarded: {matches[0]['content']}.")
+                await message.channel.send(flourish.flourish(f"Discarded: {matches[0]['content']}."))
 
     elif intent == "expand_idea":
         if not content.strip():

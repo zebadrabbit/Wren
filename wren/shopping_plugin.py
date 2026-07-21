@@ -1,6 +1,7 @@
 from . import config
 from . import shopping
 from . import discord_utils
+from . import flourish
 
 INTENTS = ["add_shopping_item", "remove_shopping_item", "recall_shopping", "send_shopping_list"]
 PLUGIN_NAME = "Shopping List"
@@ -14,14 +15,14 @@ async def handle(intent, message, client, user_id, content, tags, person, when):
     if intent == "add_shopping_item":
         _, was_new = shopping.add(content, added_by=config.id_to_name()[user_id])
         if was_new:
-            await message.channel.send(f"Added {content}.")
+            await message.channel.send(flourish.flourish(f"Added {content}."))
         else:
             await message.channel.send("Already on the list.")
 
     elif intent == "remove_shopping_item":
         removed = shopping.remove(content)
         if removed:
-            await message.channel.send(f"Got it, removed {content}.")
+            await message.channel.send(flourish.flourish(f"Got it, removed {content}."))
         else:
             await message.channel.send(f"{content} wasn't on the list.")
 
@@ -55,6 +56,6 @@ async def handle(intent, message, client, user_id, content, tags, person, when):
             f"Shopping list from {config.id_to_name().get(user_id, 'someone')}: {list_text}",
         )
         if ok:
-            await message.channel.send(f"Sent to {target_name}.")
+            await message.channel.send(flourish.flourish(f"Sent to {target_name}."))
         else:
             await message.channel.send(f"Couldn't reach {target_name} — their DMs may be closed.")

@@ -12,6 +12,7 @@ from unittest.mock import MagicMock, AsyncMock, patch
 from wren import notes
 from wren import brain
 from wren import notes_plugin
+from wren.flourish import EMOTES
 
 @pytest.fixture(autouse=True)
 def tmp_db(tmp_path, monkeypatch):
@@ -23,10 +24,14 @@ def _message():
     message.channel.send = AsyncMock()
     return message
 
+def _assert_flourished(sent: str, prefix: str):
+    assert sent.startswith(prefix + " ")
+    assert sent.rsplit(" ", 1)[1] in EMOTES
+
 def test_save_note():
     message = _message()
     asyncio.run(notes_plugin.handle("save_note", message, None, 1, "buy milk", ["grocery"], None, None))
-    message.channel.send.assert_awaited_once_with("Saved.")
+    _assert_flourished(message.channel.send.call_args[0][0], "Saved.")
     assert notes.list_recent(1)[0]["content"] == "buy milk"
 
 def test_recall_notes_no_matches():
@@ -85,7 +90,7 @@ def test_save_idea_empty_content_guarded():
 def test_save_idea():
     message = _message()
     asyncio.run(notes_plugin.handle("save_idea", message, None, 1, "build a treehouse", [], None, None))
-    message.channel.send.assert_awaited_once_with("Saved that idea.")
+    _assert_flourished(message.channel.send.call_args[0][0], "Saved that idea.")
     assert notes.search(1, tags=["idea"])[0]["content"] == "build a treehouse"
 
 def test_recall_ideas_empty():
@@ -123,7 +128,7 @@ def test_discard_idea_single_match():
     notes.save(1, "build a treehouse", ["idea"])
     message = _message()
     asyncio.run(notes_plugin.handle("discard_idea", message, None, 1, "treehouse", [], None, None))
-    message.channel.send.assert_awaited_once_with("Discarded: build a treehouse.")
+    _assert_flourished(message.channel.send.call_args[0][0], "Discarded: build a treehouse.")
     assert notes.search(1, tags=["idea"]) == []
 
 def test_discard_idea_multiple_matches():

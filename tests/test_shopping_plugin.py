@@ -11,6 +11,7 @@ from wren import shopping
 from wren import shopping_plugin
 from wren import discord_utils
 from wren import contacts
+from wren.flourish import EMOTES
 
 @pytest.fixture(autouse=True)
 def tmp_db(tmp_path, monkeypatch):
@@ -25,10 +26,14 @@ def _message():
     message.channel.send = AsyncMock()
     return message
 
+def _assert_flourished(sent: str, prefix: str):
+    assert sent.startswith(prefix + " ")
+    assert sent.rsplit(" ", 1)[1] in EMOTES
+
 def test_add_shopping_item_new():
     message = _message()
     asyncio.run(shopping_plugin.handle("add_shopping_item", message, None, 1, "potatoes", [], None, None))
-    message.channel.send.assert_awaited_once_with("Added potatoes.")
+    _assert_flourished(message.channel.send.call_args[0][0], "Added potatoes.")
 
 def test_add_shopping_item_dedup():
     shopping.add("potatoes", "owner")
@@ -40,7 +45,7 @@ def test_remove_shopping_item_found():
     shopping.add("milk", "owner")
     message = _message()
     asyncio.run(shopping_plugin.handle("remove_shopping_item", message, None, 1, "milk", [], None, None))
-    message.channel.send.assert_awaited_once_with("Got it, removed milk.")
+    _assert_flourished(message.channel.send.call_args[0][0], "Got it, removed milk.")
 
 def test_remove_shopping_item_not_found():
     message = _message()
@@ -73,7 +78,7 @@ def test_send_shopping_list_success():
     message = _message()
     with patch.object(discord_utils, "notify", new=AsyncMock(return_value=True)):
         asyncio.run(shopping_plugin.handle("send_shopping_list", message, None, 1, "", [], "husband", None))
-    message.channel.send.assert_awaited_once_with("Sent to husband.")
+    _assert_flourished(message.channel.send.call_args[0][0], "Sent to husband.")
 
 def test_send_shopping_list_dm_failure():
     shopping.add("potatoes", "owner")

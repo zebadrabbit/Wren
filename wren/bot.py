@@ -10,6 +10,7 @@ from . import contacts
 from . import plugins
 from . import discord_utils
 from . import github_state
+from . import flourish
 
 logging.basicConfig(level=logging.INFO)
 
@@ -171,7 +172,7 @@ async def on_message(message: discord.Message):
                     f"From {config.id_to_name().get(user_id, 'someone')}: {content}",
                 )
                 if ok:
-                    await message.channel.send(f"Sent to {target_name}.")
+                    await message.channel.send(flourish.flourish(f"Sent to {target_name}."))
                 else:
                     await message.channel.send(f"Couldn't reach {target_name} — their DMs may be closed.")
 
