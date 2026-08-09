@@ -18,6 +18,13 @@ def _require(key: str) -> str:
 # from starting.
 DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN", "")
 
+# same story as DISCORD_TOKEN: only needed when COMMUNICATION_PLUGINS includes
+# 'telegram', and telegram_plugin.start() is what refuses to run without it.
+# No poll-interval knob to go with it — the Telegram plugin long-polls, so its
+# only timing constant is how long the API holds the request open, which is
+# not a per-install choice (see _LONG_POLL_SECONDS there).
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
+
 COMMUNICATION_PLUGINS = [s.strip() for s in os.environ.get("COMMUNICATION_PLUGINS", "discord").split(",") if s.strip()]
 
 # where unprompted messages (reminders, watcher alerts) go. Defaults to the
