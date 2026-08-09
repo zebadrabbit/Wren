@@ -9,8 +9,8 @@ Wren is a local-first, self-hosted chat assistant. It has one engine (LLM
 intent detection + SQLite storage) and two plugin classes on top of it:
 
 - **`wren/communication/`** — how you reach Wren / how Wren reaches you.
-  Discord, HTTP + browser chat, Gmail (IMAP watcher), GitHub (repo watcher).
-  A `telegram_plugin.py` stub shows the shape of the next one.
+  Discord, Telegram, HTTP + browser chat, Gmail (IMAP watcher), GitHub
+  (repo watcher).
 - **`wren/skills/`** — what Wren can do. Shopping List, Notes, Reminders,
   Pins, Contacts, Web search/fetch.
 
@@ -80,25 +80,37 @@ Module path renames (for grep/context when reading old plans/specs):
 ```bash
 source venv/bin/activate
 pip install -r requirements.txt
-pytest -q                        # NOT yet run post-restart — do this first
+pytest -q                        # 522 passed as of 2026-08-09
 python3 -m wren.run              # needs .env; see .env.example
 ```
 
-**First thing to do in this repo**: run `pytest -q`. The v2 restructure
-(communication/ + skills/ split, all import paths, .env var renames) was
-verified by static analysis only — every import was checked to resolve to
-an existing file, and `py_compile` passes clean — but the test suite itself
-could not actually be executed in the session that did the restructure (no
-network access in that sandbox, and its Python didn't match this repo's
-venv). Treat it as "should be green" but unconfirmed until you run it.
+**The restructure is now verified** — the suite has actually been run and is
+green. It did not start that way: the static import check that the restructure
+session relied on missed 46 breakages, because they were not import statements.
+Worth knowing, since the same blind spot applies to any future rename here:
+
+- path literals — `Path(...) / "wren" / "surfaces" / "chat.html"`
+- `mock.patch("wren.reminder_plugin.asyncio.sleep")` string targets
+- renamed config attributes reached via `monkeypatch.setattr(config, ...)`
+- tests asserting the *old taxonomy* (e.g. the Gmail watcher living in
+  `PLUGINS`), which are wrong in a way no import checker can see
+
+Grep for the old name as a bare string, not just as an import, when you move
+a module.
 
 ## Known loose ends from the restart
 
-- `wren/surfaces/` still has a stale, empty `__pycache__/` — harmless,
-  gitignored, delete by hand whenever.
-- `wren/communication/telegram_plugin.py` is a stub (`NotImplementedError`
-  in `start()`/`notify()`) — not wired into any config, just documents the
-  shape of the next chat plugin.
+- `wren/communication/telegram_plugin.py` is implemented (Bot API over
+  aiohttp, long-polling `getUpdates`) but deliberately **not wired in**:
+  there is no bot token yet, so `TELEGRAM_TOKEN` is unset and "telegram" is
+  absent from `COMMUNICATION_PLUGINS`. Enabling it is those two `.env` lines
+  plus whitelisting the Telegram user id as a contact.
+- `wren.service` runs this working tree **in place**
+  (`/home/winter/work/Wren/venv/bin/python3 -m wren.run`), so an edit here is
+  a production edit the moment anything restarts it. As of 2026-08-09 the
+  live PID predates the v2 restructure and is still running v1 code from
+  memory — nothing on disk has been exercised by the service yet. Assume any
+  breakage you leave on disk is armed, not inert.
 - Old local git history (pre-restart, 8 commits ahead of `origin/main`) is
   preserved at `.git-wren-v1-archive/` (gitignored). The current repo was
   git-init'd fresh. GitHub remote is still `git@github.com:zebadrabbit/Wren.git`

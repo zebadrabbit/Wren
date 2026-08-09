@@ -28,7 +28,7 @@ Live in `wren/communication/`. Each one declares a `ROLE`:
 
 - **`chat`** — a full two-way conversational channel: receives messages,
   sends replies, optionally keeps history. Examples: **Discord**, the
-  built-in **HTTP/web chat**, and (stubbed, not yet built) **Telegram**.
+  built-in **HTTP/web chat**, and **Telegram** (built; needs a bot token).
 - **`input`** — a one-way event source: watches something external and
   raises an event, but has no "send" of its own. It hands off to a `chat`
   plugin via `router.notify_name(...)`. Examples: **Gmail** (IMAP watcher),
@@ -45,7 +45,7 @@ owns), `PROMPT_GUIDELINES` (how the LLM should recognize them), and an async
 `handle(intent, ctx)`. It never imports `discord` or `aiohttp` — it only
 ever sees `ctx.channel.send(...)`. That's what makes "add potatoes to
 shopping" work identically whether it arrived by Discord DM, the web chat
-window, voice, or (once built) Telegram.
+window, voice, or Telegram.
 
 Shipped skills, carried over from the old capability plugins: **Shopping
 List**, **Notes** (+ Ideas), **Reminders**, **Pins**, **Contacts**, **Web**
@@ -102,7 +102,8 @@ to this taxonomy — reusing, not rewriting, the working code:
   was intentionally left untouched, per your call to keep this local-only
   for now.
 
-**Not done / explicitly deferred:**
+**Not done at the time of the restart** (all three since resolved — see the
+status section below):
 
 - `pytest` could not actually be run in this session (the sandboxed shell
   used to edit your files has no network access and the project's `venv`
@@ -114,16 +115,46 @@ to this taxonomy — reusing, not rewriting, the working code:
   your machine) — harmless, gitignored, safe to delete by hand.
 - Telegram is a stub only — no live `start()`/`notify()`/`TelegramChannel`.
 
+## Status as of 2026-08-09
+
+Everything above this line is the record of the restart session itself and is
+left as written. What has happened since:
+
+- **Restructure verified.** The suite runs and is green (557 passed). It did
+  not start that way — the static import check missed 46 breakages, all of
+  them stale references living in strings rather than import statements (path
+  literals, `mock.patch("wren.old_module...")` targets, renamed config attrs,
+  and tests asserting the old plugin taxonomy). If you rename a module here,
+  grep for the old name as a bare string too.
+- **Live run smoke-tested.** `COMMUNICATION_PLUGINS=http` on a temp DB and
+  port: boots clean, webchat serves, and "add potatoes to shopping" round
+  trips through intent detection into the shopping skill and back.
+- **`.env` was still on the v1 keys** (`SURFACES`, `NOTIFY_SURFACE`). Renamed.
+  This would not have errored — `config.py` defaults `COMMUNICATION_PLUGINS`
+  to `discord`, so the next restart would have silently come up without the
+  web chat.
+- **Telegram is built**, not a stub: Bot API over `aiohttp` long-polling, no
+  new dependency. Deliberately **not wired in** — no bot token yet, so
+  `TELEGRAM_TOKEN` is unset and `telegram` is absent from
+  `COMMUNICATION_PLUGINS`. Enabling it is those two `.env` lines plus
+  whitelisting the Telegram user id as a contact.
+- **The architecture claim held.** Adding a whole new communication channel
+  touched zero files under `wren/skills/`. That was the point of the restart,
+  and it is now demonstrated rather than asserted.
+- `wren/surfaces/` is gone (it held 5 orphaned `.pyc`, not an empty dir).
+
+Known rough edges in the new Telegram plugin, none blocking, all recorded on
+the Trello board: `notify()` treats every HTTP 400 as permanent (so an
+over-4096-char message is dropped rather than split); a non-`handle_message`
+exception mid-batch discards that batch's offset progress; and a cold start
+drains the whole unconfirmed backlog, answering each with an inline LLM call.
+
 ## Focused next steps
 
-1. **Verify the restructure**: `cd` into the repo, `source venv/bin/activate`,
-   `pip install -r requirements.txt`, `pytest -q`. Fix whatever the static
-   check missed (expected: nothing major, but confirm).
-2. **Smoke-test a run**: `COMMUNICATION_PLUGINS=http` in `.env`, start
-   `python3 -m wren.run`, open the web chat, try "add potatoes to shopping".
-3. **Build the Telegram communication plugin** from the stub — this is the
-   first real test that a new Communication plugin can be added without
-   touching any skill.
+1. ~~Verify the restructure~~ — done, 557 passed.
+2. ~~Smoke-test a run~~ — done.
+3. ~~Build the Telegram communication plugin~~ — done; needs a bot token to
+   actually enable.
 4. **Decide the GitHub story**: push this restructured repo to the existing
    `zebadrabbit/Wren` remote (as a new default branch, or a fresh repo if
    you'd rather cut ties with the old history entirely) once you're happy

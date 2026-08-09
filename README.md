@@ -1,18 +1,29 @@
+<p align="center">
+  <img src="Brand/github/hero-1280x400.png" alt="Wren — talk to it in plain English. It figures out the rest." width="100%">
+</p>
 
-# <img width="40" height="40" align="center" alt="wren" src="https://github.com/user-attachments/assets/7198043c-20ef-41aa-a92e-29164b485306" /> Wren
+<p align="center">
+  <strong>A private, self-hosted assistant for your household.</strong><br>
+  <em>local-first · plugin channels · drop-in skills</em>
+</p>
 
-A private, self-hosted assistant for a small household whitelist. Talk to it
-in plain English and it figures out the intent — save a note, manage a shared
-shopping list, capture an idea, search the web, message someone else on the
-whitelist, or just chat.
+---
 
-Wren is transport-agnostic. It's built from two kinds of plugin: **Communication**
-plugins (Discord, HTTP/web chat, Gmail, GitHub, ...) are how you reach Wren and
-how Wren reaches you, and **Skills** (Shopping List, Notes, Reminders, ...) are
-what Wren can actually do — usable through any Communication plugin you enable.
-Discord is one Communication plugin, not a requirement: you can run Wren with
-Discord alone, with the local HTTP API alone (for the desktop voice client or
-the browser chat window), or several communication plugins at once.
+Talk to Wren in plain English and it works out the intent — save a note, manage
+a shared shopping list, capture an idea, set a reminder, search the web,
+message someone else on the whitelist, or just chat.
+
+Wren is transport-agnostic. It is built from two kinds of plugin:
+**Communication** plugins (Discord, Telegram, HTTP/web chat, Gmail, GitHub) are
+how you reach Wren and how Wren reaches you; **Skills** (Shopping List, Notes,
+Reminders, Pins, Contacts, Web) are what Wren can actually do — usable through
+any Communication plugin you enable. Discord is one Communication plugin, not a
+requirement: run Wren with Discord alone, with the local HTTP API alone (for the
+desktop voice client or the browser chat window), or several at once.
+
+It runs on your hardware and your data stays home. That is a statement about
+where it runs, not a security guarantee — see [Security](#security-expectations)
+for what that does and does not buy you.
 
 ## Setup
 
@@ -42,7 +53,7 @@ Alternatively, run `./setup.sh` for an interactive walkthrough that does all
 of the above except the Developer Portal step (that one's manual, Discord
 doesn't expose it via API) plus optional systemd install.
 
-Whichever surface you use, Wren only answers whitelisted users (`owner`, plus
+Whichever channel you use, Wren only answers whitelisted users (`owner`, plus
 any contacts added at runtime). Everything else is ignored.
 
 ## Communication plugins
@@ -51,15 +62,28 @@ A Communication plugin is how you reach Wren, or how Wren reaches you. Skills
 (notes, reminders, shopping, …) work identically across every chat-capable one.
 
 Each Communication plugin declares a `ROLE`:
-- **`chat`** — full input + output, a real conversational surface (`discord`, `http`)
+- **`chat`** — full input + output, a real conversational surface
+  (`discord`, `telegram`, `http`)
 - **`input`** — one-way event source; watches something external and calls
   `router.notify_name(...)` to hand off to a `chat` plugin (`gmail`, `github`)
 
 ### `discord` — role: chat
 
-DM the bot. This is the only plugin with conversation history, so multi-turn
-follow-ups ("what did I just say") work here and nowhere else. Requires
-`DISCORD_TOKEN`.
+DM the bot. Requires `DISCORD_TOKEN`. Discord and the web chat are the two
+channels with conversation history, so multi-turn follow-ups ("what did I just
+say") resolve here.
+
+### `telegram` — role: chat
+
+DM the bot on Telegram. Requires `TELEGRAM_TOKEN` from
+[@BotFather](https://t.me/botfather), and your Telegram user id must be
+whitelisted as a contact — `OWNER_ID` on a Telegram-first install, or added
+from a channel you already have ("add 123456789 as phone").
+
+Long-polls `getUpdates` over `aiohttp`; there is no Telegram client library in
+the dependency list. Private chats only — group messages are ignored. The Bot
+API gives a bot no way to read a chat's backlog, so `history` is `None` and
+follow-ups that depend on the previous turn won't resolve here.
 
 ### `http` — role: chat (send-only for proactive notifications)
 
@@ -71,13 +95,13 @@ open `http://<wren-host>:8787/` and paste that token once — it is kept in
 ### `gmail` — role: input only
 
 Watches an IMAP inbox and notifies a `chat` plugin when mail arrives from
-someone on your whitelist. See [Gmail-arrival watcher](#gmail-arrival-watcher).
+someone on your whitelist. See [Gmail-arrival watcher](#gmail-arrival-watcher-optional).
 Never talks back directly — it has no "send" of its own.
 
 ### `github` — role: input only
 
-Watches repo activity (stars, pushes, issues/PRs) and notifies a `chat`
-plugin. See [GitHub watcher](#github-repo-activity-watcher). Also input-only.
+Watches repo activity and notifies a `chat` plugin. See
+[GitHub watcher](#github-repo-activity-watcher-optional). Also input-only.
 
 The machine API, used by the desktop voice client:
 
@@ -103,7 +127,7 @@ the only thing guarding it. There is no TLS.
 
 **The http plugin is send-only.** It has no way to push, so
 `NOTIFY_VIA=http` cannot deliver reminders — it logs and drops them.
-Keep `NOTIFY_VIA=discord` if you want reminders to reach you.
+Point `NOTIFY_VIA` at `discord` or `telegram` if you want reminders to reach you.
 
 ## Web chat
 
@@ -115,9 +139,9 @@ Open `http://<wren-host>:8787/`, paste a `WREN_TOKENS` value once, and it is
 remembered per browser. The page itself is served without auth because it is a
 static shell holding no user data; every request it makes carries the token.
 
-**This is the only surface besides Discord with conversation history.** Voice
-and the machine API are one-shot by design. Chat history lives in Wren's own
-`conversations`/`messages` tables, so it follows you between machines.
+**This is the only channel besides Discord with conversation history.** Voice,
+Telegram and the machine API are one-shot by design. Chat history lives in
+Wren's own `conversations`/`messages` tables, so it follows you between machines.
 
 Conversations are per-user: a token maps to a user id, and one user cannot see
 or touch another's conversations.
@@ -172,8 +196,8 @@ Tune `WREN_STT_MODEL` (`tiny.en` → `large-v3`) and `WREN_STT_DEVICE` /
 `WREN_STT_COMPUTE` to your hardware — the defaults (`base.en`, `auto`,
 `int8`) are chosen to stay usable on a CPU-only host.
 
-Voice requests are one-shot: non-Discord surfaces keep no conversation
-history, so follow-ups that depend on the previous turn won't resolve.
+Voice requests are one-shot: channels without conversation history can't
+resolve follow-ups that depend on the previous turn.
 
 ## LLM providers and fallback
 
@@ -227,17 +251,18 @@ alternatives with the same profile.
 - "got the potatoes" / "remove potatoes from shopping"
 - "what's on the shopping list" — also surfaces "you often get: ..."
   suggestions for items you've bought 3+ times before
-- "send shopping to husband" — DMs the whole current list to another
+- "send shopping to husband" — sends the whole current list to another
   whitelisted contact
 
 **Messaging**
-- "tell husband dinner's at 7" — DMs the other whitelisted contact
+- "tell husband dinner's at 7" — messages the other whitelisted contact
 - anything else falls through to open-ended chat
 
 **Status**
 - "show status" / "what backend are you using" / "show model" — reports the
   active LLM backend/model/endpoint, process uptime, and token usage since
   the last restart (resets on restart, not persisted)
+- "list plugins" — every skill and watcher, and whether each is configured
 
 ## Web lookup (optional)
 
@@ -265,7 +290,26 @@ unset (or drop `gmail` from `COMMUNICATION_PLUGINS`) to disable — nothing
 else about the bot depends on it. Despite the name this is plain IMAP, so
 any provider works, Gmail included.
 
+## GitHub repo activity watcher (optional)
+
+Add `github` to `COMMUNICATION_PLUGINS` and set
+`GITHUB_WATCH=owner/repo,owner/repo2` in `.env`. Wren polls each repo (every
+`GITHUB_POLL_SECONDS`, default 60) and notifies you via `NOTIFY_VIA` when the
+star count rises or a new issue or pull request appears.
+
+`GITHUB_TOKEN` is optional: without it you get anonymous rate limits and public
+repos only; with it, private repos work and the limit rises to 5000 requests an
+hour. Seen events are recorded in `github_state` so a restart doesn't re-announce
+everything. Leave `GITHUB_WATCH` unset to disable.
+
 ## Architecture
+
+![How a message reaches a skill: communication plugins feed core.handle_message, which dispatches to skills](Brand/github/architecture-1280x720.png)
+
+That figure is generated, not drawn — `Brand/src/gen_arch.py` parses
+`wren/registry.py` and `wren/communication/` with `ast` and the picture is
+rendered from what it finds. If it disagrees with the code, the figure is the
+thing that's wrong; regenerate it (see [Brand and logo usage](#brand-and-logo-usage)).
 
 All source lives in the `wren/` package (run as `python3 -m wren.run`). See
 [PROJECT_PLAN.md](PROJECT_PLAN.md) for the fuller rationale behind this split.
@@ -276,9 +320,9 @@ There are **two** plugin classes, on different axes:
   Web, Pins, Contacts. None of them import `discord`, `aiohttp`, or anything
   transport-specific — they only ever see a `Channel`.
 - **`wren/communication/`** — *how you reach Wren, and how Wren reaches you*.
-  Discord, HTTP/web chat (both `ROLE = "chat"`: input + output), Gmail,
-  GitHub (both `ROLE = "input"`: watch something external, never receive a
-  reply — they hand off through `router.notify_name(...)` to whichever chat
+  Discord, Telegram, HTTP/web chat (all `ROLE = "chat"`: input + output),
+  Gmail, GitHub (both `ROLE = "input"`: watch something external, never receive
+  a reply — they hand off through `router.notify_name(...)` to whichever chat
   plugin `NOTIFY_VIA` points at).
 
 ```
@@ -302,13 +346,16 @@ external event ──▶ communication plugin (input-only) ──▶ router.noti
   for unprompted messages, dispatched to `NOTIFY_VIA`.
 - `wren/communication/discord_plugin.py` — Discord client, `DiscordChannel`
   (reactions implement `ack`, channel history implements `history`). `ROLE = "chat"`.
+- `wren/communication/telegram_plugin.py` — Telegram bot, `TelegramChannel`
+  (typing indicator implements `ack`; `history` is `None` — the Bot API gives
+  a bot no way to read a chat's backlog). Long-polls `getUpdates` over aiohttp,
+  no Telegram library. `ROLE = "chat"`. Not enabled unless `TELEGRAM_TOKEN` is
+  set and "telegram" is in `COMMUNICATION_PLUGINS`.
 - `wren/communication/http_plugin.py` + `webchat.py` — aiohttp app, bearer-token
   auth, and the browser chat UI (conversations with real history). `ROLE = "chat"`.
 - `wren/communication/gmail_plugin.py` — IMAP inbox watcher. `ROLE = "input"`.
 - `wren/communication/github_plugin.py` (+ `github_state.py`) — repo activity
   watcher. `ROLE = "input"`.
-- `wren/communication/telegram_plugin.py` — **stub**, not wired in; shows the
-  shape of a new chat plugin.
 - `wren/brain.py` — LLM intent detection (`detect_intent`), the fallback
   chain across providers (`_complete`), and one-off LLM calls used by
   skills (`recall`, `expand`, `chat`).
@@ -323,9 +370,10 @@ external event ──▶ communication plugin (input-only) ──▶ router.noti
 - `wren/stt.py` — speech-to-text, lazily loaded and entirely optional.
 - `wren/registry.py` — the Skills registry: builds the combined intent list
   and prompt text `brain.py` needs, dispatches intents, and starts each
-  skill's optional background task exactly once per process. Deliberately
-  does **not** include `gmail_plugin`/`github_plugin` — those are
-  Communication plugins, started directly by `run.py`, not intent handlers.
+  skill's optional background task exactly once per process. `PLUGINS` holds
+  Skills only; the Gmail and GitHub watchers live in `WATCHERS`, which
+  `plugin_status()` also reports so "list plugins" can mention them, but which
+  is deliberately absent from intent dispatch.
 
 Adding a Skill: write a module in `wren/skills/` exposing `INTENTS`,
 `PROMPT_GUIDELINES`, and `async handle(intent, ctx)`, then add it to
@@ -341,15 +389,116 @@ for `"chat"` — `async start()` plus a `Channel` implementation; for
 `"input"`, just `async start()` that polls/watches and calls
 `router.notify_name(...)`. Register with `router.register(name, module)` in
 `start()` if it can deliver unprompted messages. Add the name to
-`COMMUNICATION_PLUGINS` in `.env` to enable it. `telegram_plugin.py` is a
-worked stub of exactly this shape.
+`COMMUNICATION_PLUGINS` in `.env` to enable it.
+
+`telegram_plugin.py` is the worked example: adding an entire new chat channel
+touched **zero** files under `wren/skills/`. If a new channel ever forces a
+change to a skill, the abstraction has sprung a leak — add the capability to
+the `Channel` protocol instead.
 
 ### Note on upgrading
 
 Pins used to use Discord's own pin feature and had no storage of their own;
-they now live in a `pins` table so they work on every surface. Existing
+they now live in a `pins` table so they work on every channel. Existing
 Discord pins are **not** migrated — they remain visible in Discord's pin list,
 but need re-pinning through Wren to show up in `what's pinned`.
+
+## Brand and logo usage
+
+The full brand system — marks, reduction ladder, clear space, palette with live
+WCAG contrast checks, type scale, do/don't — is one self-contained page:
+open [`Brand/brand-system.html`](Brand/brand-system.html) in a browser. No build
+step, no webfonts, no network requests. `Brand/README.md` covers the pipeline.
+
+### The mark
+
+A wren: compact body, fine beak, and the short tail cocked up over the back.
+**The tail is the identity** — it is the one feature separating this from a
+generic songbird, so it survives every reduction. Don't crop it, don't rotate
+the bird, don't redraw it.
+
+| Asset | Use |
+|---|---|
+| `Brand/brand/lockup.svg` | Mark + wordmark. The default. `-cream` and `-stacked` variants alongside. |
+| `Brand/brand/mark.svg` | Mark alone — full detail: wing, eye, pale supercilium. `-cream`, `-bark`, `-badge` variants. |
+| `Brand/brand/mark-simple.svg` | One colour, silhouette only. **Anything under ~24 px.** |
+| `Brand/brand/wordmark.svg` | Type alone. `-cream`, `-clay` variants. |
+| `Brand/brand/avatar-512.svg` | Profile pictures. `-clay` where it needs to pop, `-bark` on dark. |
+| `Brand/favicon/` | The favicon ladder, `site.webmanifest`, and a `<head>` snippet to paste. |
+
+**Reduction.** The full mark's wing, eye and supercilium stop resolving below
+roughly 24 px and start reading as dirt. Use `mark-simple.svg` below that.
+Minimum size for the full mark is **20 px**.
+
+**Clear space** is **0.35 × the mark's height** on every side. Nothing intrudes.
+
+### Colour
+
+| Token | Hex | Use |
+|---|---|---|
+| Clay | `#C4694A` | The brand colour. 3.30:1 — a **graphic** colour: the mark, fills, borders, display type at 24 px and up. |
+| Clay ink | `#A04E33` | 4.97:1 — clay when it has to carry small text, or sit under cream. |
+| Ink | `#3A322B` | 10.81:1 — body text, and the wordmark. |
+| Paper | `#F4EDE2` | The cream everything sits on. |
+| Night | `#241F1A` | Dark field. Clay lifts to `#E08D6C` (6.37:1) on it. |
+
+Clay is wrong for body copy — that is what clay ink is for. Every ratio above is
+computed by `Brand/src/contrast.py`, and `brand-system.html` recomputes all of
+them in the browser on load rather than quoting remembered numbers.
+
+### Publishing checklist
+
+1. **GitHub social preview** — upload `Brand/github/social-preview-1280x640.png`
+   via repo Settings → General → Social preview. It is not picked up automatically.
+2. **README hero** — already wired up at the top of this file, pointing at a
+   committed image rather than an upload URL, so it survives the account that
+   uploaded it.
+3. **Favicons** — copy `Brand/favicon/` to your web root and paste
+   `Brand/favicon/head-snippet.html` into `<head>`. For Wren's own browser chat
+   that means serving it alongside `wren/communication/chat.html`.
+4. **Avatars and banners** — `Brand/social/`. On X the avatar covers the
+   lower-left of `x-banner-1500x500`; the lockup is already placed clear of it.
+   Check LinkedIn's current crop before using its banner, it changes.
+
+### Regenerating
+
+```sh
+cd Brand
+python3 build.py && python3 render_pngs.py
+```
+
+**Regenerate after any change to the plugin list.** The architecture figure is
+captioned MEASURED, NOT DRAWN and re-reads `wren/registry.py` and
+`wren/communication/` on every build — leave it stale and it quietly starts
+lying, which is the exact failure the caption exists to rule out.
+`render_pngs.py` exits non-zero if any asset comes out the wrong size, and
+re-renders the whole set in one browser launch (glyph rasterisation differs
+between engines, so a single re-rendered card won't match its siblings).
+
+Only `src/logo.py` needs `fonttools`, and only for the wordmark; without it the
+build keeps the outlines already in `src/logo.json` and says so. The bird itself
+is pure Python with no dependencies.
+
+The bird is original geometry generated by `Brand/src/logo.py` — no third-party
+marks or artwork anywhere in the pack. The wordmark is set in TeX Gyre Adventor
+(GUST Font License, OFL-compatible, permits embedding and outline conversion).
+The brand assets carry the project's licence.
+
+## Security expectations
+
+Wren is *private* in the sense that it runs on your hardware and your data stays
+on your network. That is not the same as hardened:
+
+- **The HTTP plugin has no TLS.** A bearer token is the only thing guarding it.
+  Keep it on `127.0.0.1`, or on a LAN you trust.
+- **Authorization is a flat whitelist.** `core.handle_message` refuses any user
+  id not in the contacts table. Communication plugins authenticate (who are
+  you); core authorizes (are you allowed) — kept in one place so a new channel
+  cannot forget it.
+- **The shopping list is shared, notes are not.** Notes, reminders and pins are
+  scoped per owner; the shopping list is one table the whole household sees.
+- **Secrets live in `.env`** and are read at import. `.env` is gitignored;
+  keep it that way.
 
 ## Development
 
@@ -359,7 +508,9 @@ pytest -q
 ```
 
 Design docs and implementation plans for each feature live in
-`docs/superpowers/specs/` and `docs/superpowers/plans/`.
+`docs/superpowers/specs/` and `docs/superpowers/plans/`. They predate the v2
+restructure, so their module and env-var names are the old ones — `CLAUDE.md`
+has the translation table. The reasoning in them is still current.
 
 **Never run ad-hoc/throwaway scripts against the real `wren.db`.** Every
 storage module resolves its path through `wren/db.py`, which reads `WREN_DB`
@@ -377,7 +528,7 @@ importing anything from `wren`:
 
 ```bash
 WREN_DB=$(mktemp -d)/scratch.db python3 -c "
-from wren import notes
+from wren.skills import notes_store as notes
 notes.init_db()
 # ... now safe to read/write/delete this path
 "
@@ -406,3 +557,7 @@ Once installed (e.g. via `./setup.sh`'s systemd-install prompt, which
 templates the unit's paths/user for you), use `./manage.sh
 {start|stop|restart|status|logs}` as the day-to-day way to control the
 running service.
+
+The unit runs the working tree in place, so an edit in the repo is a production
+edit the moment the service restarts. Restart deliberately, watching
+`./manage.sh logs`, rather than discovering a broken import at 3am.
