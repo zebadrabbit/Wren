@@ -1,0 +1,111 @@
+{
+ "communication": [
+  {
+   "module": "discord_plugin",
+   "key": "discord",
+   "name": "Discord",
+   "role": "chat",
+   "canNotify": true,
+   "stub": false
+  },
+  {
+   "module": "github_plugin",
+   "key": "github",
+   "name": "GitHub Watcher",
+   "role": "input",
+   "canNotify": null,
+   "stub": false
+  },
+  {
+   "module": "gmail_plugin",
+   "key": "gmail",
+   "name": "Gmail (IMAP) Watcher",
+   "role": "input",
+   "canNotify": null,
+   "stub": false
+  },
+  {
+   "module": "http_plugin",
+   "key": "http",
+   "name": "HTTP / Web Chat",
+   "role": "chat",
+   "canNotify": false,
+   "stub": false
+  },
+  {
+   "module": "telegram_plugin",
+   "key": "telegram",
+   "name": "Telegram",
+   "role": "chat",
+   "canNotify": true,
+   "stub": false
+  }
+ ],
+ "skills": [
+  {
+   "module": "notes_skill",
+   "name": "Notes & Ideas",
+   "intents": [
+    "save_note",
+    "recall_notes",
+    "save_idea",
+    "recall_ideas",
+    "discard_idea",
+    "expand_idea",
+    "export_notes"
+   ]
+  },
+  {
+   "module": "shopping_skill",
+   "name": "Shopping List",
+   "intents": [
+    "add_shopping_item",
+    "remove_shopping_item",
+    "recall_shopping",
+    "send_shopping_list"
+   ]
+  },
+  {
+   "module": "reminder_skill",
+   "name": "Reminders",
+   "intents": [
+    "set_reminder",
+    "recall_reminders",
+    "cancel_reminder"
+   ]
+  },
+  {
+   "module": "web_skill",
+   "name": "Web Lookup",
+   "intents": [
+    "web_search",
+    "read_page"
+   ]
+  },
+  {
+   "module": "contacts_skill",
+   "name": "Contacts",
+   "intents": [
+    "add_contact",
+    "remove_contact",
+    "list_contacts"
+   ]
+  },
+  {
+   "module": "pins_skill",
+   "name": "Pins",
+   "intents": [
+    "pin_note",
+    "unpin_note",
+    "list_pins"
+   ]
+  }
+ ],
+ "totals": {
+  "chat": 3,
+  "input": 2,
+  "stubs": 0,
+  "skills": 6,
+  "intents": 22
+ }
+}

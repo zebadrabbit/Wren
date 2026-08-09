@@ -1,0 +1,542 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Wren — brand system</title>
+<style>
+/* Wren — design tokens. Warm, domestic, local-first.
+ *
+ * Every ratio in a comment below is measured, not estimated: src/contrast.py
+ * computes it and the brand page recomputes all of them live in the browser,
+ * so a colour that gets nudged and quietly stops meeting AA shows up as a red
+ * cell rather than as a stale comment.
+ *
+ * Light ratios are against --w-paper (#F4EDE2), dark against --w-night
+ * (#241F1A). "AA" means >= 4.5:1, the threshold for normal-size body text.
+ */
+:root {
+  /* ---- ground: the daylight surfaces ------------------------------------ */
+  --w-paper:    #F4EDE2;   /* page field — the cream everything sits on */
+  --w-surface:  #FBF7F0;   /* raised: cards, the chat composer, popovers */
+  --w-sunk:     #EBE2D4;   /* recessed: code blocks, inset wells */
+  --w-line:     #DDD0BC;   /* hairlines, dividers, input borders */
+  --w-line-2:   #C9B9A1;   /* emphasised border, focus ring track */
+
+  /* ---- ink -------------------------------------------------------------- */
+  --w-ink:      #3A322B;   /* 10.81:1  body text, the wordmark */
+  --w-ink-2:    #6E6255;   /*  5.10:1  secondary text, labels */
+  --w-ink-3:    #726450;   /*  4.94:1  smallest permitted text colour — AA */
+
+  /* ---- accents ---------------------------------------------------------- */
+  /* Clay is the bird and the brand. It is a LARGE-TEXT / graphic colour at
+     3.30:1 — fine for the mark, headings 24px+, borders and fills; not fine
+     for body copy. Use --w-clay-ink when clay has to carry small text. */
+  --w-clay:      #C4694A;  /*  3.30:1  graphic use, mark, large display type */
+  --w-clay-ink:  #A04E33;  /*  4.97:1  clay as *text*, and as a button fill
+                                       under cream text (cream on it: 4.97:1) */
+  --w-clay-soft: #E9CDBF;  /* tint: selected rows, hover wash, chart fills */
+
+  --w-moss:      #6B7F5C;  /*  3.75:1  graphic use, large type only */
+  --w-moss-ink:  #55684A;  /*  5.21:1  moss as text (cream on it: 5.21:1) */
+  --w-moss-soft: #D8E0CE;  /* tint */
+
+  /* ---- signals ---------------------------------------------------------- */
+  /* Warm rather than clinical: this is an assistant in a kitchen, not a
+     control room. All three clear AA against paper. */
+  --w-ok:     #4F7343;     /*  4.67:1  done, on the list, delivered */
+  --w-warn:   #8F5F10;     /*  4.74:1  needs attention, provider fell back */
+  --w-alert:  #B4462F;     /*  4.68:1  failed, unreachable, destructive */
+
+  /* ---- night: the same system after dark -------------------------------- */
+  --w-night:         #241F1A;
+  --w-night-surface: #2E2822;
+  --w-night-sunk:    #1B1713;
+  --w-night-line:    #443C33;
+  --w-night-ink:     #F4EDE2;  /* 14.04:1 */
+  --w-night-ink-2:   #C4B7A5;  /*  8.29:1 */
+  --w-night-ink-3:   #9C8E7C;  /*  5.11:1 */
+  --w-night-clay:    #E08D6C;  /*  6.37:1  clay lifted to stay legible on night */
+  --w-night-moss:    #9CB388;  /*  7.17:1 */
+
+  /* ---- type -------------------------------------------------------------
+     The wordmark ships as outlines, so nothing here has to match it exactly.
+     For running text the stack is a humanist/geometric sans that degrades to
+     the system UI font with no webfont fetch — a local-first assistant that
+     phones a CDN for a typeface would be missing the point. */
+  --w-sans: "Inter", "Source Sans 3", -apple-system, BlinkMacSystemFont,
+            "Segoe UI", Roboto, system-ui, sans-serif;
+  --w-display: "TeX Gyre Adventor", "Poppins", "Century Gothic", var(--w-sans);
+  --w-mono: "JetBrains Mono", "IBM Plex Mono", ui-monospace, "SF Mono",
+            "Cascadia Mono", Consolas, "Liberation Mono", monospace;
+
+  /* Type scale — 1.25 (major third), rounded to whole px. Warm brands read
+     better a little larger and a little looser than technical ones. */
+  --w-t-xs:   12px;
+  --w-t-sm:   14px;
+  --w-t-base: 16px;
+  --w-t-md:   20px;
+  --w-t-lg:   25px;
+  --w-t-xl:   31px;
+  --w-t-2xl:  39px;
+  --w-t-3xl:  49px;
+
+  --w-lh-tight: 1.18;   /* display */
+  --w-lh-snug:  1.35;   /* headings, UI */
+  --w-lh-body:  1.6;    /* running text */
+  --w-track-display: -0.015em;
+  --w-track-label:    0.08em;
+
+  /* ---- form ------------------------------------------------------------- */
+  /* Rounded, but not pill-shaped: soft corners read domestic, full pills read
+     like a consumer app trying too hard. */
+  --w-r-sm:  6px;
+  --w-r-md:  10px;
+  --w-r-lg:  16px;
+  --w-r-xl:  24px;
+
+  --w-space: 8px;                    /* the grid everything else is a multiple of */
+  --w-shadow-sm: 0 1px 2px rgba(58, 50, 43, .07);
+  --w-shadow-md: 0 2px 8px rgba(58, 50, 43, .09);
+  --w-shadow-lg: 0 8px 28px rgba(58, 50, 43, .12);
+
+  /* Clear space around the mark, as a multiple of its own height. Nothing —
+     type, edge of canvas, another logo — comes inside this. */
+  --w-mark-clearspace: 0.35;
+  --w-mark-min-px: 20px;             /* below this, use the simple mark */
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--w-paper); color: var(--w-ink);
+  font-family: var(--w-sans); font-size: var(--w-t-base); line-height: var(--w-lh-body); }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 0 32px 96px; }
+header { border-bottom: 1px solid var(--w-line); margin-bottom: 40px; padding: 56px 0 34px; }
+header .sub { color: var(--w-ink-2); max-width: 66ch; margin: 18px 0 0; }
+h2 { font-family: var(--w-display); font-size: var(--w-t-xl); font-weight: 600;
+  letter-spacing: var(--w-track-display); margin: 56px 0 6px; }
+h3 { font-size: var(--w-t-md); font-weight: 600; margin: 30px 0 8px; }
+p.lead { color: var(--w-ink-2); margin: 0 0 20px; max-width: 72ch; }
+.label { font-size: var(--w-t-xs); letter-spacing: var(--w-track-label);
+  text-transform: uppercase; color: var(--w-ink-3); font-weight: 600; }
+code, .mono { font-family: var(--w-mono); font-size: 0.92em; }
+.grid { display: grid; gap: 16px; }
+.tile { border: 1px solid var(--w-line); border-radius: var(--w-r-md);
+  overflow: hidden; background: var(--w-surface); }
+.tile .art { display: flex; align-items: center; justify-content: center; padding: 26px; min-height: 150px; }
+.tile .cap { border-top: 1px solid var(--w-line); padding: 9px 12px;
+  font-size: var(--w-t-xs); color: var(--w-ink-2); display: flex; justify-content: space-between; gap: 8px; }
+table { border-collapse: collapse; width: 100%; font-size: var(--w-t-sm); }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--w-line); vertical-align: middle; }
+th { font-size: var(--w-t-xs); letter-spacing: var(--w-track-label); text-transform: uppercase; color: var(--w-ink-3); }
+.chip { width: 30px; height: 30px; border-radius: var(--w-r-sm); border: 1px solid rgba(58,50,43,.14); display: inline-block; }
+.badge { font-size: 11px; font-weight: 700; letter-spacing: .06em; padding: 3px 7px;
+  border-radius: 999px; display: inline-block; }
+.b-aaa { background: var(--w-moss-soft); color: var(--w-moss-ink); }
+.b-aa  { background: var(--w-clay-soft); color: var(--w-clay-ink); }
+.b-no  { background: #F6D9D2; color: var(--w-alert); }
+.dodont { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.dodont > div { border-radius: var(--w-r-md); overflow: hidden; border: 1px solid var(--w-line); }
+.dodont .art { min-height: 168px; display: flex; align-items: center; justify-content: center;
+  padding: 20px; background: var(--w-surface); }
+.dodont .cap { padding: 11px 14px; font-size: var(--w-t-sm); }
+.do .cap  { background: var(--w-moss-soft); color: var(--w-moss-ink); }
+.dont .cap { background: #F6D9D2; color: var(--w-alert); }
+.spec { border-bottom: 1px solid var(--w-line); padding: 14px 0; display: flex;
+  align-items: baseline; gap: 20px; }
+.spec .m { flex: 0 0 132px; color: var(--w-ink-3); }
+.night { background: var(--w-night); color: var(--w-night-ink); }
+.note { background: var(--w-sunk); border-left: 3px solid var(--w-clay);
+  padding: 14px 18px; border-radius: 0 var(--w-r-sm) var(--w-r-sm) 0; margin: 22px 0;
+  color: var(--w-ink-2); font-size: var(--w-t-sm); }
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div id="hdrmark"></div>
+  <p class="sub">The whole system, on one page. The bird and the wordmark are
+     generated by <code>src/logo.py</code>; the colours come from
+     <code>src/tokens.css</code>; the contrast ratios below are recomputed in
+     this page every time it loads, so a colour that gets nudged and quietly
+     stops meeting AA turns red here instead of staying green in a comment.</p>
+</header>
+
+<h2>The mark</h2>
+<p class="lead">A wren: compact body, fine beak, and the short tail cocked up
+   over the back. The tail is the whole identity — it is what separates this
+   from a generic songbird — so it survives in every reduction below.</p>
+<div class="grid" id="marks" style="grid-template-columns:repeat(auto-fill,minmax(196px,1fr))"></div>
+
+<h3>Reduction</h3>
+<p class="lead">The full mark carries a wing, an eye and the pale eyebrow stripe
+   (a real wren's supercilium). Below roughly 24&nbsp;px those stop resolving and
+   start reading as dirt, so anything smaller uses the simple mark — one colour,
+   silhouette only. The favicon already does.</p>
+<div class="grid" id="ladder" style="grid-template-columns:1fr 1fr"></div>
+
+<h3>Clear space and minimum size</h3>
+<p class="lead">Keep clear space of at least <b>0.35&times; the mark's height</b>
+   on every side — nothing, including type, another logo or the edge of the
+   canvas, comes inside it. Minimum size for the full mark is <b>20&nbsp;px</b>;
+   below that, switch to the simple mark.</p>
+<div class="grid" id="clearspace" style="grid-template-columns:1fr"></div>
+
+<h2>Colour</h2>
+<p class="lead">Clay is the brand. It is a <em>graphic</em> colour, not a text
+   colour — at 3.3:1 on paper it is fine for the mark, for display type at
+   24&nbsp;px and up, and for fills and borders, and not fine for body copy. Use
+   <code>--w-clay-ink</code> when clay has to carry small text or sit under
+   cream. Every ratio below is measured live.</p>
+<table id="pal"></table>
+
+<h3>After dark</h3>
+<p class="lead">The same system on <code>--w-night</code>. Clay lifts to
+   <code>--w-night-clay</code>. Unlifted clay on night measures
+   <span id="claynight" class="mono"></span> — <span id="claynightverdict"></span></p>
+<table id="palnight"></table>
+
+<h2>Type</h2>
+<p class="lead">The wordmark ships as outlines, so nothing has to match it
+   exactly. Running text is a humanist sans that degrades to the system UI font
+   — a local-first assistant that phones a CDN for a typeface would be missing
+   its own point. Scale is a 1.25 major third.</p>
+<div id="type"></div>
+
+<h2>Do / don't</h2>
+<div class="dodont" id="dodont"></div>
+
+<h2>What is in the pack</h2>
+<table id="files"></table>
+<div class="note" id="archnote"></div>
+</div>
+
+<script>
+const LOGO = {"geometry": {"body": "M 4.00 49.38 C 6.66 48.28 15.11 44.77 18.50 43.36 C 19.67 40.97 21.14 36.12 23.52 33.10 C 25.89 30.08 31.17 21.52 36.34 20.72 C 41.51 19.92 48.30 26.23 53.07 28.53 C 57.83 30.82 63.37 33.72 66.45 35.22 C 69.53 36.72 73.47 41.00 74.81 39.12 C 76.15 37.24 82.96 14.19 84.29 10.13 C 85.93 11.14 94.36 16.36 96.00 17.38 C 94.44 21.83 86.20 45.12 84.85 49.16 C 83.50 53.20 82.12 61.31 79.83 65.89 C 77.54 70.47 74.07 77.50 68.68 81.50 C 63.29 85.49 55.26 89.66 47.49 89.86 C 39.72 90.07 31.67 86.61 26.30 82.61 C 20.94 78.61 18.59 71.06 16.82 67.00 C 15.06 62.94 14.96 58.76 15.15 56.97 C 15.35 55.17 17.72 52.86 18.50 51.61 C 15.11 51.09 6.66 49.79 4.00 49.38 Z", "wing": "M 34.11 61.98 C 33.93 59.25 42.94 54.55 49.72 54.74 C 56.51 54.92 70.21 61.57 74.81 63.10 C 70.42 64.73 57.62 72.21 50.84 72.02 C 44.05 71.83 34.29 64.72 34.11 61.98 Z", "brow": "M 23.40 38.23 C 25.56 37.08 34.40 31.92 36.34 31.32 C 38.28 30.72 38.81 32.65 37.12 33.99 C 35.43 35.34 26.53 39.66 24.41 40.80 C 24.24 40.37 23.57 38.66 23.40 38.23 Z", "eye": {"cx": 26.75, "cy": 44.03, "r": 3.01}}, "wordmark": {"d": "M0.45 -35.01 13.82 0.00H18.94L26.50 -23.23L34.11 0.00H39.17L52.74 -35.01H48.13L36.74 -5.70L28.48 -30.72H24.58L16.32 -5.70L5.18 -35.01Z M60.74 0.00H65.47V-20.42C65.47 -26.94 68.80 -30.53 75.39 -31.17V-35.84C70.34 -35.58 67.33 -33.86 65.47 -30.02V-35.01H60.74Z M82.18 -17.66C82.18 -7.30 90.30 0.83 100.67 0.83C108.61 0.83 115.46 -4.86 117.70 -11.52H112.77C110.78 -6.72 105.86 -3.52 100.54 -3.52C93.38 -3.52 87.30 -9.02 86.91 -15.94H118.59C118.59 -28.35 110.72 -35.84 100.35 -35.84C90.18 -35.84 82.18 -27.84 82.18 -17.66ZM87.04 -20.22C88.32 -26.94 93.63 -31.49 100.29 -31.49C107.07 -31.49 112.26 -27.20 113.86 -20.22Z M128.64 0.00H133.38V-19.26C133.38 -27.84 137.73 -31.49 144.06 -31.49C150.53 -31.49 154.88 -27.90 154.88 -18.37V0.00H159.62V-18.37C159.62 -30.66 153.41 -35.84 144.64 -35.84C140.03 -35.84 136.32 -34.05 133.38 -30.46V-35.01H128.64Z", "width": 163.65, "cap": 46.72, "xh": 30.72}, "palette": {"clay": "#C4694A", "clayDeep": "#A9553A", "moss": "#6B7F5C", "cream": "#F4EDE2", "bark": "#3A322B"}};
+const ARCH = {
+ "communication": [
+  {
+   "module": "discord_plugin",
+   "key": "discord",
+   "name": "Discord",
+   "role": "chat",
+   "canNotify": true,
+   "stub": false
+  },
+  {
+   "module": "github_plugin",
+   "key": "github",
+   "name": "GitHub Watcher",
+   "role": "input",
+   "canNotify": null,
+   "stub": false
+  },
+  {
+   "module": "gmail_plugin",
+   "key": "gmail",
+   "name": "Gmail (IMAP) Watcher",
+   "role": "input",
+   "canNotify": null,
+   "stub": false
+  },
+  {
+   "module": "http_plugin",
+   "key": "http",
+   "name": "HTTP / Web Chat",
+   "role": "chat",
+   "canNotify": false,
+   "stub": false
+  },
+  {
+   "module": "telegram_plugin",
+   "key": "telegram",
+   "name": "Telegram",
+   "role": "chat",
+   "canNotify": true,
+   "stub": false
+  }
+ ],
+ "skills": [
+  {
+   "module": "notes_skill",
+   "name": "Notes & Ideas",
+   "intents": [
+    "save_note",
+    "recall_notes",
+    "save_idea",
+    "recall_ideas",
+    "discard_idea",
+    "expand_idea",
+    "export_notes"
+   ]
+  },
+  {
+   "module": "shopping_skill",
+   "name": "Shopping List",
+   "intents": [
+    "add_shopping_item",
+    "remove_shopping_item",
+    "recall_shopping",
+    "send_shopping_list"
+   ]
+  },
+  {
+   "module": "reminder_skill",
+   "name": "Reminders",
+   "intents": [
+    "set_reminder",
+    "recall_reminders",
+    "cancel_reminder"
+   ]
+  },
+  {
+   "module": "web_skill",
+   "name": "Web Lookup",
+   "intents": [
+    "web_search",
+    "read_page"
+   ]
+  },
+  {
+   "module": "contacts_skill",
+   "name": "Contacts",
+   "intents": [
+    "add_contact",
+    "remove_contact",
+    "list_contacts"
+   ]
+  },
+  {
+   "module": "pins_skill",
+   "name": "Pins",
+   "intents": [
+    "pin_note",
+    "unpin_note",
+    "list_pins"
+   ]
+  }
+ ],
+ "totals": {
+  "chat": 3,
+  "input": 2,
+  "stubs": 0,
+  "skills": 6,
+  "intents": 22
+ }
+};
+// WCAG 2.1 relative luminance and contrast, recomputed in the browser so the
+// ratios on the brand page can never drift from the colours next to them.
+// Mirrors src/contrast.py — if these two ever disagree, that is a bug.
+function _lin(c) {
+  c /= 255;
+  return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+}
+function luminance(hex) {
+  const h = hex.replace('#', '');
+  const n = h.length === 3 ? h.split('').map(x => x + x).join('') : h;
+  const r = parseInt(n.slice(0, 2), 16), g = parseInt(n.slice(2, 4), 16), b = parseInt(n.slice(4, 6), 16);
+  return 0.2126 * _lin(r) + 0.7152 * _lin(g) + 0.0722 * _lin(b);
+}
+function contrast(a, b) {
+  const la = luminance(a), lb = luminance(b);
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+function grade(r, large) {
+  const aa = large ? 3 : 4.5, aaa = large ? 4.5 : 7;
+  return r >= aaa ? 'AAA' : r >= aa ? 'AA' : 'fail';
+}
+
+
+const PAL = {
+  paper:'#F4EDE2', surface:'#FBF7F0', sunk:'#EBE2D4', line:'#DDD0BC', line2:'#C9B9A1',
+  ink:'#3A322B', ink2:'#6E6255', ink3:'#726450',
+  clay:'#C4694A', clayInk:'#A04E33', claySoft:'#E9CDBF', clayDeep:'#A9553A',
+  moss:'#6B7F5C', mossInk:'#55684A', mossSoft:'#D8E0CE',
+  night:'#241F1A', nightSurface:'#2E2822', nightInk:'#F4EDE2',
+  nightInk2:'#C4B7A5', nightInk3:'#9C8E7C', nightClay:'#E08D6C', nightMoss:'#9CB388'
+};
+
+function bird(size, fill, o) {
+  o = o || {};
+  const k = size / 100, g = LOGO.geometry;
+  let s = `<svg width="${size}" height="${size}" viewBox="0 0 100 100" role="img" aria-label="Wren">`;
+  s += `<path d="${g.body}" fill="${fill}"/>`;
+  if (!o.simple) {
+    s += `<path d="${g.wing}" fill="${o.wing || PAL.clayDeep}"/>`;
+    s += `<path d="${g.brow}" fill="${o.detail || PAL.paper}"/>`;
+    s += `<circle cx="${g.eye.cx}" cy="${g.eye.cy}" r="${g.eye.r}" fill="${o.detail || PAL.paper}"/>`;
+  }
+  return s + '</svg>';
+}
+function lockupSVG(size, inkFill, markFill, o) {
+  o = o || {};
+  const ms = size * 1.75, gap = size * 0.34, ww = LOGO.wordmark.width * size / 64;
+  const w = ms + gap + ww, h = ms;
+  const g = LOGO.geometry;
+  let s = `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img" aria-label="Wren">`;
+  s += `<g transform="scale(${ms / 100})"><path d="${g.body}" fill="${markFill}"/>`;
+  if (!o.simple) {
+    s += `<path d="${g.wing}" fill="${o.wing || PAL.clayDeep}"/>`;
+    s += `<path d="${g.brow}" fill="${o.detail || PAL.paper}"/>`;
+    s += `<circle cx="${g.eye.cx}" cy="${g.eye.cy}" r="${g.eye.r}" fill="${o.detail || PAL.paper}"/>`;
+  }
+  s += '</g>';
+  s += `<g transform="translate(${ms + gap},${ms * 0.62 + size * 0.24}) scale(${size / 64})">`
+     + `<path d="${LOGO.wordmark.d}" fill="${inkFill}"/></g>`;
+  return s + '</svg>';
+}
+
+document.getElementById('hdrmark').innerHTML = lockupSVG(46, PAL.ink, PAL.clay);
+
+/* ---- marks ---- */
+const MARKS = [
+  ['Primary', PAL.paper, () => bird(112, PAL.clay), 'brand/mark.svg'],
+  ['Simple', PAL.paper, () => bird(112, PAL.clay, { simple: true }), 'brand/mark-simple.svg'],
+  ['Ink', PAL.paper, () => bird(112, PAL.ink, { simple: true }), 'brand/mark-bark.svg'],
+  ['Reversed', PAL.night, () => bird(112, PAL.paper, { simple: true }), 'brand/mark-cream.svg'],
+  ['On clay', PAL.clay, () => bird(112, PAL.paper, { simple: true }), 'brand/favicon.svg'],
+  ['Lockup', PAL.paper, () => lockupSVG(38, PAL.ink, PAL.clay), 'brand/lockup.svg'],
+  ['Lockup reversed', PAL.night, () => lockupSVG(38, PAL.paper, PAL.paper, { simple: true }), 'brand/lockup-cream.svg'],
+  ['Wordmark', PAL.paper, () =>
+    `<svg width="190" height="64" viewBox="0 0 ${LOGO.wordmark.width} 64"><g transform="translate(0,47)">`
+    + `<path d="${LOGO.wordmark.d}" fill="${PAL.ink}"/></g></svg>`, 'brand/wordmark.svg'],
+];
+document.getElementById('marks').innerHTML = MARKS.map(([n, bg, fn, f]) =>
+  `<div class="tile"><div class="art" style="background:${bg}">${fn()}</div>
+   <div class="cap"><span>${n}</span><span class="mono">${f.split('/').pop()}</span></div></div>`).join('');
+
+/* ---- favicon ladder ---- */
+const SIZES = [16, 20, 24, 32, 48, 64];
+function ladder(simple, bg, fg) {
+  return `<div class="tile"><div class="art" style="background:${bg};gap:20px;align-items:flex-end">`
+    + SIZES.map(s => `<div style="text-align:center">${bird(s, fg, { simple })}
+        <div style="font-size:10px;color:${bg === PAL.night ? PAL.nightInk3 : PAL.ink3};margin-top:8px">${s}px</div></div>`).join('')
+    + `</div><div class="cap"><span>${simple ? 'Simple mark — legible all the way down' : 'Full mark — details mush below 24px'}</span></div></div>`;
+}
+document.getElementById('ladder').innerHTML =
+  ladder(false, PAL.paper, PAL.clay) + ladder(true, PAL.paper, PAL.clay);
+
+/* ---- clear space ---- */
+(function () {
+  const m = 150, pad = m * 0.35;
+  const box = m + pad * 2;
+  const g = LOGO.geometry;
+  const svg = `<svg width="${box + 120}" height="${box}" viewBox="0 0 ${box + 120} ${box}">
+    <rect x="0" y="0" width="${box}" height="${box}" fill="${PAL.claySoft}"/>
+    <rect x="${pad}" y="${pad}" width="${m}" height="${m}" fill="${PAL.paper}" stroke="${PAL.clay}" stroke-dasharray="5 4"/>
+    <g transform="translate(${pad},${pad}) scale(${m / 100})"><path d="${g.body}" fill="${PAL.clay}"/>
+      <path d="${g.wing}" fill="${PAL.clayDeep}"/><path d="${g.brow}" fill="${PAL.paper}"/>
+      <circle cx="${g.eye.cx}" cy="${g.eye.cy}" r="${g.eye.r}" fill="${PAL.paper}"/></g>
+    <text x="${box + 16}" y="${box / 2 - 6}" font-family="${'ui-monospace,monospace'}" font-size="13" fill="${PAL.ink2}">clear space</text>
+    <text x="${box + 16}" y="${box / 2 + 14}" font-family="${'ui-monospace,monospace'}" font-size="13" fill="${PAL.clay}">= 0.35 × height</text>
+  </svg>`;
+  document.getElementById('clearspace').innerHTML =
+    `<div class="tile"><div class="art">${svg}</div>
+     <div class="cap"><span>The shaded band is the minimum keep-out. It scales with the mark.</span></div></div>`;
+})();
+
+/* ---- palette, with live contrast ---- */
+function badge(r, large) {
+  const g = grade(r, large);
+  const cls = g === 'AAA' ? 'b-aaa' : g === 'AA' ? 'b-aa' : 'b-no';
+  return `<span class="badge ${cls}">${g}</span>`;
+}
+function palTable(el, rows, bg, bgName) {
+  const html = ['<tr><th></th><th>Token</th><th>Hex</th><th>vs ' + bgName + '</th><th>Body</th><th>Large 24px+</th><th>Use</th></tr>'];
+  rows.forEach(([tok, hex, use]) => {
+    const r = contrast(hex, bg);
+    html.push(`<tr><td><span class="chip" style="background:${hex}"></span></td>
+      <td class="mono">${tok}</td><td class="mono">${hex}</td>
+      <td class="mono">${r.toFixed(2)}:1</td>
+      <td>${badge(r, false)}</td><td>${badge(r, true)}</td>
+      <td style="color:var(--w-ink-2)">${use}</td></tr>`);
+  });
+  document.getElementById(el).innerHTML = html.join('');
+}
+palTable('pal', [
+  ['--w-ink', PAL.ink, 'body text, wordmark'],
+  ['--w-ink-2', PAL.ink2, 'secondary text, labels'],
+  ['--w-ink-3', PAL.ink3, 'smallest permitted text'],
+  ['--w-clay', PAL.clay, 'the mark, display type, fills'],
+  ['--w-clay-ink', PAL.clayInk, 'clay as text; cream sits on it at 4.97:1'],
+  ['--w-moss', PAL.moss, 'input-only channels, secondary graphic'],
+  ['--w-moss-ink', PAL.mossInk, 'moss as text'],
+  ['--w-ok', '#4F7343', 'done, delivered, on the list'],
+  ['--w-warn', '#8F5F10', 'needs attention, provider fell back'],
+  ['--w-alert', '#B4462F', 'failed, unreachable, destructive'],
+], PAL.paper, 'paper');
+palTable('palnight', [
+  ['--w-night-ink', PAL.nightInk, 'body text on night'],
+  ['--w-night-ink-2', PAL.nightInk2, 'secondary'],
+  ['--w-night-ink-3', PAL.nightInk3, 'smallest permitted'],
+  ['--w-night-clay', PAL.nightClay, 'clay, lifted for dark surfaces'],
+  ['--w-night-moss', PAL.nightMoss, 'moss, lifted'],
+  ['--w-clay (unlifted)', PAL.clay, 'large type only on night — never body copy'],
+], PAL.night, 'night');
+
+/* The prose above quotes this number rather than hardcoding it. An earlier
+   draft of this page claimed 2.6:1 here from memory; the live table said
+   otherwise, which is the entire argument for computing it. */
+(function () {
+  const r = contrast(PAL.clay, PAL.night);
+  document.getElementById('claynight').textContent = r.toFixed(2) + ':1';
+  document.getElementById('claynightverdict').textContent =
+    grade(r, false) === 'fail'
+      ? 'enough for display type at 24px and up, not enough for body copy.'
+      : 'usable, but the lifted value is still the better default on dark surfaces.';
+})();
+
+/* ---- type ---- */
+const SCALE = [['3xl', 49], ['2xl', 39], ['xl', 31], ['lg', 25], ['md', 20], ['base', 16], ['sm', 14], ['xs', 12]];
+document.getElementById('type').innerHTML = SCALE.map(([n, px]) =>
+  `<div class="spec"><div class="m mono">--w-t-${n} · ${px}px</div>
+   <div style="font-size:${px}px;line-height:1.2">Talk to it in plain English</div></div>`).join('');
+
+/* ---- do / don't ---- */
+const g = LOGO.geometry;
+function raw(size, fill, extra) {
+  return `<svg width="${size}" height="${size}" viewBox="0 0 100 100">
+    <path d="${g.body}" fill="${fill}"/>${extra || ''}</svg>`;
+}
+document.getElementById('dodont').innerHTML = [
+  ['do', bird(96, PAL.clay), 'Clay on paper, or cream on night. Those are the pairs.'],
+  ['dont', raw(96, '#7B4FCF'), 'Do not recolour the bird outside the palette.'],
+  ['do', bird(96, PAL.clay, { simple: true }), 'Drop to the simple mark when it gets small.'],
+  ['dont', `<svg width="150" height="96" viewBox="0 0 100 64"><g transform="scale(1.5,0.64)">
+      <path d="${g.body}" fill="${PAL.clay}"/></g></svg>`, 'Do not stretch it. Scale both axes together.'],
+  ['do', `<div style="background:${PAL.clay};padding:18px;border-radius:10px">${bird(72, PAL.paper, { simple: true })}</div>`,
+   'On a clay field, reverse it out in cream.'],
+  ['dont', `<div style="background:${PAL.moss};padding:18px;border-radius:10px">${bird(72, PAL.clay, { simple: true })}</div>`,
+   `Do not sit clay on moss — ${contrast(PAL.clay, PAL.moss).toFixed(2)}:1, effectively invisible.`],
+].map(([k, art, cap]) =>
+  `<div class="${k}"><div class="art">${art}</div><div class="cap">${k === 'do' ? '✓ ' : '✕ '}${cap}</div></div>`).join('');
+
+/* ---- files ---- */
+const FILES = [
+  ['brand-system.html', 'This page.'],
+  ['social-pack.html', 'Every card at its exact platform size, with SVG and PNG export.'],
+  ['brand/*.svg', 'Mark, wordmark, lockups, avatar and favicon as standalone vector.'],
+  ['github/*.png', 'Social preview, README hero, and the measured architecture figure.'],
+  ['social/*.png', 'Avatars and banners for X, LinkedIn, Bluesky, Discord, Instagram.'],
+  ['favicon/*', 'The favicon ladder plus site.webmanifest.'],
+  ['src/logo.py', 'Generates the bird and the wordmark. The mark lives here.'],
+  ['src/tokens.css', 'Every colour, size and radius in the system.'],
+  ['src/gen_arch.py', 'Measures the repo for the architecture figure.'],
+  ['build.py', 'src/ + templates/ → the two pages above.'],
+  ['render_pngs.py', 'The pages → every PNG, size-checked.'],
+];
+document.getElementById('files').innerHTML =
+  '<tr><th>Path</th><th>What it is</th></tr>' +
+  FILES.map(([f, d]) => `<tr><td class="mono">${f}</td><td style="color:var(--w-ink-2)">${d}</td></tr>`).join('');
+
+const t = ARCH.totals;
+document.getElementById('archnote').innerHTML =
+  `<b>The architecture figure is measured, not drawn.</b> As of this build the
+   repository has ${t.chat} chat channel${t.chat === 1 ? '' : 's'},
+   ${t.input} input watcher${t.input === 1 ? '' : 's'}${t.stubs ? ` (plus ${t.stubs} stub)` : ''},
+   ${t.skills} skills and ${t.intents} intents — read out of
+   <code>wren/registry.py</code> and <code>wren/communication/</code> by
+   <code>src/gen_arch.py</code> at build time. Add a skill, rebuild, and the
+   figure grows a box on its own.`;
+</script>
+</body>
+</html>

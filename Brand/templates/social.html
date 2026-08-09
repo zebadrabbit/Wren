@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Wren — social &amp; repo pack</title>
+<style>
+/*__TOKENS__*/
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--w-sunk); color: var(--w-ink);
+  font-family: var(--w-sans); font-size: var(--w-t-base); line-height: var(--w-lh-body);
+}
+header {
+  padding: 40px 32px 26px; background: var(--w-paper);
+  border-bottom: 1px solid var(--w-line);
+}
+header h1 { font-family: var(--w-display); font-size: var(--w-t-2xl); margin: 0 0 6px;
+  letter-spacing: var(--w-track-display); font-weight: 600; }
+header p { margin: 0; color: var(--w-ink-2); max-width: 68ch; }
+main { padding: 28px 32px 80px; display: flex; flex-direction: column; gap: 30px; }
+section.item { background: var(--w-paper); border: 1px solid var(--w-line);
+  border-radius: var(--w-r-lg); overflow: hidden; }
+.bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 12px 16px; border-bottom: 1px solid var(--w-line); background: var(--w-surface); }
+.bar b { font-size: var(--w-t-sm); font-weight: 600; }
+.bar code { font-family: var(--w-mono); font-size: var(--w-t-xs); color: var(--w-ink-3); }
+.bar .sp { flex: 1; }
+button { font: inherit; font-size: var(--w-t-xs); letter-spacing: var(--w-track-label);
+  text-transform: uppercase; padding: 7px 12px; border-radius: var(--w-r-sm);
+  border: 1px solid var(--w-line-2); background: var(--w-paper); color: var(--w-ink);
+  cursor: pointer; }
+button:hover { background: var(--w-clay-soft); border-color: var(--w-clay); }
+.stage { padding: 20px; display: flex; justify-content: center;
+  background: repeating-conic-gradient(var(--w-sunk) 0 25%, transparent 0 50%) 50%/22px 22px; }
+.stage svg { max-width: 100%; height: auto; display: block;
+  box-shadow: var(--w-shadow-md); border-radius: 2px; }
+.note { padding: 0 16px 14px; font-size: var(--w-t-sm); color: var(--w-ink-2); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Wren — social &amp; repo pack</h1>
+  <p>Every card below is real SVG at its exact platform size. Export vector or
+     raster from the buttons; nothing is uploaded anywhere, the rasterising
+     happens in this page. The architecture figure is generated from the
+     repository, not drawn — see <code>src/gen_arch.py</code>.</p>
+</header>
+<main id="main"></main>
+
+<script>
+/*__LOGO__*/
+/*__ARCH__*/
+
+const PAL = {
+  paper:'#F4EDE2', surface:'#FBF7F0', sunk:'#EBE2D4', line:'#DDD0BC', line2:'#C9B9A1',
+  ink:'#3A322B', ink2:'#6E6255', ink3:'#726450',
+  clay:'#C4694A', clayInk:'#A04E33', claySoft:'#E9CDBF', clayDeep:'#A9553A',
+  moss:'#6B7F5C', mossInk:'#55684A', mossSoft:'#D8E0CE',
+  night:'#241F1A', nightSurface:'#2E2822', nightLine:'#443C33',
+  nightInk:'#F4EDE2', nightInk2:'#C4B7A5', nightClay:'#E08D6C'
+};
+const SANS = "Inter, 'Source Sans 3', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
+const MONO = "'JetBrains Mono','IBM Plex Mono',ui-monospace,'SF Mono',Consolas,monospace";
+
+const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+/* ---- brand primitives, all driven by the generated LOGO geometry ---- */
+function bird(x, y, size, fill, o) {
+  o = o || {};
+  const k = size / 100, g = LOGO.geometry;
+  let s = `<g transform="translate(${x},${y}) scale(${k})">`;
+  s += `<path d="${g.body}" fill="${fill}"/>`;
+  if (!o.simple) {
+    s += `<path d="${g.wing}" fill="${o.wing || PAL.clayDeep}"/>`;
+    s += `<path d="${g.brow}" fill="${o.detail || PAL.paper}"/>`;
+    s += `<circle cx="${g.eye.cx}" cy="${g.eye.cy}" r="${g.eye.r}" fill="${o.detail || PAL.paper}"/>`;
+  }
+  return s + '</g>';
+}
+/* Wordmark outlines are emitted at size 64 with the baseline at y=0. */
+function word(x, y, size, fill) {
+  const k = size / 64;
+  return `<g transform="translate(${x},${y}) scale(${k})"><path d="${LOGO.wordmark.d}" fill="${fill}"/></g>`;
+}
+const wordWidth = size => LOGO.wordmark.width * size / 64;
+
+/* Horizontal lockup, returned with its measured width so callers can centre it. */
+function lockup(x, y, size, inkFill, markFill, o) {
+  o = o || {};
+  const ms = size * 1.75, gap = size * 0.34;
+  const w = ms + gap + wordWidth(size);
+  const s = bird(x, y, ms, markFill, o) + word(x + ms + gap, y + ms * 0.62 + size * 0.24, size, inkFill);
+  return { svg: s, w: w, h: ms };
+}
+function text(x, y, str, o) {
+  o = o || {};
+  return `<text x="${x}" y="${y}" fill="${o.fill || PAL.ink}" font-family="${o.mono ? MONO : SANS}"`
+    + ` font-size="${o.size || 20}" font-weight="${o.weight || 400}"`
+    + (o.spacing ? ` letter-spacing="${o.spacing}"` : '')
+    + (o.anchor ? ` text-anchor="${o.anchor}"` : '') + `>${esc(str)}</text>`;
+}
+function rect(x, y, w, h, fill, r, stroke, sw) {
+  return `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fill}"`
+    + (r ? ` rx="${r}"` : '') + (stroke ? ` stroke="${stroke}" stroke-width="${sw || 1}"` : '') + '/>';
+}
+/* A hairline of stacked chevrons — the one repeating motif in the system. */
+function perch(x, y, w, colour, op) {
+  return `<path d="M ${x} ${y} L ${x + w} ${y}" stroke="${colour}" stroke-width="2"`
+    + ` opacity="${op == null ? 0.5 : op}" stroke-linecap="round"/>`;
+}
+
+/* ---------------------------------------------------------------- cards */
+const CARDS = [];
+function card(id, w, h, label, note, render) { CARDS.push({ id, w, h, label, note, render }); }
+
+/* --- GitHub ---------------------------------------------------------- */
+card('gh-social-preview', 1280, 640, 'GitHub social preview',
+  'Settings → General → Social preview.', () => {
+  const L = lockup(0, 0, 92, PAL.ink, PAL.clay);
+  let s = rect(0, 0, 1280, 640, PAL.paper);
+  s += rect(0, 0, 1280, 12, PAL.clay);
+  s += `<g transform="translate(${(1280 - L.w) / 2},170)">${L.svg}</g>`;
+  s += text(640, 430, 'A private, self-hosted assistant for your household.',
+    { size: 34, fill: PAL.ink2, anchor: 'middle' });
+  s += text(640, 492, 'local-first  ·  plugin channels  ·  drop-in skills',
+    { size: 22, fill: PAL.ink3, anchor: 'middle', spacing: 2.4, mono: true });
+  s += perch(490, 546, 300, PAL.clay, 0.45);
+  return s;
+});
+
+card('gh-hero', 1280, 400, 'README hero banner',
+  'Top of the repository README.', () => {
+  const L = lockup(0, 0, 74, PAL.paper, PAL.paper, { simple: true });
+  let s = rect(0, 0, 1280, 400, PAL.night);
+  s += `<g transform="translate(88,96)">${L.svg}</g>`;
+  s += text(88, 300, 'Talk to it in plain English. It figures out the rest.',
+    { size: 27, fill: PAL.nightInk2 });
+  s += text(88, 344, 'Discord · web chat · voice — one assistant, every channel',
+    { size: 18, fill: PAL.nightClay, mono: true, spacing: 1.2 });
+  s += bird(950, 40, 320, PAL.nightSurface, { simple: true });
+  return s;
+});
+
+card('gh-architecture', 1280, 720, 'Architecture figure — MEASURED',
+  'Generated from wren/registry.py and wren/communication/ by src/gen_arch.py. Not drawn.', () => {
+  const chat = ARCH.communication.filter(c => c.role === 'chat');
+  const input = ARCH.communication.filter(c => c.role === 'input');
+  const skills = ARCH.skills;
+  let s = rect(0, 0, 1280, 720, PAL.paper);
+  s += text(56, 62, 'how a message reaches a skill', { size: 30, weight: 600, fill: PAL.ink });
+  s += text(56, 92, 'measured from the source at build time — every box below is a real module',
+    { size: 16, fill: PAL.ink3 });
+
+  const BW = 232, BH = 52, colX = [56, 470, 812];
+  const boxTop = 150;
+
+  // column headings
+  s += text(colX[0], 132, 'COMMUNICATION', { size: 12, fill: PAL.ink3, spacing: 2.2, weight: 600 });
+  s += text(colX[1], 132, 'CORE', { size: 12, fill: PAL.ink3, spacing: 2.2, weight: 600 });
+  s += text(colX[2], 132, 'SKILLS', { size: 12, fill: PAL.ink3, spacing: 2.2, weight: 600 });
+
+  // chat plugins
+  chat.forEach((c, i) => {
+    const y = boxTop + i * (BH + 14);
+    const dim = c.stub;
+    s += rect(colX[0], y, BW, BH, dim ? PAL.sunk : PAL.claySoft, 10,
+      dim ? PAL.line2 : PAL.clay, dim ? 1 : 1.5);
+    if (dim) s += `<rect x="${colX[0]}" y="${y}" width="${BW}" height="${BH}" rx="10" fill="none" stroke="${PAL.line2}" stroke-width="1" stroke-dasharray="5 4"/>`;
+    s += text(colX[0] + 16, y + 24, c.name, { size: 16, weight: 600, fill: dim ? PAL.ink3 : PAL.ink });
+    s += text(colX[0] + 16, y + 42, c.module + (dim ? '  — stub' : ''), { size: 12, mono: true, fill: PAL.ink3 });
+    // connector into core
+    const my = y + BH / 2;
+    s += `<path d="M ${colX[0] + BW} ${my} C ${colX[0] + BW + 70} ${my}, ${colX[1] - 70} ${300}, ${colX[1]} ${300}" fill="none" stroke="${dim ? PAL.line2 : PAL.clay}" stroke-width="2"${dim ? ' stroke-dasharray="5 4"' : ''} opacity=".85"/>`;
+  });
+
+  // input watchers
+  const inTop = boxTop + chat.length * (BH + 14) + 42;
+  s += text(colX[0], inTop - 14, 'INPUT ONLY — no reply path', { size: 12, fill: PAL.ink3, spacing: 1.6, weight: 600 });
+  input.forEach((c, i) => {
+    const y = inTop + i * (BH + 14);
+    s += rect(colX[0], y, BW, BH, PAL.mossSoft, 10, PAL.moss, 1.5);
+    s += text(colX[0] + 16, y + 24, c.name, { size: 16, weight: 600 });
+    s += text(colX[0] + 16, y + 42, c.module, { size: 12, mono: true, fill: PAL.ink3 });
+  });
+  // input -> router.notify -> chat
+  const ry = inTop + input.length * (BH + 14) + 34;
+  s += rect(colX[0] + 30, ry, 172, 34, PAL.paper, 8, PAL.moss, 1.5);
+  s += text(colX[0] + 42, ry + 22, 'router.notify_name', { size: 13, mono: true, fill: PAL.mossInk });
+  s += `<path d="M ${colX[0] + 116} ${inTop + input.length * (BH + 14) - 14} L ${colX[0] + 116} ${ry}" stroke="${PAL.moss}" stroke-width="2"/>`;
+  s += `<path d="M ${colX[0] + 30} ${ry + 17} C ${colX[0] - 20} ${ry + 17}, ${colX[0] - 20} ${boxTop + 26}, ${colX[0]} ${boxTop + 26}" fill="none" stroke="${PAL.moss}" stroke-width="2" opacity=".8"/>`;
+  s += `<polygon points="${colX[0]},${boxTop + 26} ${colX[0] - 9},${boxTop + 21} ${colX[0] - 9},${boxTop + 31}" fill="${PAL.moss}"/>`;
+
+  // core
+  s += rect(colX[1], 268, 250, 64, PAL.ink, 12);
+  s += text(colX[1] + 18, 294, 'core.handle_message', { size: 15, mono: true, fill: PAL.paper });
+  s += text(colX[1] + 18, 316, 'whitelist · intent · dispatch', { size: 12, fill: PAL.nightInk2 });
+  s += rect(colX[1] + 34, 356, 182, 40, PAL.paper, 9, PAL.line2, 1.5);
+  s += text(colX[1] + 48, 381, 'registry.py', { size: 13, mono: true, fill: PAL.ink2 });
+  s += `<path d="M ${colX[1] + 125} 332 L ${colX[1] + 125} 356" stroke="${PAL.ink}" stroke-width="2"/>`;
+
+  // skills grid
+  const SW = 214, SH = 74, gx = [colX[2], colX[2] + SW + 16];
+  skills.forEach((sk, i) => {
+    const cx = gx[i % 2], cy = boxTop + Math.floor(i / 2) * (SH + 16);
+    s += rect(cx, cy, SW, SH, PAL.surface, 10, PAL.line2, 1.5);
+    s += text(cx + 14, cy + 26, sk.name, { size: 15, weight: 600 });
+    s += text(cx + 14, cy + 46, sk.module, { size: 11, mono: true, fill: PAL.ink3 });
+    s += text(cx + 14, cy + 64, sk.intents.length + ' intent' + (sk.intents.length === 1 ? '' : 's'),
+      { size: 11, fill: PAL.clayInk, weight: 600 });
+  });
+  s += `<path d="M ${colX[1] + 250} 300 L ${colX[2] - 10} 300" fill="none" stroke="${PAL.ink}" stroke-width="2" opacity=".7"/>`;
+  s += `<polygon points="${colX[2]},300 ${colX[2] - 10},295 ${colX[2] - 10},305" fill="${PAL.ink}"/>`;
+
+  const t = ARCH.totals;
+  s += perch(56, 646, 1168, PAL.line2, 1);
+  s += text(56, 680, `${t.chat} chat channel${t.chat === 1 ? '' : 's'} · ${t.input} input watcher${t.input === 1 ? '' : 's'}`
+    + `${t.stubs ? ' · ' + t.stubs + ' stub' : ''} · ${t.skills} skills · ${t.intents} intents`,
+    { size: 14, mono: true, fill: PAL.ink3 });
+  s += text(1224, 680, 'MEASURED, NOT DRAWN', { size: 12, fill: PAL.clayInk, anchor: 'end', spacing: 2, weight: 600 });
+  return s;
+});
+
+/* --- social ----------------------------------------------------------- */
+card('so-og', 1200, 630, 'Open Graph / link preview', 'og:image for the site and shared links.', () => {
+  const L = lockup(0, 0, 84, PAL.ink, PAL.clay);
+  let s = rect(0, 0, 1200, 630, PAL.paper);
+  s += bird(790, 140, 380, PAL.claySoft, { simple: true });
+  s += rect(0, 0, 1200, 10, PAL.clay);
+  s += `<g transform="translate(84,170)">${L.svg}</g>`;
+  s += text(84, 420, 'A private, self-hosted', { size: 44, weight: 600, fill: PAL.ink });
+  s += text(84, 474, 'assistant for your household.', { size: 44, weight: 600, fill: PAL.ink });
+  s += text(84, 534, 'runs on your hardware · your data stays home', { size: 19, mono: true, fill: PAL.ink3 });
+  return s;
+});
+
+card('so-x-banner', 1500, 500, 'X / Bluesky profile banner',
+  'Keep the avatar overlap in mind — the lower-left ~180px is covered.', () => {
+  let s = rect(0, 0, 1500, 500, PAL.night);
+  s += bird(1010, 30, 440, PAL.nightSurface, { simple: true });
+  const L = lockup(0, 0, 64, PAL.nightInk, PAL.nightClay, { simple: true });
+  s += `<g transform="translate(300,150)">${L.svg}</g>`;
+  s += text(300, 320, 'local-first assistant · chat from anywhere',
+    { size: 22, fill: PAL.nightInk2 });
+  s += text(300, 360, 'github.com/zebadrabbit/Wren', { size: 18, mono: true, fill: PAL.nightClay });
+  return s;
+});
+
+card('so-linkedin-banner', 1128, 191, 'LinkedIn banner', '', () => {
+  let s = rect(0, 0, 1128, 191, PAL.paper);
+  s += rect(0, 0, 1128, 6, PAL.clay);
+  const L = lockup(0, 0, 40, PAL.ink, PAL.clay);
+  s += `<g transform="translate(56,44)">${L.svg}</g>`;
+  s += text(356, 104, 'a private, self-hosted assistant for your household',
+    { size: 19, fill: PAL.ink2 });
+  s += bird(928, 12, 168, PAL.claySoft, { simple: true });
+  return s;
+});
+
+card('so-avatar', 512, 512, 'Avatar — cream', 'Profile picture, light contexts.', () => {
+  let s = rect(0, 0, 512, 512, PAL.paper);
+  s += bird(96, 96, 320, PAL.clay);
+  return s;
+});
+card('so-avatar-clay', 512, 512, 'Avatar — clay', 'Profile picture, needs to pop in a dark UI.', () => {
+  let s = rect(0, 0, 512, 512, PAL.clay);
+  s += bird(96, 96, 320, PAL.paper, { simple: true });
+  return s;
+});
+card('so-discord-icon', 512, 512, 'Discord server icon',
+  'Discord crops to a circle — the mark is inset for it.', () => {
+  let s = rect(0, 0, 512, 512, PAL.night);
+  s += `<circle cx="256" cy="256" r="256" fill="${PAL.night}"/>`;
+  s += bird(112, 100, 288, PAL.nightClay, { simple: true });
+  return s;
+});
+
+card('so-discord-banner', 960, 540, 'Discord server banner', '', () => {
+  let s = rect(0, 0, 960, 540, PAL.night);
+  s += bird(536, 70, 400, PAL.nightSurface, { simple: true });
+  const L = lockup(0, 0, 58, PAL.nightInk, PAL.nightClay, { simple: true });
+  s += `<g transform="translate(72,180)">${L.svg}</g>`;
+  s += text(72, 330, 'DM the bot. It keeps the list.', { size: 24, fill: PAL.nightInk2 });
+  return s;
+});
+
+card('so-square', 1080, 1080, 'Square feature card',
+  'Instagram / Mastodon. Swap the two lines of copy per post.', () => {
+  let s = rect(0, 0, 1080, 1080, PAL.paper);
+  s += rect(0, 0, 1080, 14, PAL.clay);
+  s += bird(300, 190, 480, PAL.clay);
+  s += text(540, 790, 'one assistant,', { size: 62, weight: 600, anchor: 'middle' });
+  s += text(540, 862, 'every channel', { size: 62, weight: 600, anchor: 'middle', fill: PAL.clayInk });
+  s += text(540, 936, 'discord · web chat · voice · telegram', { size: 22, mono: true, fill: PAL.ink3, anchor: 'middle' });
+  const L = lockup(0, 0, 34, PAL.ink, PAL.clay, { simple: true });
+  s += `<g transform="translate(${(1080 - L.w) / 2},990)">${L.svg}</g>`;
+  return s;
+});
+
+/* ---------------------------------------------------------------- render */
+const svgOf = c =>
+  `<svg xmlns="http://www.w3.org/2000/svg" width="${c.w}" height="${c.h}" viewBox="0 0 ${c.w} ${c.h}">${c.render()}</svg>`;
+
+function download(name, blob) {
+  const u = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = u; a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(u), 4000);
+}
+function saveSVG(c) {
+  download(c.id + '.svg', new Blob([svgOf(c)], { type: 'image/svg+xml' }));
+}
+function savePNG(c, scale) {
+  const img = new Image();
+  const blob = new Blob([svgOf(c)], { type: 'image/svg+xml;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  img.onload = () => {
+    const cv = document.createElement('canvas');
+    cv.width = c.w * scale; cv.height = c.h * scale;
+    const g = cv.getContext('2d');
+    g.drawImage(img, 0, 0, cv.width, cv.height);
+    cv.toBlob(b => download(`${c.id}-${c.w * scale}x${c.h * scale}.png`, b));
+    URL.revokeObjectURL(url);
+  };
+  img.src = url;
+}
+
+const main = document.getElementById('main');
+CARDS.forEach(c => {
+  const sec = document.createElement('section');
+  sec.className = 'item';
+  sec.innerHTML =
+    `<div class="bar"><b>${esc(c.label)}</b><code>${c.w}×${c.h}</code><span class="sp"></span>
+       <button data-a="svg">SVG</button><button data-a="p1">PNG @1×</button><button data-a="p2">PNG @2×</button></div>
+     <div class="stage">${svgOf(c)}</div>` +
+    (c.note ? `<p class="note">${esc(c.note)}</p>` : '');
+  sec.querySelector('[data-a="svg"]').onclick = () => saveSVG(c);
+  sec.querySelector('[data-a="p1"]').onclick = () => savePNG(c, 1);
+  sec.querySelector('[data-a="p2"]').onclick = () => savePNG(c, 2);
+  main.appendChild(sec);
+});
+</script>
+</body>
+</html>

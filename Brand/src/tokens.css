@@ -1,0 +1,100 @@
+/* Wren — design tokens. Warm, domestic, local-first.
+ *
+ * Every ratio in a comment below is measured, not estimated: src/contrast.py
+ * computes it and the brand page recomputes all of them live in the browser,
+ * so a colour that gets nudged and quietly stops meeting AA shows up as a red
+ * cell rather than as a stale comment.
+ *
+ * Light ratios are against --w-paper (#F4EDE2), dark against --w-night
+ * (#241F1A). "AA" means >= 4.5:1, the threshold for normal-size body text.
+ */
+:root {
+  /* ---- ground: the daylight surfaces ------------------------------------ */
+  --w-paper:    #F4EDE2;   /* page field — the cream everything sits on */
+  --w-surface:  #FBF7F0;   /* raised: cards, the chat composer, popovers */
+  --w-sunk:     #EBE2D4;   /* recessed: code blocks, inset wells */
+  --w-line:     #DDD0BC;   /* hairlines, dividers, input borders */
+  --w-line-2:   #C9B9A1;   /* emphasised border, focus ring track */
+
+  /* ---- ink -------------------------------------------------------------- */
+  --w-ink:      #3A322B;   /* 10.81:1  body text, the wordmark */
+  --w-ink-2:    #6E6255;   /*  5.10:1  secondary text, labels */
+  --w-ink-3:    #726450;   /*  4.94:1  smallest permitted text colour — AA */
+
+  /* ---- accents ---------------------------------------------------------- */
+  /* Clay is the bird and the brand. It is a LARGE-TEXT / graphic colour at
+     3.30:1 — fine for the mark, headings 24px+, borders and fills; not fine
+     for body copy. Use --w-clay-ink when clay has to carry small text. */
+  --w-clay:      #C4694A;  /*  3.30:1  graphic use, mark, large display type */
+  --w-clay-ink:  #A04E33;  /*  4.97:1  clay as *text*, and as a button fill
+                                       under cream text (cream on it: 4.97:1) */
+  --w-clay-soft: #E9CDBF;  /* tint: selected rows, hover wash, chart fills */
+
+  --w-moss:      #6B7F5C;  /*  3.75:1  graphic use, large type only */
+  --w-moss-ink:  #55684A;  /*  5.21:1  moss as text (cream on it: 5.21:1) */
+  --w-moss-soft: #D8E0CE;  /* tint */
+
+  /* ---- signals ---------------------------------------------------------- */
+  /* Warm rather than clinical: this is an assistant in a kitchen, not a
+     control room. All three clear AA against paper. */
+  --w-ok:     #4F7343;     /*  4.67:1  done, on the list, delivered */
+  --w-warn:   #8F5F10;     /*  4.74:1  needs attention, provider fell back */
+  --w-alert:  #B4462F;     /*  4.68:1  failed, unreachable, destructive */
+
+  /* ---- night: the same system after dark -------------------------------- */
+  --w-night:         #241F1A;
+  --w-night-surface: #2E2822;
+  --w-night-sunk:    #1B1713;
+  --w-night-line:    #443C33;
+  --w-night-ink:     #F4EDE2;  /* 14.04:1 */
+  --w-night-ink-2:   #C4B7A5;  /*  8.29:1 */
+  --w-night-ink-3:   #9C8E7C;  /*  5.11:1 */
+  --w-night-clay:    #E08D6C;  /*  6.37:1  clay lifted to stay legible on night */
+  --w-night-moss:    #9CB388;  /*  7.17:1 */
+
+  /* ---- type -------------------------------------------------------------
+     The wordmark ships as outlines, so nothing here has to match it exactly.
+     For running text the stack is a humanist/geometric sans that degrades to
+     the system UI font with no webfont fetch — a local-first assistant that
+     phones a CDN for a typeface would be missing the point. */
+  --w-sans: "Inter", "Source Sans 3", -apple-system, BlinkMacSystemFont,
+            "Segoe UI", Roboto, system-ui, sans-serif;
+  --w-display: "TeX Gyre Adventor", "Poppins", "Century Gothic", var(--w-sans);
+  --w-mono: "JetBrains Mono", "IBM Plex Mono", ui-monospace, "SF Mono",
+            "Cascadia Mono", Consolas, "Liberation Mono", monospace;
+
+  /* Type scale — 1.25 (major third), rounded to whole px. Warm brands read
+     better a little larger and a little looser than technical ones. */
+  --w-t-xs:   12px;
+  --w-t-sm:   14px;
+  --w-t-base: 16px;
+  --w-t-md:   20px;
+  --w-t-lg:   25px;
+  --w-t-xl:   31px;
+  --w-t-2xl:  39px;
+  --w-t-3xl:  49px;
+
+  --w-lh-tight: 1.18;   /* display */
+  --w-lh-snug:  1.35;   /* headings, UI */
+  --w-lh-body:  1.6;    /* running text */
+  --w-track-display: -0.015em;
+  --w-track-label:    0.08em;
+
+  /* ---- form ------------------------------------------------------------- */
+  /* Rounded, but not pill-shaped: soft corners read domestic, full pills read
+     like a consumer app trying too hard. */
+  --w-r-sm:  6px;
+  --w-r-md:  10px;
+  --w-r-lg:  16px;
+  --w-r-xl:  24px;
+
+  --w-space: 8px;                    /* the grid everything else is a multiple of */
+  --w-shadow-sm: 0 1px 2px rgba(58, 50, 43, .07);
+  --w-shadow-md: 0 2px 8px rgba(58, 50, 43, .09);
+  --w-shadow-lg: 0 8px 28px rgba(58, 50, 43, .12);
+
+  /* Clear space around the mark, as a multiple of its own height. Nothing —
+     type, edge of canvas, another logo — comes inside this. */
+  --w-mark-clearspace: 0.35;
+  --w-mark-min-px: 20px;             /* below this, use the simple mark */
+}
