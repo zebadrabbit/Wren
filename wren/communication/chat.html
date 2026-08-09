@@ -150,7 +150,7 @@ let token = localStorage.getItem("wren_token") || "";
 let active = null, busy = false;
 
 /* ── markdown ───────────────────────────────────────────────────────────
-   Replies can contain text Wren did not write: web_plugin summarises scraped
+   Replies can contain text Wren did not write: web_skill summarises scraped
    pages and send_to_person relays other users' messages. So escape FIRST,
    then apply a fixed whitelist to the already-escaped string — this can never
    emit a tag the escaper didn't already neutralise. */

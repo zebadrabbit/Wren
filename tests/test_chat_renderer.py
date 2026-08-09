@@ -1,7 +1,7 @@
 """The chat page's markdown renderer, exercised with node.
 
 This is JS living inside chat.html, but it is a security boundary rather than
-decoration: reply text is not always written by Wren. `web_plugin` summarises
+decoration: reply text is not always written by Wren. `web_skill` summarises
 scraped web pages and `send_to_person` relays other users' text, so a reply can
 carry hostile input. md() escapes first and then applies a fixed whitelist to
 the already-escaped string; these tests are what stop that ordering from being
@@ -18,16 +18,26 @@ os.environ.setdefault("LMSTUDIO_MODEL", "test-model")
 
 import pytest
 
+import wren.communication
+
 pytestmark = pytest.mark.skipif(shutil.which("node") is None, reason="node not installed")
 
-PAGE = pathlib.Path(__file__).resolve().parent.parent / "wren" / "surfaces" / "chat.html"
+# Resolved through the package rather than spelled out from the repo root, so
+# this tracks webchat.py's own `Path(__file__).with_name("chat.html")` instead
+# of being a second copy of the location that can rot when the page moves.
+PAGE = pathlib.Path(wren.communication.__file__).with_name("chat.html")
 
 
 def _renderer_js() -> str:
     src = PAGE.read_text(encoding="utf-8")
     start = src.index("function esc(s)")
     end = src.index("async function api")
-    return src[start:end]
+    js = src[start:end]
+    # A path that pointed somewhere plausible but wrong, or a page that stopped
+    # carrying the renderer, would hand node an empty script and every
+    # assertion below would pass against nothing.
+    assert "function md(" in js, f"no md() renderer found in {PAGE}"
+    return js
 
 
 def render(markdown: str, tmp_path) -> str:

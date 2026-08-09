@@ -14,6 +14,13 @@ PLUGINS = [notes_skill, shopping_skill, reminder_skill, web_skill, contacts_skil
 # of PLUGINS/INTENT_HANDLERS. They are started directly by run.py alongside the
 # other enabled communication plugins.
 
+# ...but they are still part of the answer to "what plugins do you have". An
+# input-only watcher is invisible in conversation until the moment it fires, so
+# plugin_status() is the only place a user can see whether the email/GitHub
+# watchers are configured. Chat plugins (discord, http) are deliberately NOT
+# listed here: the one you are reading the answer through needs no announcing.
+WATCHERS = [gmail_plugin, github_plugin]
+
 INTENT_HANDLERS = {
     intent: plugin
     for plugin in PLUGINS
@@ -32,7 +39,7 @@ def all_guidelines() -> str:
 def plugin_status() -> list[tuple[str, bool]]:
     return [
         (p.PLUGIN_NAME if hasattr(p, "PLUGIN_NAME") else p.__name__, getattr(p, "is_active", lambda: True)())
-        for p in PLUGINS
+        for p in PLUGINS + WATCHERS
     ]
 
 _started_plugins: set = set()

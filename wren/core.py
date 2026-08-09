@@ -5,7 +5,7 @@ import time
 from . import brain
 from . import config
 from . import flourish
-from . import notes
+from .skills import notes_store as notes
 from . import registry
 from . import router
 from .channel import Channel, Ctx

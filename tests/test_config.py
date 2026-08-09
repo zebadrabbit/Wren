@@ -130,6 +130,11 @@ def test_parse_tokens_rejects_empty_token():
 
 def _reload(monkeypatch, **env):
     import importlib
+    # config.py calls load_dotenv() at import time, so a reload would re-read
+    # the developer's real .env and undo any delenv() the test just did --
+    # making these tests pass or fail depending on whose machine they run on.
+    # Stub it out so the reload sees only the env this test set up.
+    monkeypatch.setattr("dotenv.load_dotenv", lambda *a, **k: False)
     for k, v in env.items():
         monkeypatch.setenv(k, v)
     return importlib.reload(config)

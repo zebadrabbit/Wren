@@ -28,8 +28,8 @@ def test_all_guidelines_includes_both_plugins_text():
     assert "add_shopping_item" in guidelines
 
 def test_start_all_noop_when_no_plugin_defines_start(monkeypatch):
-    # neither notes_plugin nor shopping_plugin defines start() yet
-    # (email_plugin does, but its start() is a no-op when EMAIL_WATCH is unset)
+    # neither notes_plugin nor shopping_plugin defines start() yet, and the
+    # watchers that do (email, github) are no longer started via start_all()
     monkeypatch.setattr(plugins, "_started_plugins", set())
     monkeypatch.setattr(plugins, "_tasks", [])
     asyncio.run(plugins.start_all())  # should not raise
@@ -87,8 +87,14 @@ def test_start_all_is_idempotent_across_repeated_calls(monkeypatch):
 
     asyncio.run(run())
 
-def test_email_plugin_registered():
-    assert email_plugin in plugins.PLUGINS
+def test_email_plugin_is_a_watcher_not_a_skill():
+    # v2 taxonomy: the Gmail watcher is a communication plugin (ROLE="input")
+    # started by run.py, not a Skill -- it owns no intents, so it must stay out
+    # of PLUGINS/INTENT_HANDLERS. It is still user-visible through plugin_status().
+    assert email_plugin not in plugins.PLUGINS
+    assert email_plugin.ROLE == "input"
+    assert email_plugin in plugins.WATCHERS
+    assert email_plugin.PLUGIN_NAME in dict(plugins.plugin_status())
 
 def test_all_intents_unaffected_by_event_only_email_plugin():
     intents = plugins.all_intents()
@@ -104,7 +110,8 @@ def test_all_intents_includes_reminder_intents():
         assert intent in intents
 
 def test_web_intents_registered():
-    from wren import plugins, web_plugin
+    from wren import registry as plugins
+    from wren.skills import web_skill as web_plugin
     for intent in ("web_search", "read_page"):
         assert intent in plugins.all_intents()
         assert plugins.INTENT_HANDLERS[intent] is web_plugin
@@ -125,27 +132,36 @@ def test_all_intents_includes_pins_intents():
     for intent in pins_plugin.INTENTS:
         assert intent in intents
 
+# plugin_status() reports PLUGINS + WATCHERS, so these single-entry assertions
+# blank out WATCHERS to isolate the naming/is_active behaviour under test.
 def test_plugin_status_defaults_to_active_true_when_is_active_absent(monkeypatch):
     fake = types.SimpleNamespace(PLUGIN_NAME="Fake Plugin")
     monkeypatch.setattr(plugins, "PLUGINS", [fake])
+    monkeypatch.setattr(plugins, "WATCHERS", [])
     assert plugins.plugin_status() == [("Fake Plugin", True)]
 
 def test_plugin_status_calls_is_active_when_present(monkeypatch):
     fake = types.SimpleNamespace(PLUGIN_NAME="Fake Plugin", is_active=lambda: False)
     monkeypatch.setattr(plugins, "PLUGINS", [fake])
+    monkeypatch.setattr(plugins, "WATCHERS", [])
     assert plugins.plugin_status() == [("Fake Plugin", False)]
 
 def test_plugin_status_falls_back_to_module_name_when_plugin_name_absent(monkeypatch):
     fake = types.SimpleNamespace()
     fake.__name__ = "wren.fake_plugin"
     monkeypatch.setattr(plugins, "PLUGINS", [fake])
+    monkeypatch.setattr(plugins, "WATCHERS", [])
     assert plugins.plugin_status() == [("wren.fake_plugin", True)]
 
 def test_plugin_status_reflects_real_plugins_order_and_names():
+    # Skills first (in PLUGINS order), then the input-only watchers. The email
+    # watcher used to sit third, between Shopping List and Reminders, back when
+    # it was a capability plugin in the one flat PLUGINS list; in v2 it is a
+    # communication plugin and lists with the other watchers at the end.
     names = [name for name, _ in plugins.plugin_status()]
     assert names == [
-        "Notes & Ideas", "Shopping List", "Email Watcher",
-        "Reminders", "Web Lookup", "Contacts", "Pins", "GitHub Watcher",
+        "Notes & Ideas", "Shopping List", "Reminders", "Web Lookup",
+        "Contacts", "Pins", "Gmail (IMAP) Watcher", "GitHub Watcher",
     ]
 
 def test_plugin_status_web_plugin_inactive_without_searxng_url(monkeypatch):
@@ -164,13 +180,13 @@ def test_plugin_status_email_plugin_inactive_without_email_watch(monkeypatch):
     from wren import config
     monkeypatch.setattr(config, "EMAIL_WATCH", {})
     status = dict(plugins.plugin_status())
-    assert status["Email Watcher"] is False
+    assert status["Gmail (IMAP) Watcher"] is False
 
 def test_plugin_status_email_plugin_active_with_email_watch(monkeypatch):
     from wren import config
     monkeypatch.setattr(config, "EMAIL_WATCH", {"alice@example.com": "owner"})
     status = dict(plugins.plugin_status())
-    assert status["Email Watcher"] is True
+    assert status["Gmail (IMAP) Watcher"] is True
 
 def test_plugin_status_always_active_plugin_reports_true():
     status = dict(plugins.plugin_status())

@@ -120,7 +120,7 @@ def test_start_fires_due_reminder_and_marks_fired():
 
     async def run_one_iteration():
         with patch.object(router, "notify", new=AsyncMock(return_value=True)) as mock_notify, \
-             patch("wren.reminder_plugin.asyncio.sleep", new=AsyncMock(side_effect=asyncio.CancelledError)):
+             patch("wren.skills.reminder_skill.asyncio.sleep", new=AsyncMock(side_effect=asyncio.CancelledError)):
             try:
                 await reminder_plugin.start()
             except asyncio.CancelledError:
@@ -162,7 +162,7 @@ def test_start_does_not_fire_future_reminder():
 
     async def run_one_iteration():
         with patch.object(router, "notify", new=AsyncMock(return_value=True)) as mock_notify, \
-             patch("wren.reminder_plugin.asyncio.sleep", new=AsyncMock(side_effect=asyncio.CancelledError)):
+             patch("wren.skills.reminder_skill.asyncio.sleep", new=AsyncMock(side_effect=asyncio.CancelledError)):
             try:
                 await reminder_plugin.start()
             except asyncio.CancelledError:
