@@ -1,0 +1,74 @@
+import os, pytest
+os.environ.setdefault("DISCORD_TOKEN", "test")
+os.environ.setdefault("OWNER_ID", "1")
+os.environ.setdefault("LLM_PROVIDERS", "lmstudio")
+os.environ.setdefault("LMSTUDIO_BASE_URL", "http://test")
+os.environ.setdefault("LMSTUDIO_MODEL", "test-model")
+
+from wren.skills import reminders_store as reminders
+
+@pytest.fixture(autouse=True)
+def tmp_db(tmp_path, monkeypatch):
+    monkeypatch.setenv("WREN_DB", str(tmp_path / "wren.db"))
+    reminders.init_db()
+
+def test_save_and_pending():
+    reminders.save(1, "check the oven", "2026-07-12T21:00:00+00:00")
+    items = reminders.pending(1)
+    assert len(items) == 1
+    assert items[0]["content"] == "check the oven"
+    assert items[0]["status"] == "pending"
+
+def test_pending_ordered_soonest_first():
+    reminders.save(1, "later", "2026-07-12T22:00:00+00:00")
+    reminders.save(1, "sooner", "2026-07-12T21:00:00+00:00")
+    items = reminders.pending(1)
+    assert [i["content"] for i in items] == ["sooner", "later"]
+
+def test_pending_scoped_to_owner():
+    reminders.save(1, "mine", "2026-07-12T21:00:00+00:00")
+    reminders.save(2, "theirs", "2026-07-12T21:00:00+00:00")
+    assert len(reminders.pending(1)) == 1
+    assert len(reminders.pending(2)) == 1
+
+def test_find_pending_case_insensitive_substring():
+    reminders.save(1, "Check the Oven", "2026-07-12T21:00:00+00:00")
+    results = reminders.find_pending(1, "oven")
+    assert len(results) == 1
+
+def test_find_pending_excludes_cancelled():
+    reminder_id = reminders.save(1, "check the oven", "2026-07-12T21:00:00+00:00")
+    reminders.cancel(reminder_id)
+    assert reminders.find_pending(1, "oven") == []
+
+def test_cancel_returns_true_and_marks_cancelled():
+    reminder_id = reminders.save(1, "check the oven", "2026-07-12T21:00:00+00:00")
+    assert reminders.cancel(reminder_id) is True
+    assert reminders.pending(1) == []
+
+def test_cancel_nonexistent_returns_false():
+    assert reminders.cancel(9999) is False
+
+def test_cancel_already_cancelled_returns_false():
+    reminder_id = reminders.save(1, "check the oven", "2026-07-12T21:00:00+00:00")
+    reminders.cancel(reminder_id)
+    assert reminders.cancel(reminder_id) is False
+
+def test_due_returns_pending_at_or_before_now():
+    reminders.save(1, "past", "2026-07-12T20:00:00+00:00")
+    reminders.save(1, "future", "2026-07-12T23:00:00+00:00")
+    due = reminders.due("2026-07-12T21:00:00+00:00")
+    assert [d["content"] for d in due] == ["past"]
+
+def test_due_excludes_fired_and_cancelled():
+    fired_id = reminders.save(1, "already fired", "2026-07-12T20:00:00+00:00")
+    reminders.mark_fired(fired_id)
+    cancelled_id = reminders.save(1, "cancelled one", "2026-07-12T20:00:00+00:00")
+    reminders.cancel(cancelled_id)
+    due = reminders.due("2026-07-12T21:00:00+00:00")
+    assert due == []
+
+def test_mark_fired_removes_from_due():
+    reminder_id = reminders.save(1, "check the oven", "2026-07-12T20:00:00+00:00")
+    reminders.mark_fired(reminder_id)
+    assert reminders.due("2026-07-12T21:00:00+00:00") == []

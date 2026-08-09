@@ -1,0 +1,12 @@
+.env
+wren.db
+__pycache__/
+*.pyc
+.pytest_cache/
+venv/
+.git-wren-v1-archive/
+_restructure.sh
+_fix_tests.py
+_check_imports.py
+wren/surfaces/
+.claude/

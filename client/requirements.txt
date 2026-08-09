@@ -1,0 +1,11 @@
+# Desktop voice client only. Do NOT install these on the Wren server —
+# the server needs none of them, and sounddevice pulls in PortAudio.
+#
+#   pip install -r client/requirements.txt
+#   WREN_URL=http://<wren-host>:8787 WREN_TOKEN=<token> python client/wren_hotkey.py
+#
+# Linux also needs the PortAudio system library: apt install libportaudio2
+sounddevice>=0.4.6
+numpy>=1.24
+pynput>=1.7.6
+httpx>=0.23,<0.28

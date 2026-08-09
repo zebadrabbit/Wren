@@ -1,0 +1,10 @@
+# Python 3.11+
+discord.py==2.3.2
+openai==1.30.5
+httpx>=0.23,<0.28
+python-dotenv==1.0.1
+pytest==8.2.2
+aiohttp>=3.9
+
+# Optional — speech-to-text for the /voice endpoint. Wren runs fine without it.
+# faster-whisper>=1.0

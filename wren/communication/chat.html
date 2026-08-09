@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wren</title>
+<style>
+:root {
+  --bg: #faf9f7; --panel: #f0eeea; --line: #ddd9d2; --text: #26241f;
+  --muted: #6f6a61; --accent: #5b6f4e; --bubble-user: #e4e9de; --code: #eceae5;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1a1917; --panel: #221f1c; --line: #34302b; --text: #ece8e1;
+    --muted: #9a938a; --accent: #9dbb87; --bubble-user: #2b3327; --code: #14130f;
+  }
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  display: flex; background: var(--bg); color: var(--text);
+  font: 15px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+button { font: inherit; color: inherit; cursor: pointer; }
+
+/* ── login ─────────────────────────────────────────────────────────────── */
+#login { margin: auto; max-width: 380px; padding: 24px; text-align: center; }
+#login h1 { font-size: 22px; margin: 0 0 4px; }
+#login p { color: var(--muted); margin: 0 0 20px; font-size: 14px; }
+#login input {
+  width: 100%; padding: 10px 12px; border: 1px solid var(--line);
+  border-radius: 8px; background: var(--panel); color: var(--text); font: inherit;
+}
+#login button {
+  width: 100%; margin-top: 10px; padding: 10px; border: 0; border-radius: 8px;
+  background: var(--accent); color: var(--bg); font-weight: 600;
+}
+#login .err { color: #c0503f; font-size: 13px; min-height: 18px; margin-top: 8px; }
+
+/* ── layout ────────────────────────────────────────────────────────────── */
+#app { display: none; width: 100%; height: 100%; }
+#app.on { display: flex; }
+aside {
+  width: 250px; flex: none; background: var(--panel);
+  border-right: 1px solid var(--line); display: flex; flex-direction: column;
+}
+aside header {
+  padding: 12px; border-bottom: 1px solid var(--line);
+  display: flex; align-items: center; gap: 8px;
+}
+aside header b { flex: 1; font-size: 15px; }
+#new {
+  border: 1px solid var(--line); background: transparent; border-radius: 6px;
+  padding: 4px 10px; font-size: 13px;
+}
+#convos { flex: 1; overflow-y: auto; padding: 6px; }
+.convo {
+  display: flex; align-items: center; gap: 4px; padding: 7px 9px;
+  border-radius: 6px; cursor: pointer; font-size: 14px;
+}
+.convo:hover { background: var(--bg); }
+.convo.active { background: var(--bg); font-weight: 600; }
+.convo span {
+  flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.convo button {
+  border: 0; background: transparent; color: var(--muted); padding: 2px 4px;
+  border-radius: 4px; font-size: 12px; opacity: 0; line-height: 1;
+}
+.convo:hover button { opacity: 1; }
+.convo button:hover { background: var(--line); }
+
+main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+#log { flex: 1; overflow-y: auto; padding: 24px 20px; }
+#inner { max-width: 720px; margin: 0 auto; }
+.msg { margin-bottom: 18px; display: flex; }
+.msg.user { justify-content: flex-end; }
+.msg .body {
+  max-width: 82%; padding: 10px 14px; border-radius: 12px; overflow-wrap: anywhere;
+}
+.msg.user .body { background: var(--bubble-user); }
+.msg.assistant .body { background: transparent; padding-left: 0; max-width: 100%; }
+.msg .body > :first-child { margin-top: 0; }
+.msg .body > :last-child { margin-bottom: 0; }
+.msg pre {
+  background: var(--code); padding: 10px 12px; border-radius: 8px;
+  overflow-x: auto; font-size: 13px;
+}
+.msg code {
+  background: var(--code); padding: 1px 5px; border-radius: 4px;
+  font-size: 13px; font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+.msg pre code { background: none; padding: 0; }
+.msg a { color: var(--accent); }
+.msg ul { padding-left: 20px; margin: 6px 0; }
+.msg .dl { display: inline-block; margin-top: 6px; color: var(--accent); }
+#empty { color: var(--muted); text-align: center; margin-top: 22vh; font-size: 14px; }
+.dots span {
+  display: inline-block; width: 6px; height: 6px; margin-right: 3px;
+  border-radius: 50%; background: var(--muted); animation: b 1.2s infinite;
+}
+.dots span:nth-child(2) { animation-delay: .2s }
+.dots span:nth-child(3) { animation-delay: .4s }
+@keyframes b { 0%,60%,100% { opacity:.25 } 30% { opacity:1 } }
+
+footer { border-top: 1px solid var(--line); padding: 12px 20px; }
+#composer { max-width: 720px; margin: 0 auto; display: flex; gap: 8px; }
+#text {
+  flex: 1; resize: none; padding: 10px 12px; border: 1px solid var(--line);
+  border-radius: 10px; background: var(--panel); color: var(--text);
+  font: inherit; max-height: 180px;
+}
+#send {
+  border: 0; border-radius: 10px; background: var(--accent); color: var(--bg);
+  padding: 0 18px; font-weight: 600;
+}
+#send:disabled { opacity: .5; cursor: default; }
+@media (max-width: 640px) { aside { width: 190px; } }
+</style>
+</head>
+<body>
+
+<div id="login">
+  <h1>Wren</h1>
+  <p>Paste a token from this Wren's <code>WREN_TOKENS</code>.</p>
+  <input id="token" type="password" placeholder="token" autocomplete="current-password">
+  <button id="signin">Connect</button>
+  <div class="err" id="loginerr"></div>
+</div>
+
+<div id="app">
+  <aside>
+    <header><b>Wren</b><button id="new">New</button></header>
+    <div id="convos"></div>
+  </aside>
+  <main>
+    <div id="log"><div id="inner"></div></div>
+    <footer>
+      <div id="composer">
+        <textarea id="text" rows="1" placeholder="Message Wren…"></textarea>
+        <button id="send">Send</button>
+      </div>
+    </footer>
+  </main>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+let token = localStorage.getItem("wren_token") || "";
+let active = null, busy = false;
+
+/* ── markdown ───────────────────────────────────────────────────────────
+   Replies can contain text Wren did not write: web_plugin summarises scraped
+   pages and send_to_person relays other users' messages. So escape FIRST,
+   then apply a fixed whitelist to the already-escaped string — this can never
+   emit a tag the escaper didn't already neutralise. */
+function esc(s) {
+  // strip the private-use codepoint md() reserves for its code-fence
+  // placeholders — otherwise text containing it could forge a placeholder and
+  // resolve to an out-of-range block, rendering as "undefined"
+  return s.replace(/\uE000/g, "")
+          .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+function md(src) {
+  const blocks = [];
+  let out = esc(src);
+  // Fenced code first, parked so its contents aren't re-processed. The
+  // placeholder uses a private-use codepoint, written as a JS escape so no
+  // raw control byte lands in the HTML. A " 3 " style placeholder would
+  // collide with any standalone number in prose ("step 3 of the process").
+  out = out.replace(/```([\s\S]*?)```/g, (_, code) =>
+    "\uE000" + (blocks.push("<pre><code>" + code.replace(/^\n/, "") + "</code></pre>") - 1) + "\uE000");
+  out = out.replace(/`([^`\n]+)`/g, "<code>$1</code>");
+  out = out.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  out = out.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
+  // only http/https survive — a javascript: href must not be constructible
+  out = out.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+    '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+  out = out.replace(/(^|\s)(https?:\/\/[^\s<]+)/g,
+    '$1<a href="$2" target="_blank" rel="noopener noreferrer">$2</a>');
+  out = out.replace(/(?:^|\n)((?:[-*] .+\n?)+)/g, m =>
+    "<ul>" + m.trim().split("\n").map(l => "<li>" + l.replace(/^[-*] /, "") + "</li>").join("") + "</ul>");
+  out = out.replace(/\n/g, "<br>");
+  return out.replace(/\uE000(\d+)\uE000/g, (_, i) => blocks[i]);
+}
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, {
+    ...opts,
+    headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json",
+               ...(opts.headers || {}) },
+  });
+  if (res.status === 401) { signOut(); throw new Error("unauthorized"); }
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+  return res.json();
+}
+
+function signOut() {
+  localStorage.removeItem("wren_token"); token = "";
+  $("#app").classList.remove("on"); $("#login").style.display = "";
+  $("#loginerr").textContent = "That token was rejected.";
+}
+
+/* ── rendering ─────────────────────────────────────────────────────────── */
+function bubble(role, html) {
+  const d = document.createElement("div");
+  d.className = "msg " + role;
+  d.innerHTML = '<div class="body">' + html + "</div>";
+  $("#inner").append(d);
+  $("#log").scrollTop = $("#log").scrollHeight;
+  return d;
+}
+function fileLink(f) {
+  return '<a class="dl" download="' + esc(f.filename) +
+         '" href="data:application/octet-stream;base64,' + f.data + '">⤓ ' +
+         esc(f.filename) + "</a>";
+}
+
+async function loadConvos() {
+  const list = await api("/api/conversations");
+  const box = $("#convos");
+  box.innerHTML = "";
+  for (const c of list) {
+    const el = document.createElement("div");
+    el.className = "convo" + (c.id === active ? " active" : "");
+    const name = document.createElement("span");
+    name.textContent = c.title;
+    el.append(name);
+    for (const [label, fn] of [["✎", () => renameConvo(c)], ["✕", () => delConvo(c)]]) {
+      const b = document.createElement("button");
+      b.textContent = label;
+      b.onclick = e => { e.stopPropagation(); fn(); };
+      el.append(b);
+    }
+    el.onclick = () => openConvo(c.id);
+    box.append(el);
+  }
+}
+
+async function renameConvo(c) {
+  const title = prompt("Rename conversation", c.title);
+  if (title === null || !title.trim()) return;
+  await api("/api/conversations/" + c.id, { method: "PATCH", body: JSON.stringify({ title }) });
+  loadConvos();
+}
+async function delConvo(c) {
+  if (!confirm("Delete “" + c.title + "”?")) return;
+  await api("/api/conversations/" + c.id, { method: "DELETE" });
+  if (active === c.id) { active = null; $("#inner").innerHTML = ""; showEmpty(); }
+  loadConvos();
+}
+function showEmpty() {
+  $("#inner").innerHTML = '<div id="empty">Ask Wren anything — or say “add potatoes to shopping”.</div>';
+}
+
+async function openConvo(id) {
+  active = id;
+  const convo = await api("/api/conversations/" + id);
+  $("#inner").innerHTML = "";
+  if (!convo.messages.length) showEmpty();
+  for (const m of convo.messages) {
+    bubble(m.role, m.role === "user" ? esc(m.content) : md(m.content));
+  }
+  loadConvos();
+  $("#text").focus();
+}
+
+async function newConvo() {
+  const c = await api("/api/conversations", { method: "POST" });
+  await loadConvos();
+  await openConvo(c.id);
+}
+
+async function send() {
+  const text = $("#text").value.trim();
+  if (!text || busy) return;
+  if (active === null) await newConvo();
+  busy = true; $("#send").disabled = true;
+  $("#text").value = ""; $("#text").style.height = "auto";
+  const gone = $("#empty"); if (gone) gone.remove();
+  bubble("user", esc(text));
+  const thinking = bubble("assistant", '<div class="dots"><span></span><span></span><span></span></div>');
+  try {
+    const data = await api("/api/conversations/" + active + "/message",
+                           { method: "POST", body: JSON.stringify({ text }) });
+    thinking.remove();
+    for (const r of data.replies) bubble("assistant", md(r));
+    for (const f of data.files || []) bubble("assistant", fileLink(f));
+    if (!data.replies.length && !(data.files || []).length) bubble("assistant", "<em>(no reply)</em>");
+    loadConvos();
+  } catch (e) {
+    thinking.remove();
+    bubble("assistant", '<em>' + esc(e.message || "Something went wrong.") + "</em>");
+  } finally {
+    busy = false; $("#send").disabled = false; $("#text").focus();
+  }
+}
+
+/* ── wiring ────────────────────────────────────────────────────────────── */
+$("#signin").onclick = async () => {
+  const v = $("#token").value.trim();
+  if (!v) return;
+  token = v;
+  try {
+    await api("/api/conversations");
+    localStorage.setItem("wren_token", v);
+    start();
+  } catch { $("#loginerr").textContent = "That token was rejected."; }
+};
+$("#token").onkeydown = e => { if (e.key === "Enter") $("#signin").click(); };
+$("#new").onclick = newConvo;
+$("#send").onclick = send;
+$("#text").onkeydown = e => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+};
+$("#text").oninput = e => {
+  e.target.style.height = "auto";
+  e.target.style.height = Math.min(e.target.scrollHeight, 180) + "px";
+};
+
+async function start() {
+  $("#login").style.display = "none";
+  $("#app").classList.add("on");
+  const list = await api("/api/conversations");
+  if (list.length) await openConvo(list[0].id); else { showEmpty(); await loadConvos(); }
+  $("#text").focus();
+}
+
+if (token) {
+  api("/api/conversations").then(start).catch(() => {
+    localStorage.removeItem("wren_token"); token = "";
+  });
+}
+</script>
+</body>
+</html>
