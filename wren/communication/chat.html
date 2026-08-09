@@ -122,7 +122,8 @@ footer { border-top: 1px solid var(--line); padding: 12px 20px; }
 
 <div id="login">
   <h1>Wren</h1>
-  <p>Paste a token from this Wren's <code>WREN_TOKENS</code>.</p>
+  <p>Paste a token from this Wren's <code>WREN_TOKENS</code> — the part
+     <em>before</em> the colon. What follows it is the user id, not the token.</p>
   <input id="token" type="password" placeholder="token" autocomplete="current-password">
   <button id="signin">Connect</button>
   <div class="err" id="loginerr"></div>
