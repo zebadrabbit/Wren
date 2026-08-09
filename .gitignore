@@ -10,3 +10,4 @@ _fix_tests.py
 _check_imports.py
 wren/surfaces/
 .claude/
+.session-scratch/
