@@ -166,6 +166,17 @@ SEARXNG_URL = os.environ.get("SEARXNG_URL", "")
 FIRECRAWL_URL = os.environ.get("FIRECRAWL_URL", "")
 FIRECRAWL_API_KEY = os.environ.get("FIRECRAWL_API_KEY", "")
 
+# providers.py and reload_llm_chain() read these from os.environ directly,
+# never from the module attribute (see _apply_model) -- the attribute exists
+# purely so these five behave like every other settable for
+# serialize_setting()/GET /api/plugins instead of needing their own
+# special-cased read path. _apply_model keeps the two in step.
+OLLAMA_MODEL     = os.environ.get("OLLAMA_MODEL", "")
+LMSTUDIO_MODEL   = os.environ.get("LMSTUDIO_MODEL", "")
+OPENAI_MODEL     = os.environ.get("OPENAI_MODEL", "")
+CLAUDE_MODEL     = os.environ.get("CLAUDE_MODEL", "")
+OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "")
+
 # ── Runtime-editable settings ────────────────────────────────────────────────
 # Everything above is read from .env at import. These may additionally be
 # overridden at runtime from the settings table, by the owner, through the web
@@ -206,26 +217,31 @@ def _apply_attr(key: str, value) -> None:
 
 
 def _apply_model(key: str, value) -> None:
-    """Model names live in os.environ, not on this module: providers.resolve()
-    reads the environment, and LLM_CHAIN caches the resolved model. Setting a
-    config attribute would do nothing at all.
+    """Model names must land in two places that cannot be allowed to drift:
+    os.environ, which is the one providers.resolve() actually reads, and the
+    module attribute, kept in step purely so these keys serialize and display
+    like every other settable. Setting only the attribute would do nothing --
+    providers.py never looks at it.
 
-    Writes os.environ and the rebuild as one unit: if reload_llm_chain()
-    refuses (empty chain), os.environ is put back exactly as it was first.
-    Without this, a refused clear_override -- or a refused stored setting at
-    boot, which apply_overrides() only logs and moves past -- would leave
-    os.environ pointing at a model that disagrees with the LLM_CHAIN entry
+    Writes both plus the rebuild as one unit: if reload_llm_chain() refuses
+    (empty chain), both are put back exactly as they were first. Without this,
+    a refused clear_override -- or a refused stored setting at boot, which
+    apply_overrides() only logs and moves past -- would leave os.environ (or
+    the attribute) pointing at a model that disagrees with the LLM_CHAIN entry
     still in use, a split that would only resolve itself on the next restart.
     """
-    previous = os.environ.get(key)
+    previous_env = os.environ.get(key)
+    previous_attr = globals()[key]
+    globals()[key] = value
     os.environ[key] = value
     try:
         reload_llm_chain()
     except RuntimeError:
-        if previous is None:
+        globals()[key] = previous_attr
+        if previous_env is None:
             os.environ.pop(key, None)
         else:
-            os.environ[key] = previous
+            os.environ[key] = previous_env
         raise
 
 
@@ -278,35 +294,14 @@ def serialize_setting(key: str) -> str:
     must use instead of str(getattr(config, key)) for every settable value.
     webchat.py has no domain logic (hard rule 2 in CLAUDE.md), so both call
     sites go through this one function rather than each reimplementing it.
-
-    globals().get(...) falls back to os.environ for the *_MODEL keys: they
-    have no module attribute at all (_apply_model writes os.environ only --
-    see its docstring), so a bare globals()[key] would KeyError for them.
     """
-    return SETTABLE[key].serialize(globals().get(key, os.environ.get(key, "")))
+    return SETTABLE[key].serialize(globals()[key])
 
 
 # Snapshot of what .env produced, taken before any override is applied, so
 # clear_override() can restore the file's value exactly rather than trying to
-# re-derive it. globals().get(...) falls back to os.environ for the *_MODEL
-# keys, which have no module attribute (see _apply_model).
-_DEFAULTS = {key: globals().get(key, os.environ.get(key, "")) for key in SETTABLE}
-
-
-def __getattr__(name: str):
-    """PEP 562 module fallback, scoped to SETTABLE.
-
-    The *_MODEL keys have no module attribute (_apply_model writes os.environ
-    only), so plain attribute access -- config.OLLAMA_MODEL, or the equivalent
-    getattr(config, "OLLAMA_MODEL") that
-    test_every_settable_round_trips_through_serialize uses on every SETTABLE
-    key -- would otherwise raise AttributeError. Scoped to SETTABLE rather than
-    a blanket os.environ passthrough so a genuine typo (config.OLAMA_MODEL)
-    still raises instead of silently returning "".
-    """
-    if name in SETTABLE:
-        return os.environ.get(name, "")
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+# re-derive it.
+_DEFAULTS = {key: globals()[key] for key in SETTABLE}
 
 
 def apply_overrides() -> None:
@@ -349,7 +344,13 @@ def set_override(key: str, raw: str):
 
     A rejected value never reaches the database, and a failed write never
     leaves memory ahead of disk. Coercion happens during validation, so the
-    value is already known-good by the time it is applied.
+    value is usually known-good by the time it is applied -- except for the
+    *_MODEL keys, where "known-good" (does a chain still resolve?) can only
+    be confirmed by apply() actually rebuilding LLM_CHAIN. If that rebuild is
+    refused, the row this call just persisted is put back to whatever was
+    there before (or removed, if there was nothing), so a refused apply still
+    leaves no change persisted -- the same guarantee the docstring already
+    made for a refused *coerce*, extended to cover a refused apply too.
     """
     from . import settings
 
@@ -357,16 +358,36 @@ def set_override(key: str, raw: str):
         raise KeyError(key)
     spec = SETTABLE[key]
     value = spec.coerce(raw)         # raises ValueError/RuntimeError if bad
+    previous_raw = settings.get(key)
     settings.set(key, raw)
-    spec.apply(key, value)
+    try:
+        spec.apply(key, value)
+    except Exception:
+        if previous_raw is None:
+            settings.unset(key)
+        else:
+            settings.set(key, previous_raw)
+        raise
     return value
 
 
 def clear_override(key: str) -> None:
-    """Drop the stored row and restore what .env produced at import."""
+    """Drop the stored row and restore what .env produced at import.
+
+    Same apply-can-fail problem as set_override, mirrored: if the *_MODEL
+    apply refuses (empty chain), the row just unset is put back exactly as it
+    was, so a refused clear does not leave "no override" persisted while the
+    running process is, in fact, still overridden.
+    """
     from . import settings
 
     if key not in SETTABLE:
         raise KeyError(key)
+    previous_raw = settings.get(key)
     settings.unset(key)
-    SETTABLE[key].apply(key, _DEFAULTS[key])
+    try:
+        SETTABLE[key].apply(key, _DEFAULTS[key])
+    except Exception:
+        if previous_raw is not None:
+            settings.set(key, previous_raw)
+        raise
