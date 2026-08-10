@@ -39,6 +39,15 @@ _RETRY_SECONDS = 5
 _MAX_RETRY_SECONDS = 300
 
 
+def is_active() -> bool:
+    return bool(config.TELEGRAM_TOKEN)
+
+
+def inactive_reason() -> str:
+    return ("TELEGRAM_TOKEN is not set. Add it and put 'telegram' in "
+            "COMMUNICATION_PLUGINS, then restart.")
+
+
 class TelegramError(RuntimeError):
     """The Bot API answered with ok=false. `code` is Telegram's error_code,
     which is what tells a permanent failure (403, user blocked the bot) from a

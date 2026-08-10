@@ -107,3 +107,29 @@ def test_is_enabled_reraises_operational_errors_other_than_missing_table(monkeyp
     monkeypatch.setattr(settings, "get", boom)
     with pytest.raises(sqlite3.OperationalError):
         registry.is_enabled(notes_skill)
+
+
+def test_web_skill_explains_why_it_is_inactive(monkeypatch):
+    from wren import config
+
+    monkeypatch.setattr(config, "SEARXNG_URL", "")
+    assert web_skill.is_active() is False
+    assert "SEARXNG_URL" in web_skill.inactive_reason()
+
+
+def test_gmail_explains_why_it_is_inactive(monkeypatch):
+    from wren import config
+    from wren.communication import gmail_plugin
+
+    monkeypatch.setattr(config, "EMAIL_WATCH", {})
+    assert gmail_plugin.is_active() is False
+    assert "EMAIL_WATCH" in gmail_plugin.inactive_reason()
+
+
+def test_telegram_explains_that_it_needs_a_token(monkeypatch):
+    from wren import config
+    from wren.communication import telegram_plugin
+
+    monkeypatch.setattr(config, "TELEGRAM_TOKEN", "")
+    assert telegram_plugin.is_active() is False
+    assert "TELEGRAM_TOKEN" in telegram_plugin.inactive_reason()

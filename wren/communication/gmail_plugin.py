@@ -12,6 +12,10 @@ ROLE = "input"   # input-only: watches an inbox, never sends; notify a chat plug
 def is_active() -> bool:
     return bool(config.EMAIL_WATCH)
 
+
+def inactive_reason() -> str:
+    return "EMAIL_WATCH is empty — no senders are being watched."
+
 def _connect() -> imaplib.IMAP4_SSL:
     conn = imaplib.IMAP4_SSL(config.IMAP_HOST)
     conn.login(config.IMAP_USER, config.IMAP_PASSWORD)
