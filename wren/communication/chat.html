@@ -26,7 +26,13 @@ body {
   display: flex; background: var(--bg); color: var(--text);
   font: 15px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
 }
-button { font: inherit; color: inherit; cursor: pointer; }
+/* background: transparent is load-bearing, not tidiness. Without it a button
+   that declares no background of its own gets the browser default -- white --
+   while inheriting the dark theme's near-white text, so its label is painted
+   white on white. The plugins panel shipped that way twice. Setting it here
+   means a new button can never render as a blank box; rules below override
+   where a real background is wanted. */
+button { font: inherit; color: inherit; cursor: pointer; background: transparent; }
 
 /* ── login ─────────────────────────────────────────────────────────────── */
 #login { margin: auto; max-width: 380px; padding: 24px; text-align: center; }
@@ -60,6 +66,12 @@ aside header b { flex: 1; font-size: 15px; display: flex; align-items: center; g
 /* Clear space 0.35 x height (Brand/README.md): at 20px that's a 7px minimum
    gap, so the 8px gap above already satisfies it. */
 .sidemark { width: 20px; height: 20px; flex: none; }
+#gear {
+  border: 0; color: var(--muted); padding: 2px 6px; border-radius: 6px;
+  font-size: 15px; line-height: 1;
+}
+#gear:hover { background: var(--bg); color: var(--text); }
+#gear[hidden] { display: none; }
 #new {
   border: 1px solid var(--line); background: transparent; border-radius: 6px;
   padding: 4px 10px; font-size: 13px;
