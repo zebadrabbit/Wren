@@ -121,8 +121,12 @@ def test_apply_overrides_reads_stored_rows_onto_the_module():
         config.apply_overrides()
         assert config.SEARXNG_URL == "http://from-db"
     finally:
-        settings.unset("SEARXNG_URL")
-        config.apply_overrides()
+        # clear_override, not unset()+apply_overrides(): apply_overrides only
+        # overlays keys present in settings.all() and has no path that
+        # restores a key to _DEFAULTS once its row is gone, so unset() alone
+        # would leave config.SEARXNG_URL at "http://from-db" for the rest of
+        # the process.
+        config.clear_override("SEARXNG_URL")
 
 
 def test_apply_overrides_ignores_an_unknown_key_instead_of_crashing(caplog):
@@ -147,3 +151,25 @@ def test_apply_overrides_ignores_a_stored_value_that_no_longer_validates(caplog)
     finally:
         settings.unset("REMINDER_POLL_SECONDS")
         config.apply_overrides()
+
+
+def test_apply_overrides_accepts_a_stored_notify_via_with_an_empty_router():
+    # Regression: run.py calls apply_overrides() right after init_dbs(), before
+    # any communication plugin's start() task exists, so router._surfaces is
+    # guaranteed empty at that moment. If apply_overrides() validated NOTIFY_VIA
+    # through the strict, router-checking coercer, a persisted NOTIFY_VIA row
+    # would fail every boot, get logged as invalid, and silently revert to the
+    # .env default forever -- the stored row would never take effect. The boot
+    # path must accept it leniently instead.
+    settings.init_db()
+    router.reset()
+    settings.set("NOTIFY_VIA", "telegram")
+    try:
+        config.apply_overrides()
+        assert config.NOTIFY_VIA == "telegram"
+    finally:
+        # clear_override, not unset()+apply_overrides() -- see Finding 2 above:
+        # apply_overrides() only overlays keys present in settings.all() and
+        # has no path back to _DEFAULTS once the row is gone.
+        config.clear_override("NOTIFY_VIA")
+        router.reset()

@@ -185,6 +185,13 @@ SETTABLE = {
 # re-derive it.
 _DEFAULTS = {key: globals()[key] for key in SETTABLE}
 
+# NOTIFY_VIA is validated against the router only on the interactive path.
+# At boot, apply_overrides() runs before any plugin has started, so the
+# router is empty and a strict check would reject every stored value and
+# silently fall back to .env. run.py's _warn_if_notifications_go_nowhere()
+# already covers the boot case, with a louder and more specific warning.
+_BOOT_COERCERS = {"NOTIFY_VIA": str.strip}
+
 
 def apply_overrides() -> None:
     """Read the settings table onto this module.
@@ -199,7 +206,7 @@ def apply_overrides() -> None:
     from . import settings
 
     for key, raw in settings.all().items():
-        coerce = SETTABLE.get(key)
+        coerce = _BOOT_COERCERS.get(key, SETTABLE.get(key))
         if coerce is None:
             # A version that no longer knows this key must still boot -- the
             # row was written by an older Wren, and crashing on it would make
