@@ -1,3 +1,5 @@
+import os
+
 import pytest
 
 from wren import config
@@ -284,3 +286,41 @@ def test_notify_via_still_applies_leniently_at_boot():
     finally:
         settings.unset("NOTIFY_VIA")
         config.apply_overrides()
+
+
+def test_model_keys_are_settable_but_api_keys_are_not():
+    for key in ("OLLAMA_MODEL", "LMSTUDIO_MODEL", "OPENAI_MODEL",
+                "CLAUDE_MODEL", "OPENROUTER_MODEL"):
+        assert key in config.SETTABLE
+    for secret in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "OPENROUTER_API_KEY"):
+        assert secret not in config.SETTABLE
+
+
+def test_setting_a_model_changes_what_the_chain_will_use(monkeypatch):
+    # The chain is resolved at import with the model baked in, so this proves
+    # the rebuild actually happened rather than just an attribute being set.
+    settings.init_db()
+    monkeypatch.setenv("LMSTUDIO_BASE_URL", "http://test")
+    monkeypatch.setenv("LMSTUDIO_MODEL", "before-model")
+    config.reload_llm_chain()
+    assert any(c["model"] == "before-model" for c in config.LLM_CHAIN)
+
+    config.set_override("LMSTUDIO_MODEL", "after-model")
+    try:
+        assert any(c["model"] == "after-model" for c in config.LLM_CHAIN)
+        assert not any(c["model"] == "before-model" for c in config.LLM_CHAIN)
+        assert os.environ["LMSTUDIO_MODEL"] == "after-model"
+    finally:
+        config.clear_override("LMSTUDIO_MODEL")
+
+
+def test_a_rebuild_that_would_empty_the_chain_is_refused(monkeypatch):
+    # Wren failing to boot with no provider is a loud, clear error. Wren
+    # silently losing its last provider at runtime because someone touched a
+    # dropdown is not.
+    settings.init_db()
+    before = list(config.LLM_CHAIN)
+    monkeypatch.setattr(config, "_provider_names", [])
+    with pytest.raises(RuntimeError):
+        config.reload_llm_chain()
+    assert config.LLM_CHAIN == before

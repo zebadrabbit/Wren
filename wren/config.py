@@ -73,6 +73,26 @@ if not LLM_CHAIN:
         "base_url/api_key/model env vars."
     )
 
+
+def reload_llm_chain() -> None:
+    """Re-resolve LLM_CHAIN from the current environment.
+
+    Deliberately re-runs the same expression import does, so a runtime model
+    switch and a restart cannot diverge.
+
+    Refuses a rebuild that would leave no usable provider: an empty chain at
+    boot is a loud startup error, but an empty chain at runtime would mean Wren
+    silently stops being able to answer because someone touched a dropdown.
+    """
+    global LLM_CHAIN
+    rebuilt = [c for c in (providers.resolve(n) for n in _provider_names) if c is not None]
+    if not rebuilt:
+        raise RuntimeError(
+            "that change would leave no usable LLM provider; keeping the current one"
+        )
+    LLM_CHAIN = rebuilt
+
+
 def _build_whitelist(owner_raw: str) -> dict[str, int]:
     if not owner_raw.isdigit():
         raise RuntimeError("OWNER_ID must be a numeric Discord user ID.")
@@ -185,6 +205,30 @@ def _apply_attr(key: str, value) -> None:
     globals()[key] = value
 
 
+def _apply_model(key: str, value) -> None:
+    """Model names live in os.environ, not on this module: providers.resolve()
+    reads the environment, and LLM_CHAIN caches the resolved model. Setting a
+    config attribute would do nothing at all.
+
+    Writes os.environ and the rebuild as one unit: if reload_llm_chain()
+    refuses (empty chain), os.environ is put back exactly as it was first.
+    Without this, a refused clear_override -- or a refused stored setting at
+    boot, which apply_overrides() only logs and moves past -- would leave
+    os.environ pointing at a model that disagrees with the LLM_CHAIN entry
+    still in use, a split that would only resolve itself on the next restart.
+    """
+    previous = os.environ.get(key)
+    os.environ[key] = value
+    try:
+        reload_llm_chain()
+    except RuntimeError:
+        if previous is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = previous
+        raise
+
+
 class Setting(NamedTuple):
     """Everything the system needs to know about one runtime-editable setting.
 
@@ -210,6 +254,18 @@ SETTABLE = {
     "GITHUB_WATCH":          Setting(_parse_github_watch, serialize=_serialize_github_watch),
     "EMAIL_WATCH":           Setting(_parse_email_watch, serialize=_serialize_email_watch),
     "NOTIFY_VIA":            Setting(_coerce_notify_via, boot_coerce=str.strip),
+
+    # Model NAMES are not credentials, so they belong in the allowlist; the
+    # matching *_API_KEY values are and never will. Listed literally rather
+    # than derived from LLM_PROVIDERS so the allowlist stays readable in one
+    # place. Note a side effect worth knowing: providers.resolve() returns None
+    # when a provider's model is unset, so setting one here can ADD that
+    # provider to the fallback chain, not merely change its model.
+    "OLLAMA_MODEL":     Setting(str.strip, apply=_apply_model),
+    "LMSTUDIO_MODEL":   Setting(str.strip, apply=_apply_model),
+    "OPENAI_MODEL":     Setting(str.strip, apply=_apply_model),
+    "CLAUDE_MODEL":     Setting(str.strip, apply=_apply_model),
+    "OPENROUTER_MODEL": Setting(str.strip, apply=_apply_model),
 }
 
 
@@ -222,14 +278,35 @@ def serialize_setting(key: str) -> str:
     must use instead of str(getattr(config, key)) for every settable value.
     webchat.py has no domain logic (hard rule 2 in CLAUDE.md), so both call
     sites go through this one function rather than each reimplementing it.
+
+    globals().get(...) falls back to os.environ for the *_MODEL keys: they
+    have no module attribute at all (_apply_model writes os.environ only --
+    see its docstring), so a bare globals()[key] would KeyError for them.
     """
-    return SETTABLE[key].serialize(globals()[key])
+    return SETTABLE[key].serialize(globals().get(key, os.environ.get(key, "")))
 
 
 # Snapshot of what .env produced, taken before any override is applied, so
 # clear_override() can restore the file's value exactly rather than trying to
-# re-derive it.
-_DEFAULTS = {key: globals()[key] for key in SETTABLE}
+# re-derive it. globals().get(...) falls back to os.environ for the *_MODEL
+# keys, which have no module attribute (see _apply_model).
+_DEFAULTS = {key: globals().get(key, os.environ.get(key, "")) for key in SETTABLE}
+
+
+def __getattr__(name: str):
+    """PEP 562 module fallback, scoped to SETTABLE.
+
+    The *_MODEL keys have no module attribute (_apply_model writes os.environ
+    only), so plain attribute access -- config.OLLAMA_MODEL, or the equivalent
+    getattr(config, "OLLAMA_MODEL") that
+    test_every_settable_round_trips_through_serialize uses on every SETTABLE
+    key -- would otherwise raise AttributeError. Scoped to SETTABLE rather than
+    a blanket os.environ passthrough so a genuine typo (config.OLAMA_MODEL)
+    still raises instead of silently returning "".
+    """
+    if name in SETTABLE:
+        return os.environ.get(name, "")
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def apply_overrides() -> None:
