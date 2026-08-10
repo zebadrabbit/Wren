@@ -166,6 +166,11 @@ SEARXNG_URL = os.environ.get("SEARXNG_URL", "")
 FIRECRAWL_URL = os.environ.get("FIRECRAWL_URL", "")
 FIRECRAWL_API_KEY = os.environ.get("FIRECRAWL_API_KEY", "")
 
+# Shown in the web chat's greeting. The whitelist alias for the owner is the
+# literal string "owner", a placeholder, not a name -- so this is its own
+# setting rather than reusing the alias.
+OWNER_NAME = os.environ.get("OWNER_NAME", "")
+
 # providers.py and reload_llm_chain() read these from os.environ directly,
 # never from the module attribute (see _apply_model) -- the attribute exists
 # purely so these five behave like every other settable for
@@ -282,6 +287,12 @@ SETTABLE = {
     "OPENAI_MODEL":     Setting(str.strip, apply=_apply_model),
     "CLAUDE_MODEL":     Setting(str.strip, apply=_apply_model),
     "OPENROUTER_MODEL": Setting(str.strip, apply=_apply_model),
+
+    # Shown in the web chat's greeting. The whitelist alias for the owner is
+    # the literal string "owner", which is a placeholder, not a name -- so
+    # rather than greeting somebody as "owner" the greeting omits the name
+    # entirely until this is set. Contacts already carry a real alias.
+    "OWNER_NAME": Setting(str.strip),
 }
 
 

@@ -230,6 +230,30 @@ def register_routes(app: web.Application, authenticate) -> None:
             ],
         })
 
+    async def get_me(request):
+        # Any authenticated whitelisted user, NOT owner-only: /api/plugins is,
+        # so a household member loading the page would get a 403 and no
+        # greeting at all. This returns only the caller's own name plus two
+        # non-sensitive facts the landing screen needs.
+        user_id = _auth(request)
+        from .. import registry
+
+        if user_id == config.WHITELIST["owner"]:
+            # The whitelist alias for the owner is the literal string "owner"
+            # -- a placeholder, not a name -- so never fall back to it here.
+            name = config.OWNER_NAME or None
+        else:
+            alias = config.id_to_name().get(user_id)
+            name = alias.title() if alias else None
+        return web.json_response({
+            "name": name,
+            "skills": [registry.skill_key(p) for p in registry.PLUGINS
+                       if registry.is_enabled(p)],
+            # Also here, not just in the owner-only /api/models, so a
+            # household member's composer can show which model is answering.
+            "model": config.LLM_CHAIN[0]["model"] if config.LLM_CHAIN else None,
+        })
+
     def _owner(request):
         user_id = _auth(request)
         if user_id != config.WHITELIST["owner"]:
@@ -285,6 +309,7 @@ def register_routes(app: web.Application, authenticate) -> None:
     app.router.add_patch("/api/conversations/{id}", rename_conversation)
     app.router.add_delete("/api/conversations/{id}", delete_conversation)
     app.router.add_post("/api/conversations/{id}/message", post_message)
+    app.router.add_get("/api/me", get_me)
     app.router.add_get("/api/plugins", get_plugins)
     app.router.add_patch("/api/plugins/{module}", patch_plugin)
     app.router.add_patch("/api/settings", patch_settings)

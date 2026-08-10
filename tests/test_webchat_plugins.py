@@ -220,3 +220,72 @@ def test_patch_settings_with_malformed_json_is_400_not_500():
     status, _ = call("patch", "/api/settings", token=TOKEN_OWNER, data="not json")
     assert status == 400
     assert settings.get("SEARXNG_URL") is None
+
+
+# ── GET /api/me ──────────────────────────────────────────────────────────────
+# Not owner-only: /api/plugins is, so a household member loading the page
+# would get a 403 and no greeting at all. This endpoint returns only the
+# caller's own name, plus two non-sensitive facts (enabled skills, active
+# model) the landing screen needs and that a household member cannot get from
+# any owner-only route.
+
+def test_me_returns_the_owner_name_setting():
+    config.set_override("OWNER_NAME", "Erin")
+    try:
+        status, body = call("get", "/api/me", token=TOKEN_OWNER)
+        assert status == 200
+        assert body["name"] == "Erin"
+    finally:
+        config.clear_override("OWNER_NAME")
+
+
+def test_me_omits_the_name_when_owner_name_is_unset():
+    # Better no name than greeting somebody as "owner".
+    status, body = call("get", "/api/me", token=TOKEN_OWNER)
+    assert status == 200
+    assert body["name"] is None
+
+
+def test_me_is_not_owner_only():
+    # The whole reason this endpoint exists: /api/plugins 403s for a household
+    # member, so the greeting cannot come from there.
+    status, body = call("get", "/api/me", token=TOKEN_OTHER)
+    assert status == 200
+    assert "skills" in body
+
+
+def test_me_titlecases_a_contact_alias():
+    # The `tokens` fixture already monkeypatches config.id_to_name to map
+    # USER_OTHER -> "bob", so no extra monkeypatching is needed here.
+    from wren import contacts
+    contacts.init_db()
+    contacts.add("bob", USER_OTHER)
+    status, body = call("get", "/api/me", token=TOKEN_OTHER)
+    assert body["name"] == "Bob"
+
+
+def test_me_requires_a_token():
+    status, _ = call("get", "/api/me")
+    assert status == 401
+
+
+def test_me_reports_the_active_model_to_a_non_owner(monkeypatch):
+    # /api/models is owner-only, so this is the only way a household member's
+    # composer can show which model is answering.
+    monkeypatch.setattr(config, "LLM_CHAIN", [
+        {"name": "ollama", "base_url": "http://test", "api_key": "x", "model": "a-model"}])
+    status, body = call("get", "/api/me", token=TOKEN_OTHER)
+    assert status == 200
+    assert body["model"] == "a-model"
+
+
+def test_me_lists_only_enabled_skills():
+    from wren.skills import notes_skill
+    status, body = call("get", "/api/me", token=TOKEN_OWNER)
+    assert "notes_skill" in body["skills"]
+    registry.set_enabled(notes_skill, False)
+    try:
+        _, body = call("get", "/api/me", token=TOKEN_OWNER)
+        assert "notes_skill" not in body["skills"]
+    finally:
+        registry.set_enabled(notes_skill, True)
