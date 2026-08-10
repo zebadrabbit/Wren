@@ -162,7 +162,17 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .msg a { color: var(--accent); }
 .msg ul { padding-left: 20px; margin: 6px 0; }
 .msg .dl { display: inline-block; margin-top: 6px; color: var(--accent); }
-#empty { color: var(--muted); text-align: center; margin-top: 22vh; font-size: 14px; }
+/* ── landing ───────────────────────────────────────────────────────────── */
+#landing { text-align: center; margin-top: 14vh; }
+.landmark { width: 28px; height: 28px; display: block; margin: 0 auto 10px; }
+#greet { font-size: 22px; font-weight: 500; margin: 0 0 4px; }
+#pills { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 18px; }
+.pill {
+  border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px;
+  font-size: 13px; color: var(--muted);
+}
+.pill:hover { color: var(--text); border-color: var(--muted); }
+
 .dots span {
   display: inline-block; width: 6px; height: 6px; margin-right: 3px;
   border-radius: 50%; background: var(--muted); animation: b 1.2s infinite;
@@ -183,10 +193,37 @@ footer { border-top: 1px solid var(--line); padding: 12px 20px; }
   padding: 0 18px; font-weight: 600;
 }
 #send:disabled { opacity: .5; cursor: default; }
+#model {
+  border: 1px solid var(--line); border-radius: 8px; background: var(--panel);
+  color: var(--muted); font: inherit; font-size: 13px; padding: 4px 6px;
+  /* #composer is display:flex with the default align-items:stretch, so
+     without align-self this <select> grows to match #text's height (up to
+     180px) as you type. max-width plus the overflow rules below stop a long
+     id (e.g. a full openrouter slug) from squeezing #text down instead of
+     just truncating with an ellipsis. */
+  align-self: center; max-width: 160px; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+#modeltext { color: var(--muted); font-size: 13px; align-self: center; }
+/* Reuses the same red already used for #login .err and .perr elsewhere in this
+   file -- an established, already-tested error colour, not a new one-off. */
+#modeltext.err { color: #c0503f; }
 @media (max-width: 640px) { aside { width: 190px; } }
 </style>
 </head>
 <body>
+
+<!-- The Wren silhouette, defined once. Both the sidebar and the landing
+     header <use> it, so the geometry from Brand/brand/mark-simple.svg is
+     inlined once rather than per site. Regenerate with:
+     cd Brand && python3 build.py && python3 render_pngs.py  -- then re-inline. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="wren-mark" viewBox="0 0 128.0 128.0">
+<g transform="translate(7.68,7.68) scale(1.1264)">
+<path d="M 4.00 49.38 C 6.66 48.28 15.11 44.77 18.50 43.36 C 19.67 40.97 21.14 36.12 23.52 33.10 C 25.89 30.08 31.17 21.52 36.34 20.72 C 41.51 19.92 48.30 26.23 53.07 28.53 C 57.83 30.82 63.37 33.72 66.45 35.22 C 69.53 36.72 73.47 41.00 74.81 39.12 C 76.15 37.24 82.96 14.19 84.29 10.13 C 85.93 11.14 94.36 16.36 96.00 17.38 C 94.44 21.83 86.20 45.12 84.85 49.16 C 83.50 53.20 82.12 61.31 79.83 65.89 C 77.54 70.47 74.07 77.50 68.68 81.50 C 63.29 85.49 55.26 89.66 47.49 89.86 C 39.72 90.07 31.67 86.61 26.30 82.61 C 20.94 78.61 18.59 71.06 16.82 67.00 C 15.06 62.94 14.96 58.76 15.15 56.97 C 15.35 55.17 17.72 52.86 18.50 51.61 C 15.11 51.09 6.66 49.79 4.00 49.38 Z" fill="#C4694A"/>
+</g>
+  </symbol>
+</svg>
 
 <div id="login">
   <!-- Inlined from Brand/brand/lockup.svg (mark + wordmark as outlines) so
@@ -225,11 +262,7 @@ footer { border-top: 1px solid var(--line); padding: 12px 20px; }
            this icon renders at ~20px). Regenerate with:
            cd Brand && python3 build.py && python3 render_pngs.py  -- then re-inline.
            Decorative: the word "Wren" sits right next to it. -->
-      <svg class="sidemark" viewBox="0 0 128.0 128.0" aria-hidden="true">
-<g transform="translate(7.68,7.68) scale(1.1264)">
-<path d="M 4.00 49.38 C 6.66 48.28 15.11 44.77 18.50 43.36 C 19.67 40.97 21.14 36.12 23.52 33.10 C 25.89 30.08 31.17 21.52 36.34 20.72 C 41.51 19.92 48.30 26.23 53.07 28.53 C 57.83 30.82 63.37 33.72 66.45 35.22 C 69.53 36.72 73.47 41.00 74.81 39.12 C 76.15 37.24 82.96 14.19 84.29 10.13 C 85.93 11.14 94.36 16.36 96.00 17.38 C 94.44 21.83 86.20 45.12 84.85 49.16 C 83.50 53.20 82.12 61.31 79.83 65.89 C 77.54 70.47 74.07 77.50 68.68 81.50 C 63.29 85.49 55.26 89.66 47.49 89.86 C 39.72 90.07 31.67 86.61 26.30 82.61 C 20.94 78.61 18.59 71.06 16.82 67.00 C 15.06 62.94 14.96 58.76 15.15 56.97 C 15.35 55.17 17.72 52.86 18.50 51.61 C 15.11 51.09 6.66 49.79 4.00 49.38 Z" fill="#C4694A"/>
-</g>
-</svg>
+      <svg class="sidemark" aria-hidden="true"><use href="#wren-mark"/></svg>
       Wren</b><button id="gear" title="Plugins">⚙</button><button id="new">New</button></header>
     <div id="convos"></div>
   </aside>
@@ -238,6 +271,8 @@ footer { border-top: 1px solid var(--line); padding: 12px 20px; }
     <footer>
       <div id="composer">
         <textarea id="text" rows="1" placeholder="Message Wren…"></textarea>
+        <select id="model" hidden></select>
+        <span id="modeltext" hidden></span>
         <button id="send">Send</button>
       </div>
     </footer>
@@ -362,8 +397,65 @@ async function delConvo(c) {
   if (active === c.id) { active = null; $("#inner").innerHTML = ""; showEmpty(); }
   loadConvos();
 }
-function showEmpty() {
-  $("#inner").innerHTML = '<div id="empty">Ask Wren anything — or say “add potatoes to shopping”.</div>';
+const STARTERS = {
+  shopping_skill: "add ",
+  notes_skill:    "remember that ",
+  reminder_skill: "remind me to ",
+  pins_skill:     "pin: ",
+  web_skill:      "look up ",
+};
+// contacts_skill is deliberately absent: it is owner-only administration, not
+// something to invite a household member into. A module with no starter here
+// simply renders no pill, which is also what a disabled skill does.
+
+function greeting(name) {
+  const h = new Date().getHours();   // the reader's clock, not the host's --
+  // TIMEZONE exists so reminders fire correctly on the server, which is a
+  // different question from what time it is where you are sitting.
+  const part = h < 12 ? "morning" : h < 18 ? "afternoon" : "evening";
+  return name ? `Good ${part}, ${name}.` : `Good ${part}.`;
+}
+
+async function showEmpty(mePromise) {
+  const inner = $("#inner");
+  inner.innerHTML = `<div id="landing">
+      <svg class="landmark" aria-hidden="true"><use href="#wren-mark"/></svg>
+      <h2 id="greet"></h2>
+      <div id="pills"></div>
+    </div>`;
+  // Captured now, not re-queried after the await below: if a later caller
+  // (double-click "New", or send() on the very first message of a fresh
+  // install) rebuilds #inner or removes #landing before /api/me resolves,
+  // this reference stops matching what's on the page and the isConnected
+  // check further down bails instead of writing a greeting/pills into a
+  // landing screen that already isn't the one showing.
+  const landing = $("#landing");
+  // Render the fallback greeting first so the screen is never blank or
+  // waiting: /api/me only upgrades it with a name.
+  $("#greet").textContent = greeting(null);
+  let me;
+  try {
+    // start() already has an /api/me in flight for the model selector's
+    // fallback and passes it in here so the same page load doesn't fetch it
+    // twice. Later calls (delConvo, openConvo, a fresh "New") pass nothing
+    // and get their own current fetch.
+    me = await (mePromise || api("/api/me"));
+  } catch (e) {
+    return;                       // greeting stays; no pills
+  }
+  if (!landing.isConnected) return;   // superseded while /api/me was in flight
+  $("#greet").textContent = greeting(me.name);
+  me.skills.filter(m => STARTERS[m]).forEach(m => {
+    const b = document.createElement("button");
+    b.className = "pill";
+    b.textContent = m.replace("_skill", "").replace(/^./, c => c.toUpperCase());
+    b.onclick = () => {
+      $("#text").value = STARTERS[m];
+      $("#text").focus();
+      $("#text").setSelectionRange($("#text").value.length, $("#text").value.length);
+    };
+    $("#pills").appendChild(b);
+  });
 }
 
 async function openConvo(id) {
@@ -390,7 +482,7 @@ async function send() {
   if (active === null) await newConvo();
   busy = true; $("#send").disabled = true;
   $("#text").value = ""; $("#text").style.height = "auto";
-  const gone = $("#empty"); if (gone) gone.remove();
+  const gone = $("#landing"); if (gone) gone.remove();
   bubble("user", esc(text));
   const thinking = bubble("assistant", '<div class="dots"><span></span><span></span><span></span></div>');
   try {
@@ -501,6 +593,70 @@ $("#gear").onclick = () => { $("#plugins").hidden = false; loadPlugins(); };
 $("#pclose").onclick = () => { $("#plugins").hidden = true; };
 $("#plugins").onclick = e => { if (e.target.id === "plugins") $("#plugins").hidden = true; };
 
+async function loadModels(fallbackModel) {
+  let d;
+  try {
+    d = await api("/api/models");
+  } catch (e) {
+    // 403 for a non-owner, or the request failed. Fail closed to static text,
+    // using the model /api/me already told us about.
+    $("#modeltext").textContent = fallbackModel || "";
+    $("#modeltext").hidden = !fallbackModel;
+    return;
+  }
+  if (!d.models.length) {                 // owner, but the provider is down (or unconfigured)
+    // d.reason says WHY the list is empty -- without it "the list failed to
+    // load" and "this is simply the model" render as identical text.
+    const text = d.reason ? [d.current, d.reason].filter(Boolean).join(" — ") : (d.current || "");
+    $("#modeltext").textContent = text;
+    $("#modeltext").hidden = !text;
+    return;
+  }
+  $("#model").innerHTML = "";
+  // d.current might not be IN d.models -- e.g. OLLAMA_MODEL names a model
+  // since removed from the host, or LM Studio only lists currently LOADED
+  // models. The loop below only ever *selects* an existing option, so without
+  // this, nothing would be selected and the browser would silently default to
+  // d.models[0] -- displaying a model that is not the one actually answering,
+  // with no indication anything is wrong. Prepending an option for it keeps
+  // the visible selection truthful: the label explains the mismatch, but the
+  // VALUE stays the bare model id, since that's what gets PATCHed.
+  if (d.current && !d.models.includes(d.current)) {
+    const o = document.createElement("option");
+    o.value = d.current;
+    o.textContent = `${d.current} (not offered by ${d.provider})`;
+    o.selected = true;
+    $("#model").appendChild(o);
+  }
+  d.models.forEach(m => {
+    const o = document.createElement("option");
+    o.value = m; o.textContent = m; o.selected = (m === d.current);
+    $("#model").appendChild(o);
+  });
+  $("#model").hidden = false;
+  $("#model").onchange = async () => {
+    const key = d.provider.toUpperCase() + "_MODEL";
+    const chosen = $("#model").value;
+    $("#modeltext").hidden = true; $("#modeltext").classList.remove("err");
+    try {
+      await api("/api/settings", { method: "PATCH",
+        body: JSON.stringify({ [key]: chosen }) });
+      d.current = chosen;   // keep our snapshot in sync so a later failed
+                             // change has the right value to revert to
+    } catch (e) {
+      // PATCH /api/settings can genuinely 400 here -- config.set_override
+      // rejects a model that fails to resolve. Revert the visible selection
+      // to the last value that actually saved (simpler than re-fetching
+      // /api/models, and d.current is already the source of truth we have in
+      // hand) rather than let the dropdown show a choice the server never
+      // accepted as though it had taken.
+      $("#model").value = d.current;
+      $("#modeltext").textContent = "Couldn't switch model: " + (e.message || "unknown error");
+      $("#modeltext").hidden = false; $("#modeltext").classList.add("err");
+    }
+  };
+}
+
 async function start() {
   $("#login").style.display = "none";
   $("#app").classList.add("on");
@@ -509,8 +665,15 @@ async function start() {
   // flashing it at someone it should never appear for.
   $("#gear").hidden = true;
   api("/api/plugins").then(() => { $("#gear").hidden = false; }).catch(() => {});
+  // Fetched once and shared: the model selector's fallback needs .model, and
+  // showEmpty() (below) needs the same response for the greeting and pills.
+  // Two independent calls here previously fetched /api/me twice on every page
+  // load; awaiting the same promise from both places makes one network
+  // request serve both, and each still fails closed independently.
+  const me = api("/api/me");
+  me.then(m => loadModels(m.model)).catch(() => loadModels(null));
   const list = await api("/api/conversations");
-  if (list.length) await openConvo(list[0].id); else { showEmpty(); await loadConvos(); }
+  if (list.length) await openConvo(list[0].id); else { showEmpty(me); await loadConvos(); }
   $("#text").focus();
 }
 

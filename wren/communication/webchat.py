@@ -1,5 +1,6 @@
 import base64
 import importlib
+import logging
 import pathlib
 import pkgutil
 
@@ -136,6 +137,29 @@ def _channel_rows() -> list[dict]:
     return rows
 
 
+async def _fetch_models(base_url: str, api_key: str) -> list[str]:
+    """The active provider's /v1/models, as plain ids.
+
+    Proxied rather than fetched by the browser: once Wren is bound to
+    127.0.0.1 the browser can only reach the reverse proxy, and this keeps the
+    internal LLM endpoint out of the page source.
+    """
+    import aiohttp
+
+    url = base_url.rstrip("/") + "/models"
+    # Some providers (ollama) need no key at all, so a falsy value omits the
+    # header rather than sending "Bearer None". A placeholder like ollama's
+    # own "not-needed" IS sent as a real Bearer value -- harmless, and
+    # consistent with how brain.py treats the same api_key for chat traffic.
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    timeout = aiohttp.ClientTimeout(total=8)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with session.get(url, headers=headers) as resp:
+            resp.raise_for_status()  # a JSON error body must not read as "zero models"
+            body = await resp.json()
+    return [m["id"] for m in body.get("data", []) if m.get("id")]
+
+
 async def page(request: web.Request) -> web.Response:
     # unauthenticated on purpose: a static shell containing no user data. It
     # renders a "paste your token" box, and every request it then makes carries
@@ -230,12 +254,64 @@ def register_routes(app: web.Application, authenticate) -> None:
             ],
         })
 
+    async def get_me(request):
+        # Any authenticated whitelisted user, NOT owner-only: /api/plugins is,
+        # so a household member loading the page would get a 403 and no
+        # greeting at all. This returns only the caller's own name plus two
+        # non-sensitive facts the landing screen needs.
+        user_id = _auth(request)
+        from .. import registry
+
+        if user_id == config.WHITELIST["owner"]:
+            # The whitelist alias for the owner is the literal string "owner"
+            # -- a placeholder, not a name -- so never fall back to it here.
+            name = config.OWNER_NAME or None
+        else:
+            alias = config.id_to_name().get(user_id)
+            # Same placeholder refusal as the owner branch above: contacts.py
+            # reserves no aliases, so contacts.add("owner", ...) is accepted,
+            # and without this a contact using that alias would be greeted
+            # "Good evening, Owner." -- the placeholder leaking through the
+            # one path that was supposed to keep it out entirely.
+            name = alias.title() if alias and alias != "owner" else None
+        return web.json_response({
+            "name": name,
+            "skills": [registry.skill_key(p) for p in registry.PLUGINS
+                       if registry.is_enabled(p)],
+            # Also here, not just in the owner-only /api/models, so a
+            # household member's composer can show which model is answering.
+            "model": config.LLM_CHAIN[0]["model"] if config.LLM_CHAIN else None,
+        })
+
     def _owner(request):
         user_id = _auth(request)
         if user_id != config.WHITELIST["owner"]:
             raise web.HTTPForbidden(text='{"error": "owner only"}',
                                     content_type="application/json")
         return user_id
+
+    async def get_models(request):
+        _owner(request)
+        if not config.LLM_CHAIN:
+            return web.json_response(
+                {"provider": None, "current": None, "models": [],
+                 "reason": "no LLM provider is configured"})
+        active = config.LLM_CHAIN[0]
+        try:
+            models = await _fetch_models(active["base_url"], active["api_key"])
+            reason = None
+        except Exception as e:
+            # 200 with an empty list, never a 5xx: this feeds the landing
+            # screen, which must render even when the LLM host is down. The
+            # dropdown degrades to the current model as static text.
+            logging.warning(f"could not list models from {active['name']}: {e}")
+            models, reason = [], f"{active['name']} is not reachable right now"
+        return web.json_response({
+            "provider": active["name"],
+            "current": active["model"],
+            "models": models,
+            "reason": reason,
+        })
 
     async def get_plugins(request):
         _owner(request)
@@ -285,6 +361,8 @@ def register_routes(app: web.Application, authenticate) -> None:
     app.router.add_patch("/api/conversations/{id}", rename_conversation)
     app.router.add_delete("/api/conversations/{id}", delete_conversation)
     app.router.add_post("/api/conversations/{id}/message", post_message)
+    app.router.add_get("/api/me", get_me)
+    app.router.add_get("/api/models", get_models)
     app.router.add_get("/api/plugins", get_plugins)
     app.router.add_patch("/api/plugins/{module}", patch_plugin)
     app.router.add_patch("/api/settings", patch_settings)

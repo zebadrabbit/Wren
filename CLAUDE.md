@@ -52,6 +52,18 @@ Run with `python3 -m wren.run`. Full architecture doc: `README.md`
    Everything else comes from `.env` and is read at import. `settings` stores
    only deviations, and `config.SETTABLE` is a positive allowlist — never add
    a credential to it, because `GET /api/plugins` returns its values.
+   `SETTABLE` reaches further than plain scalar knobs, though: it also
+   includes the five provider `*_MODEL` keys, whose `apply()` writes
+   `os.environ` and rebuilds `config.LLM_CHAIN` (not just a `config` module
+   attribute), because `providers.py` reads the environment and the chain
+   bakes the model in at import. That rebuild only re-resolves providers
+   already named in `LLM_PROVIDERS` at import (`_provider_names`, captured
+   once and itself not in `SETTABLE`) — so a live `*_MODEL` change can revive
+   one of those providers if its model was left blank, but can never add a
+   provider absent from `LLM_PROVIDERS`. `SETTABLE` does not know the
+   difference: it lists all five `*_MODEL` keys unconditionally, so setting
+   the model of a provider `LLM_PROVIDERS` never named still returns success
+   and changes nothing observable.
 
 ## Env vars that changed in the v2 restart
 
@@ -84,7 +96,7 @@ Module path renames (for grep/context when reading old plans/specs):
 ```bash
 source venv/bin/activate
 pip install -r requirements.txt
-pytest -q                        # 621 passed as of 2026-08-09
+pytest -q                        # 657 passed as of 2026-08-09
 python3 -m wren.run              # needs .env; see .env.example
 ```
 

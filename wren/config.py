@@ -1,6 +1,7 @@
 import logging
 import os
 import zoneinfo
+from typing import Callable, NamedTuple
 from dotenv import load_dotenv
 
 from . import providers
@@ -71,6 +72,26 @@ if not LLM_CHAIN:
         "comma-separated list (e.g. lmstudio,openai) and set that provider's "
         "base_url/api_key/model env vars."
     )
+
+
+def reload_llm_chain() -> None:
+    """Re-resolve LLM_CHAIN from the current environment.
+
+    Deliberately re-runs the same expression import does, so a runtime model
+    switch and a restart cannot diverge.
+
+    Refuses a rebuild that would leave no usable provider: an empty chain at
+    boot is a loud startup error, but an empty chain at runtime would mean Wren
+    silently stops being able to answer because someone touched a dropdown.
+    """
+    global LLM_CHAIN
+    rebuilt = [c for c in (providers.resolve(n) for n in _provider_names) if c is not None]
+    if not rebuilt:
+        raise RuntimeError(
+            "that change would leave no usable LLM provider; keeping the current one"
+        )
+    LLM_CHAIN = rebuilt
+
 
 def _build_whitelist(owner_raw: str) -> dict[str, int]:
     if not owner_raw.isdigit():
@@ -145,6 +166,22 @@ SEARXNG_URL = os.environ.get("SEARXNG_URL", "")
 FIRECRAWL_URL = os.environ.get("FIRECRAWL_URL", "")
 FIRECRAWL_API_KEY = os.environ.get("FIRECRAWL_API_KEY", "")
 
+# Shown in the web chat's greeting. The whitelist alias for the owner is the
+# literal string "owner", a placeholder, not a name -- so this is its own
+# setting rather than reusing the alias.
+OWNER_NAME = os.environ.get("OWNER_NAME", "")
+
+# providers.py and reload_llm_chain() read these from os.environ directly,
+# never from the module attribute (see _apply_model) -- the attribute exists
+# purely so these five behave like every other settable for
+# serialize_setting()/GET /api/plugins instead of needing their own
+# special-cased read path. _apply_model keeps the two in step.
+OLLAMA_MODEL     = os.environ.get("OLLAMA_MODEL", "")
+LMSTUDIO_MODEL   = os.environ.get("LMSTUDIO_MODEL", "")
+OPENAI_MODEL     = os.environ.get("OPENAI_MODEL", "")
+CLAUDE_MODEL     = os.environ.get("CLAUDE_MODEL", "")
+OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "")
+
 # ── Runtime-editable settings ────────────────────────────────────────────────
 # Everything above is read from .env at import. These may additionally be
 # overridden at runtime from the settings table, by the owner, through the web
@@ -178,54 +215,117 @@ def _coerce_notify_via(raw: str) -> str:
     return name
 
 
-SETTABLE = {
-    "TIMEZONE": _validate_timezone,
-    "REMINDER_POLL_SECONDS": _coerce_poll_seconds,
-    "EMAIL_POLL_SECONDS": _coerce_poll_seconds,
-    "GITHUB_POLL_SECONDS": _coerce_poll_seconds,
-    "SEARXNG_URL": str.strip,
-    "FIRECRAWL_URL": str.strip,
-    "GITHUB_WATCH": _parse_github_watch,
-    "EMAIL_WATCH": _parse_email_watch,
-    "NOTIFY_VIA": _coerce_notify_via,
-}
+def _apply_attr(key: str, value) -> None:
+    """Default apply: assign onto this module. Works because every ordinary
+    consumer reads config.X at call time."""
+    globals()[key] = value
 
-# Inverse of the two container-typed parsers above. Every other settable is
-# already a str/int, so str() round-trips it fine -- but str(["a/b"]) and
-# str({"a@b.com": "x"}) are Python reprs that the parsers cannot read back
-# (["a/b"] -> the literal characters "['a/b']"), so a value shown by
-# GET /api/plugins and PATCHed straight back through PATCH /api/settings
-# would silently turn into garbage that _parse_github_watch's bare
-# comma-split happily accepts. Anything not listed here falls back to str.
-_SERIALIZE = {
-    "GITHUB_WATCH": _serialize_github_watch,
-    "EMAIL_WATCH": _serialize_email_watch,
+
+def _apply_model(key: str, value) -> None:
+    """Model names must land in two places that cannot be allowed to drift:
+    os.environ, which is the one providers.resolve() actually reads, and the
+    module attribute, kept in step purely so these keys serialize and display
+    like every other settable. Setting only the attribute would do nothing --
+    providers.py never looks at it.
+
+    Writes both plus the rebuild as one unit: if reload_llm_chain() refuses
+    (empty chain), both are put back exactly as they were first. Without this,
+    a refused clear_override -- or a refused stored setting at boot, which
+    apply_overrides() only logs and moves past -- would leave os.environ (or
+    the attribute) pointing at a model that disagrees with the LLM_CHAIN entry
+    still in use, a split that would only resolve itself on the next restart.
+
+    os.environ is written FIRST, before the module attribute: __setitem__ on
+    os.environ raises ValueError on an embedded NUL (e.g. a stray b"\\x00" in a
+    PATCH body), and that raise happens before either previous_env/previous_attr
+    is used for anything. Writing the attribute first would leave it holding
+    the new value with no os.environ write to match and nothing queued to roll
+    it back with -- a drift from os.environ and LLM_CHAIN that would persist
+    until restart, since the except block below only ever fires for
+    reload_llm_chain()'s RuntimeError, not for this.
+    """
+    previous_env = os.environ.get(key)
+    previous_attr = globals()[key]
+    os.environ[key] = value
+    globals()[key] = value
+    try:
+        reload_llm_chain()
+    except RuntimeError:
+        globals()[key] = previous_attr
+        if previous_env is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = previous_env
+        raise
+
+
+class Setting(NamedTuple):
+    """Everything the system needs to know about one runtime-editable setting.
+
+    Previously three dicts keyed by the same names -- SETTABLE, _SERIALIZE and
+    _BOOT_COERCERS -- with nothing enforcing they stayed in step. One record
+    means adding a setting is one edit in one place.
+    """
+    coerce: Callable[[str], object]
+    # Used by apply_overrides instead of coerce when boot cannot do the full
+    # check. NOTIFY_VIA validates against the router, which is empty at boot.
+    boot_coerce: Callable[[str], object] | None = None
+    serialize: Callable[[object], str] = str
+    apply: Callable[[str, object], None] = _apply_attr
+
+
+SETTABLE = {
+    "TIMEZONE":              Setting(_validate_timezone),
+    "REMINDER_POLL_SECONDS": Setting(_coerce_poll_seconds),
+    "EMAIL_POLL_SECONDS":    Setting(_coerce_poll_seconds),
+    "GITHUB_POLL_SECONDS":   Setting(_coerce_poll_seconds),
+    "SEARXNG_URL":           Setting(str.strip),
+    "FIRECRAWL_URL":         Setting(str.strip),
+    "GITHUB_WATCH":          Setting(_parse_github_watch, serialize=_serialize_github_watch),
+    "EMAIL_WATCH":           Setting(_parse_email_watch, serialize=_serialize_email_watch),
+    "NOTIFY_VIA":            Setting(_coerce_notify_via, boot_coerce=str.strip),
+
+    # Model NAMES are not credentials, so they belong in the allowlist; the
+    # matching *_API_KEY values are and never will. Listed literally rather
+    # than derived from LLM_PROVIDERS so the allowlist stays readable in one
+    # place. Note a side effect worth knowing: providers.resolve() returns None
+    # when a provider's model is unset, so setting one here can REVIVE that
+    # provider into the fallback chain if it is already named in LLM_PROVIDERS
+    # -- but reload_llm_chain() only re-resolves _provider_names (captured once
+    # at import from LLM_PROVIDERS, itself not in SETTABLE), so this can never
+    # add a provider LLM_PROVIDERS never named; that write just silently does
+    # nothing.
+    "OLLAMA_MODEL":     Setting(str.strip, apply=_apply_model),
+    "LMSTUDIO_MODEL":   Setting(str.strip, apply=_apply_model),
+    "OPENAI_MODEL":     Setting(str.strip, apply=_apply_model),
+    "CLAUDE_MODEL":     Setting(str.strip, apply=_apply_model),
+    "OPENROUTER_MODEL": Setting(str.strip, apply=_apply_model),
+
+    # Shown in the web chat's greeting. The whitelist alias for the owner is
+    # the literal string "owner", which is a placeholder, not a name -- so
+    # rather than greeting somebody as "owner" the greeting omits the name
+    # entirely until this is set. Contacts already carry a real alias.
+    "OWNER_NAME": Setting(str.strip),
 }
 
 
 def serialize_setting(key: str) -> str:
-    """The inverse of SETTABLE[key] -- the string form that, fed straight
-    back into set_override(key, ...), reproduces config.<key> exactly.
+    """The inverse of SETTABLE[key].coerce -- the string form that, fed
+    straight back into set_override(key, ...), reproduces config.<key>
+    exactly.
 
     This is what GET /api/plugins and the return value of PATCH /api/settings
     must use instead of str(getattr(config, key)) for every settable value.
     webchat.py has no domain logic (hard rule 2 in CLAUDE.md), so both call
     sites go through this one function rather than each reimplementing it.
     """
-    return _SERIALIZE.get(key, str)(globals()[key])
+    return SETTABLE[key].serialize(globals()[key])
 
 
 # Snapshot of what .env produced, taken before any override is applied, so
 # clear_override() can restore the file's value exactly rather than trying to
 # re-derive it.
 _DEFAULTS = {key: globals()[key] for key in SETTABLE}
-
-# NOTIFY_VIA is validated against the router only on the interactive path.
-# At boot, apply_overrides() runs before any plugin has started, so the
-# router is empty and a strict check would reject every stored value and
-# silently fall back to .env. run.py's _warn_if_notifications_go_nowhere()
-# already covers the boot case, with a louder and more specific warning.
-_BOOT_COERCERS = {"NOTIFY_VIA": str.strip}
 
 
 def apply_overrides() -> None:
@@ -249,15 +349,16 @@ def apply_overrides() -> None:
             # training the operator to ignore the one warning that actually
             # means something (a row written by a genuinely older Wren).
             continue
-        coerce = _BOOT_COERCERS.get(key, SETTABLE.get(key))
-        if coerce is None:
+        spec = SETTABLE.get(key)
+        if spec is None:
             # A version that no longer knows this key must still boot -- the
             # row was written by an older Wren, and crashing on it would make
             # the upgrade unrecoverable without hand-editing the database.
             logging.warning(f"ignoring unknown stored setting '{key}'")
             continue
+        coerce = spec.boot_coerce or spec.coerce
         try:
-            globals()[key] = coerce(raw)
+            spec.apply(key, coerce(raw))
         except (ValueError, RuntimeError) as e:
             logging.warning(f"ignoring invalid stored setting '{key}'={raw!r}: {e}")
 
@@ -267,23 +368,50 @@ def set_override(key: str, raw: str):
 
     A rejected value never reaches the database, and a failed write never
     leaves memory ahead of disk. Coercion happens during validation, so the
-    value is already known-good by the time it is applied.
+    value is usually known-good by the time it is applied -- except for the
+    *_MODEL keys, where "known-good" (does a chain still resolve?) can only
+    be confirmed by apply() actually rebuilding LLM_CHAIN. If that rebuild is
+    refused, the row this call just persisted is put back to whatever was
+    there before (or removed, if there was nothing), so a refused apply still
+    leaves no change persisted -- the same guarantee the docstring already
+    made for a refused *coerce*, extended to cover a refused apply too.
     """
     from . import settings
 
     if key not in SETTABLE:
         raise KeyError(key)
-    value = SETTABLE[key](raw)       # raises ValueError/RuntimeError if bad
+    spec = SETTABLE[key]
+    value = spec.coerce(raw)         # raises ValueError/RuntimeError if bad
+    previous_raw = settings.get(key)
     settings.set(key, raw)
-    globals()[key] = value
+    try:
+        spec.apply(key, value)
+    except Exception:
+        if previous_raw is None:
+            settings.unset(key)
+        else:
+            settings.set(key, previous_raw)
+        raise
     return value
 
 
 def clear_override(key: str) -> None:
-    """Drop the stored row and restore what .env produced at import."""
+    """Drop the stored row and restore what .env produced at import.
+
+    Same apply-can-fail problem as set_override, mirrored: if the *_MODEL
+    apply refuses (empty chain), the row just unset is put back exactly as it
+    was, so a refused clear does not leave "no override" persisted while the
+    running process is, in fact, still overridden.
+    """
     from . import settings
 
     if key not in SETTABLE:
         raise KeyError(key)
+    previous_raw = settings.get(key)
     settings.unset(key)
-    globals()[key] = _DEFAULTS[key]
+    try:
+        SETTABLE[key].apply(key, _DEFAULTS[key])
+    except Exception:
+        if previous_raw is not None:
+            settings.set(key, previous_raw)
+        raise

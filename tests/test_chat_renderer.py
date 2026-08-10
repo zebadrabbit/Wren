@@ -256,3 +256,158 @@ def test_plugin_rows_can_wrap_so_the_reason_gets_its_own_line():
     src = PAGE.read_text(encoding="utf-8")
     start = src.index(".prow {")
     assert "flex-wrap: wrap" in src[start:src.index("}", start)]
+
+
+# ── landing screen ───────────────────────────────────────────────────────
+
+def test_the_mark_is_defined_once_and_referenced():
+    # Branding inlined the silhouette in the sidebar; the landing header needs
+    # it too. Define it once as a <symbol> and <use> it, rather than pasting
+    # the geometry a third time.
+    src = PAGE.read_text(encoding="utf-8")
+    assert src.count('<symbol id="wren-mark"') == 1
+    assert src.count('href="#wren-mark"') >= 2
+
+
+def test_landing_greets_and_offers_starters():
+    src = PAGE.read_text(encoding="utf-8")
+    assert "/api/me" in src
+    assert "Good " in src            # the greeting template
+    assert "STARTERS" in src
+
+
+def test_every_pill_starter_maps_to_a_real_skill_module():
+    # A renamed module would otherwise leave a pill that silently does nothing.
+    from wren import registry
+    src = PAGE.read_text(encoding="utf-8")
+    block = src[src.index("const STARTERS"):]
+    block = block[:block.index("}")]
+    real = {registry.skill_key(p) for p in registry.PLUGINS}
+    for line in block.splitlines():
+        if ":" not in line or "_skill" not in line:
+            continue
+        module = line.split(":")[0].strip().strip('"\',')
+        assert module in real, f"{module} is not a registered skill module"
+
+
+def test_model_selector_is_wired_to_its_endpoint():
+    src = PAGE.read_text(encoding="utf-8")
+    assert "/api/models" in src
+
+
+def test_model_dropdown_always_has_an_option_matching_the_current_model():
+    # Finding 1: `o.selected = (m === d.current)` only ever selects an EXISTING
+    # option -- if d.current is not in d.models (a model removed from the
+    # ollama host, or LM Studio listing only loaded models), nothing gets
+    # selected and the browser silently defaults to d.models[0], displaying a
+    # model that is not the one actually answering, with no sign anything is
+    # wrong. This is a substring test: it cannot execute the page, observe
+    # what a real <select> renders, or prove the browser never falls back to
+    # index 0 -- it can only prove the source contains a branch that adds an
+    # option for d.current before the main loop runs, closing the gap that
+    # loop leaves.
+    src = PAGE.read_text(encoding="utf-8")
+    start = src.index("async function loadModels")
+    end = src.index("\nasync function start")
+    block = src[start:end]
+    assert "d.models.includes(d.current)" in block, (
+        "no guard for d.current missing from d.models -- the dropdown can "
+        "silently default to models[0] while a different model actually answers"
+    )
+    # The value PATCHed back must stay the bare model id even though the label
+    # explains the mismatch -- confusing the two would PATCH the decorated text.
+    assert "o.value = d.current" in block
+
+
+def test_composer_explains_an_empty_model_list_instead_of_going_silent():
+    # Finding 2: /api/models returns a `reason` (provider unreachable, or
+    # unconfigured) whenever the list comes back empty, and it used to be
+    # discarded -- leaving "the list failed" and "this is the model"
+    # indistinguishable static text. Substring-only: cannot prove #modeltext's
+    # rendered contents in a browser, only that the empty-list branch reads
+    # d.reason at all.
+    src = PAGE.read_text(encoding="utf-8")
+    start = src.index("async function loadModels")
+    end = src.index("\nasync function start")
+    block = src[start:end]
+    empty_branch = block[block.index("!d.models.length"):block.index("$(\"#model\").innerHTML")]
+    assert "d.reason" in empty_branch
+
+
+def test_showEmpty_bails_if_its_own_landing_was_superseded():
+    # Finding 3: showEmpty() is async but every call site is unawaited, so its
+    # /api/me continuation can resolve after #landing (or #inner) has already
+    # been rebuilt by a later, faster caller -- deterministically on the first
+    # message of a fresh install (send() removes #landing synchronously while
+    # showEmpty()'s fetch is still in flight) and on a double-clicked "New".
+    # Substring-only: cannot execute the page or prove the unhandled rejection
+    # is actually gone at runtime, only that the source captures the landing
+    # node up front and checks it is still connected before writing into it.
+    src = PAGE.read_text(encoding="utf-8")
+    start = src.index("async function showEmpty")
+    end = src.index("\nasync function openConvo")
+    block = src[start:end]
+    assert "landing.isConnected" in block, (
+        "no guard against a stale #landing -- the /api/me continuation can "
+        "write into a subtree a faster caller already tore down"
+    )
+    # Must not become the alternative "fix" the review explicitly rejected:
+    # awaiting showEmpty() at every call site would make send() wait on a
+    # greeting fetch just to post a message.
+    assert "await showEmpty" not in src
+
+
+def test_api_me_is_fetched_once_per_page_load_and_shared():
+    # Finding 6: showEmpty() needs /api/me for the greeting/pills, and the
+    # model selector needs it as a fallback -- start() used to fire two
+    # independent requests for the same page load. Substring-only: cannot
+    # observe actual network traffic, only that start()'s source calls
+    # api("/api/me") exactly once and forwards that value into showEmpty(...)
+    # rather than the bare call that would fetch a second time.
+    src = PAGE.read_text(encoding="utf-8")
+    start = src.index("async function start()")
+    end = src.index("\nif (token)")
+    block = src[start:end]
+    assert block.count('api("/api/me")') == 1, (
+        "start() should fetch /api/me exactly once per page load"
+    )
+    assert "showEmpty(me)" in block, (
+        "start() should forward its own /api/me fetch into showEmpty(...) "
+        "instead of calling showEmpty() with no argument, which would fetch "
+        "/api/me a second time"
+    )
+
+
+def test_model_select_does_not_stretch_or_overflow_the_composer():
+    # Finding 7: #composer is display:flex with the default align-items:stretch,
+    # so without align-self #model grows to match #text's height (up to 180px)
+    # as you type, and without max-width a long model id (e.g. a full
+    # openrouter slug) squeezes #text instead of truncating.
+    src = PAGE.read_text(encoding="utf-8")
+    start = src.index("#model {")
+    end = src.index("}", start)
+    rule = src[start:end]
+    assert "align-self" in rule
+    assert "max-width" in rule
+
+
+def test_model_change_handler_has_error_handling():
+    # This is a substring grep, not an execution of the JS -- it cannot prove
+    # the try/catch actually runs at runtime, that #modeltext genuinely becomes
+    # visible in a browser, or that the select's displayed value truly reverts.
+    # It can only prove the handler's *source* contains the shape of error
+    # handling (a catch, something touching #modeltext, a revert of the
+    # select's value) rather than a bare unguarded await -- which is exactly
+    # the silent-failure bug code review caught here, and exactly the class of
+    # bug this kind of test cannot catch again if a future edit keeps these
+    # substrings but rewires the logic behind them (e.g. swaps which branch
+    # reverts vs. which reports, or reverts to the wrong value).
+    src = PAGE.read_text(encoding="utf-8")
+    start = src.index('$("#model").onchange = async')
+    end = src.index("};", start)
+    block = src[start:end]
+    assert "catch" in block, "the PATCH is unguarded -- a 400 becomes an unhandled rejection"
+    assert '$("#modeltext")' in block, "a failed change is never surfaced to the user"
+    assert '$("#model").value = d.current' in block, (
+        "a failed change leaves the dropdown showing a selection the server never saved"
+    )

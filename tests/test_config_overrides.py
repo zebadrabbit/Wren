@@ -1,3 +1,5 @@
+import os
+
 import pytest
 
 from wren import config
@@ -240,3 +242,144 @@ def test_apply_overrides_accepts_a_stored_notify_via_with_an_empty_router():
         # has no path back to _DEFAULTS once the row is gone.
         config.clear_override("NOTIFY_VIA")
         router.reset()
+
+
+def test_every_settable_is_a_setting_record():
+    for key, spec in config.SETTABLE.items():
+        assert isinstance(spec, config.Setting), f"{key} is not a Setting"
+        assert callable(spec.coerce), f"{key}.coerce is not callable"
+
+
+def test_every_settable_round_trips_through_serialize():
+    # serialize_setting(key) must produce a string that set_override(key, ...)
+    # turns back into the identical value. This is the property that broke when
+    # GITHUB_WATCH was served as a Python repr.
+    settings.init_db()
+    for key in config.SETTABLE:
+        if key == "NOTIFY_VIA":
+            continue  # validated against the router, which is empty in tests
+        original = getattr(config, key)
+        text = config.serialize_setting(key)
+        try:
+            config.set_override(key, text)
+            assert getattr(config, key) == original, f"{key} did not round-trip"
+        finally:
+            config.clear_override(key)
+
+
+def test_notify_via_still_validates_strictly_on_the_interactive_path():
+    settings.init_db()
+    router.reset()
+    with pytest.raises(ValueError):
+        config.set_override("NOTIFY_VIA", "telegram")
+
+
+def test_notify_via_still_applies_leniently_at_boot():
+    # apply_overrides runs before any plugin registers, so the router is empty
+    # and a strict check would discard every stored value.
+    settings.init_db()
+    router.reset()
+    settings.set("NOTIFY_VIA", "telegram")
+    try:
+        config.apply_overrides()
+        assert config.NOTIFY_VIA == "telegram"
+    finally:
+        settings.unset("NOTIFY_VIA")
+        config.apply_overrides()
+
+
+def test_model_keys_are_settable_but_api_keys_are_not():
+    for key in ("OLLAMA_MODEL", "LMSTUDIO_MODEL", "OPENAI_MODEL",
+                "CLAUDE_MODEL", "OPENROUTER_MODEL"):
+        assert key in config.SETTABLE
+    for secret in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "OPENROUTER_API_KEY"):
+        assert secret not in config.SETTABLE
+
+
+def test_setting_a_model_changes_what_the_chain_will_use(monkeypatch):
+    # The chain is resolved at import with the model baked in, so this proves
+    # the rebuild actually happened rather than just an attribute being set.
+    settings.init_db()
+    # Snapshot LLM_CHAIN before this test's own reload_llm_chain() calls
+    # touch it, and restore it after clear_override in the finally below --
+    # monkeypatch's own teardown (restoring LMSTUDIO_BASE_URL) runs AFTER
+    # this function returns, so relying on a post-test reload to clean up
+    # LLM_CHAIN would leave a stale, fake-base-url entry in it for the rest
+    # of the process. Explicit restore here means teardown order can't matter.
+    original_chain = list(config.LLM_CHAIN)
+    monkeypatch.setenv("LMSTUDIO_BASE_URL", "http://test")
+    monkeypatch.setenv("LMSTUDIO_MODEL", "before-model")
+    config.reload_llm_chain()
+    try:
+        assert any(c["model"] == "before-model" for c in config.LLM_CHAIN)
+
+        config.set_override("LMSTUDIO_MODEL", "after-model")
+        assert any(c["model"] == "after-model" for c in config.LLM_CHAIN)
+        assert not any(c["model"] == "before-model" for c in config.LLM_CHAIN)
+        assert os.environ["LMSTUDIO_MODEL"] == "after-model"
+    finally:
+        config.clear_override("LMSTUDIO_MODEL")
+        config.LLM_CHAIN = original_chain
+
+
+def test_a_rebuild_that_would_empty_the_chain_is_refused(monkeypatch):
+    # Wren failing to boot with no provider is a loud, clear error. Wren
+    # silently losing its last provider at runtime because someone touched a
+    # dropdown is not.
+    settings.init_db()
+    before = list(config.LLM_CHAIN)
+    monkeypatch.setattr(config, "_provider_names", [])
+    with pytest.raises(RuntimeError):
+        config.reload_llm_chain()
+    assert config.LLM_CHAIN == before
+
+
+def test_apply_model_does_not_drift_state_on_an_embedded_nul():
+    # Finding 4: os.environ.__setitem__ raises ValueError on an embedded NUL
+    # (e.g. a stray b"\x00" in a PATCH /api/settings body). _apply_model used
+    # to write globals()[key] before os.environ, so that raise left
+    # config.LMSTUDIO_MODEL holding the new (bad) value with no matching
+    # os.environ write and no rollback path -- the only drift in the
+    # four-way atomicity (module attr / os.environ / LLM_CHAIN / persisted
+    # row) that survived the rest of the review.
+    settings.init_db()
+    original_chain = list(config.LLM_CHAIN)
+    attr_before = config.LMSTUDIO_MODEL
+    env_before = os.environ.get("LMSTUDIO_MODEL")
+    try:
+        with pytest.raises(ValueError):
+            config.set_override("LMSTUDIO_MODEL", "bad\x00model")
+        assert config.LMSTUDIO_MODEL == attr_before
+        assert os.environ.get("LMSTUDIO_MODEL") == env_before
+        assert config.LLM_CHAIN == original_chain
+        assert settings.get("LMSTUDIO_MODEL") is None
+    finally:
+        config.LLM_CHAIN = original_chain
+
+
+def test_a_refused_set_override_does_not_persist_the_rejected_value(monkeypatch):
+    # Reproduces the real PATCH /api/settings path: an owner blanking the one
+    # model that resolves. The empty-chain guard must refuse it, and the
+    # settings table must not be left holding the refused value -- an
+    # actively wrong persisted row is worse than an absent one.
+    settings.init_db()
+    original_chain = list(config.LLM_CHAIN)
+    monkeypatch.setattr(config, "_provider_names", ["lmstudio"])
+    monkeypatch.setenv("LMSTUDIO_BASE_URL", "http://test")
+    monkeypatch.setenv("LMSTUDIO_MODEL", "only-model")
+    config.reload_llm_chain()
+    # config.LMSTUDIO_MODEL (the module attribute) is untouched by the
+    # monkeypatch.setenv calls above -- only _apply_model writes it -- so its
+    # pre-attempt value is whatever import left it at, not "only-model".
+    chain_before_attempt = list(config.LLM_CHAIN)
+    attr_before_attempt = config.LMSTUDIO_MODEL
+    try:
+        with pytest.raises(RuntimeError):
+            config.set_override("LMSTUDIO_MODEL", "")
+
+        assert settings.get("LMSTUDIO_MODEL") is None
+        assert os.environ["LMSTUDIO_MODEL"] == "only-model"
+        assert config.LMSTUDIO_MODEL == attr_before_attempt
+        assert config.LLM_CHAIN == chain_before_attempt
+    finally:
+        config.LLM_CHAIN = original_chain
