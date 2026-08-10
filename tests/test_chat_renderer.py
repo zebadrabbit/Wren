@@ -198,6 +198,19 @@ def test_login_screen_shows_the_lockup():
     assert 'id="brandmark"' in src
 
 
+def test_lockup_wordmark_uses_currentcolor_not_hardcoded_ink():
+    # A substring check, like its neighbours -- it proves the literal string
+    # "currentColor" is present inside the brandmark svg, nothing more. It
+    # cannot see actual rendered contrast; it only stops a future edit from
+    # silently reverting to the hardcoded fill="#3A322B" ink, which measures
+    # ~1.40:1 (invisible) against the dark-mode --bg.
+    src = PAGE.read_text(encoding="utf-8")
+    start = src.index('id="brandmark"')
+    end = src.index("</svg>", start)
+    brandmark_svg = src[start:end]
+    assert "currentColor" in brandmark_svg
+
+
 def test_sidebar_uses_the_simple_mark_not_the_full_one():
     # Below ~24px the full mark's wing and eye stop resolving and read as dirt.
     # The sidebar icon is ~20px, so it must be the one-colour silhouette.
