@@ -112,7 +112,19 @@ Default True, so a skill with no row is on and the table only records what the
 owner changed.
 
 `all_intents()` and `all_guidelines()` filter to enabled skills, so the LLM is
-never told a disabled skill exists. `INTENT_HANDLERS` is deliberately left
+never told a disabled skill exists.
+
+**Filtering alone is not enough, and this is the trap.** `core.py` calls
+`brain.register_plugins(registry.all_intents(), registry.all_guidelines())`
+once, at module import — the intent list and prompt text are copied into
+`brain`'s module globals at startup and never re-read. A toggle that only
+changes what `all_intents()` returns would therefore never reach the LLM.
+
+So `set_enabled()` re-registers with `brain` after every write, using a
+function-local `from . import brain`. Local because it is the one choke point
+every writer goes through, which makes it impossible for a future caller — a
+Discord admin command, say — to forget; and function-local keeps `registry`'s
+module-level imports free of `brain`. `INTENT_HANDLERS` is deliberately left
 alone: it is a plain module-level dict that `core` indexes directly and several
 tests assert against, and converting it to a function would churn every caller
 to no benefit. Instead `core` gains one guard at dispatch — a disabled skill's
