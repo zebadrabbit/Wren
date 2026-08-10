@@ -187,6 +187,8 @@ or touch another's conversations.
 | `PATCH /api/conversations/{id}` | `{title}` | rename |
 | `DELETE /api/conversations/{id}` | — | delete it and its messages |
 | `POST /api/conversations/{id}/message` | `{text}` | `{replies, files}` |
+| `GET /api/me` | — | `{name, skills, model}` — any whitelisted user |
+| `GET /api/models` | — | `{provider, current, models, reason}` — owner only |
 | `GET /api/plugins` | — | `{skills, channels, settings}` — owner only |
 | `PATCH /api/plugins/{module}` | `{enabled}` | toggle a skill — owner only |
 | `PATCH /api/settings` | `{KEY: value}` | change a non-secret setting — owner only |
@@ -195,6 +197,28 @@ Titles come from the first message and can be renamed. Replies are **not**
 streamed — `brain` returns a finished string and intent detection has to
 happen first, so you get a thinking indicator rather than tokens appearing.
 That is the main thing that will feel different from claude.ai.
+
+### The landing screen
+
+Opening the chat greets you by name, shows a pill per enabled skill that drops
+a starter phrase into the composer, and — if you are the owner — lets you pick
+which model answers. Not every skill gets a pill: Contacts is owner-only
+administration, not something to invite a household member into, so it has no
+starter phrase and renders nothing here.
+
+Set your name with `OWNER_NAME` in the plugins panel (below). Until it is set
+the greeting is just the time of day: the whitelist alias for the owner is the
+literal string `owner`, and being greeted as "owner" is worse than not being
+greeted by name. Contacts are greeted by their own alias.
+
+Changing the model rewrites that provider's `*_MODEL` setting and rebuilds the
+provider chain, so it applies everywhere Wren answers — Discord and reminders
+included — and survives a restart. Wren has one engine; there is no
+web-chat-only model. Picking a model for a provider that had none configured
+adds that provider to the fallback chain, not just its model — an unset model
+is how a provider stays out of the chain in the first place. The model list
+comes from the provider itself; if it is unreachable, or you are not the
+owner, the selector falls back to showing the current model as text.
 
 ### The plugins panel
 
