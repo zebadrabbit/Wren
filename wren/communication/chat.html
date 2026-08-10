@@ -196,6 +196,13 @@ footer { border-top: 1px solid var(--line); padding: 12px 20px; }
 #model {
   border: 1px solid var(--line); border-radius: 8px; background: var(--panel);
   color: var(--muted); font: inherit; font-size: 13px; padding: 4px 6px;
+  /* #composer is display:flex with the default align-items:stretch, so
+     without align-self this <select> grows to match #text's height (up to
+     180px) as you type. max-width plus the overflow rules below stop a long
+     id (e.g. a full openrouter slug) from squeezing #text down instead of
+     just truncating with an ellipsis. */
+  align-self: center; max-width: 160px; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
 }
 #modeltext { color: var(--muted); font-size: 13px; align-self: center; }
 /* Reuses the same red already used for #login .err and .perr elsewhere in this
@@ -409,22 +416,34 @@ function greeting(name) {
   return name ? `Good ${part}, ${name}.` : `Good ${part}.`;
 }
 
-async function showEmpty() {
+async function showEmpty(mePromise) {
   const inner = $("#inner");
   inner.innerHTML = `<div id="landing">
       <svg class="landmark" aria-hidden="true"><use href="#wren-mark"/></svg>
       <h2 id="greet"></h2>
       <div id="pills"></div>
     </div>`;
+  // Captured now, not re-queried after the await below: if a later caller
+  // (double-click "New", or send() on the very first message of a fresh
+  // install) rebuilds #inner or removes #landing before /api/me resolves,
+  // this reference stops matching what's on the page and the isConnected
+  // check further down bails instead of writing a greeting/pills into a
+  // landing screen that already isn't the one showing.
+  const landing = $("#landing");
   // Render the fallback greeting first so the screen is never blank or
   // waiting: /api/me only upgrades it with a name.
   $("#greet").textContent = greeting(null);
   let me;
   try {
-    me = await api("/api/me");
+    // start() already has an /api/me in flight for the model selector's
+    // fallback and passes it in here so the same page load doesn't fetch it
+    // twice. Later calls (delConvo, openConvo, a fresh "New") pass nothing
+    // and get their own current fetch.
+    me = await (mePromise || api("/api/me"));
   } catch (e) {
     return;                       // greeting stays; no pills
   }
+  if (!landing.isConnected) return;   // superseded while /api/me was in flight
   $("#greet").textContent = greeting(me.name);
   me.skills.filter(m => STARTERS[m]).forEach(m => {
     const b = document.createElement("button");
@@ -585,12 +604,30 @@ async function loadModels(fallbackModel) {
     $("#modeltext").hidden = !fallbackModel;
     return;
   }
-  if (!d.models.length) {                 // owner, but the provider is down
-    $("#modeltext").textContent = d.current || "";
-    $("#modeltext").hidden = !d.current;
+  if (!d.models.length) {                 // owner, but the provider is down (or unconfigured)
+    // d.reason says WHY the list is empty -- without it "the list failed to
+    // load" and "this is simply the model" render as identical text.
+    const text = d.reason ? [d.current, d.reason].filter(Boolean).join(" — ") : (d.current || "");
+    $("#modeltext").textContent = text;
+    $("#modeltext").hidden = !text;
     return;
   }
   $("#model").innerHTML = "";
+  // d.current might not be IN d.models -- e.g. OLLAMA_MODEL names a model
+  // since removed from the host, or LM Studio only lists currently LOADED
+  // models. The loop below only ever *selects* an existing option, so without
+  // this, nothing would be selected and the browser would silently default to
+  // d.models[0] -- displaying a model that is not the one actually answering,
+  // with no indication anything is wrong. Prepending an option for it keeps
+  // the visible selection truthful: the label explains the mismatch, but the
+  // VALUE stays the bare model id, since that's what gets PATCHed.
+  if (d.current && !d.models.includes(d.current)) {
+    const o = document.createElement("option");
+    o.value = d.current;
+    o.textContent = `${d.current} (not offered by ${d.provider})`;
+    o.selected = true;
+    $("#model").appendChild(o);
+  }
   d.models.forEach(m => {
     const o = document.createElement("option");
     o.value = m; o.textContent = m; o.selected = (m === d.current);
@@ -628,12 +665,15 @@ async function start() {
   // flashing it at someone it should never appear for.
   $("#gear").hidden = true;
   api("/api/plugins").then(() => { $("#gear").hidden = false; }).catch(() => {});
-  // /api/me is fetched again here (showEmpty() also fetches it for the
-  // landing greeting) because the model selector lives in the composer,
-  // which is visible whether or not the landing screen is showing.
-  api("/api/me").then(me => loadModels(me.model)).catch(() => loadModels(null));
+  // Fetched once and shared: the model selector's fallback needs .model, and
+  // showEmpty() (below) needs the same response for the greeting and pills.
+  // Two independent calls here previously fetched /api/me twice on every page
+  // load; awaiting the same promise from both places makes one network
+  // request serve both, and each still fails closed independently.
+  const me = api("/api/me");
+  me.then(m => loadModels(m.model)).catch(() => loadModels(null));
   const list = await api("/api/conversations");
-  if (list.length) await openConvo(list[0].id); else { showEmpty(); await loadConvos(); }
+  if (list.length) await openConvo(list[0].id); else { showEmpty(me); await loadConvos(); }
   $("#text").focus();
 }
 

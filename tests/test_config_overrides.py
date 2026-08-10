@@ -334,6 +334,29 @@ def test_a_rebuild_that_would_empty_the_chain_is_refused(monkeypatch):
     assert config.LLM_CHAIN == before
 
 
+def test_apply_model_does_not_drift_state_on_an_embedded_nul():
+    # Finding 4: os.environ.__setitem__ raises ValueError on an embedded NUL
+    # (e.g. a stray b"\x00" in a PATCH /api/settings body). _apply_model used
+    # to write globals()[key] before os.environ, so that raise left
+    # config.LMSTUDIO_MODEL holding the new (bad) value with no matching
+    # os.environ write and no rollback path -- the only drift in the
+    # four-way atomicity (module attr / os.environ / LLM_CHAIN / persisted
+    # row) that survived the rest of the review.
+    settings.init_db()
+    original_chain = list(config.LLM_CHAIN)
+    attr_before = config.LMSTUDIO_MODEL
+    env_before = os.environ.get("LMSTUDIO_MODEL")
+    try:
+        with pytest.raises(ValueError):
+            config.set_override("LMSTUDIO_MODEL", "bad\x00model")
+        assert config.LMSTUDIO_MODEL == attr_before
+        assert os.environ.get("LMSTUDIO_MODEL") == env_before
+        assert config.LLM_CHAIN == original_chain
+        assert settings.get("LMSTUDIO_MODEL") is None
+    finally:
+        config.LLM_CHAIN = original_chain
+
+
 def test_a_refused_set_override_does_not_persist_the_rejected_value(monkeypatch):
     # Reproduces the real PATCH /api/settings path: an owner blanking the one
     # model that resolves. The empty-chain guard must refuse it, and the

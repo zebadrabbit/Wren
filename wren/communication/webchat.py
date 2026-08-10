@@ -268,7 +268,12 @@ def register_routes(app: web.Application, authenticate) -> None:
             name = config.OWNER_NAME or None
         else:
             alias = config.id_to_name().get(user_id)
-            name = alias.title() if alias else None
+            # Same placeholder refusal as the owner branch above: contacts.py
+            # reserves no aliases, so contacts.add("owner", ...) is accepted,
+            # and without this a contact using that alias would be greeted
+            # "Good evening, Owner." -- the placeholder leaking through the
+            # one path that was supposed to keep it out entirely.
+            name = alias.title() if alias and alias != "owner" else None
         return web.json_response({
             "name": name,
             "skills": [registry.skill_key(p) for p in registry.PLUGINS

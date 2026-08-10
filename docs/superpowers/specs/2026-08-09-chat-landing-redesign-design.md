@@ -203,7 +203,7 @@ already follows.
 | `/api/models` fails, 403s, or the provider is down | Dropdown renders as static current-model text |
 | A rebuild would empty `LLM_CHAIN` | Rejected, old chain kept, 400 to the caller |
 | Selected model missing at call time | Existing provider fallback handles it; `status` still reports the truth |
-| Non-owner opens the page | Greeting and pills work; no gear, no model dropdown |
+| Non-owner opens the page | Greeting and pills work; no gear; model shown as static text from `/api/me`, not the owner's editable dropdown |
 
 ## Testing
 

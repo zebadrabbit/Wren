@@ -264,6 +264,20 @@ def test_me_titlecases_a_contact_alias():
     assert body["name"] == "Bob"
 
 
+def test_me_never_greets_a_contact_named_owner(monkeypatch):
+    # Finding 5: the owner branch above correctly refuses to greet with the
+    # literal placeholder "owner", but contacts.py reserves no aliases, so
+    # contacts.add("owner", ...) is accepted -- and before this fix, the
+    # contact branch's alias.title() would greet that contact "Good evening,
+    # Owner." This bypasses the real contacts table (titlecasing already
+    # covered by test_me_titlecases_a_contact_alias above) to isolate exactly
+    # the branch this finding is about.
+    monkeypatch.setattr(config, "id_to_name", lambda: {USER_OTHER: "owner"})
+    status, body = call("get", "/api/me", token=TOKEN_OTHER)
+    assert status == 200
+    assert body["name"] is None
+
+
 def test_me_requires_a_token():
     status, _ = call("get", "/api/me")
     assert status == 401

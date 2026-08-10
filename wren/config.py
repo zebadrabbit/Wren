@@ -234,11 +234,20 @@ def _apply_model(key: str, value) -> None:
     apply_overrides() only logs and moves past -- would leave os.environ (or
     the attribute) pointing at a model that disagrees with the LLM_CHAIN entry
     still in use, a split that would only resolve itself on the next restart.
+
+    os.environ is written FIRST, before the module attribute: __setitem__ on
+    os.environ raises ValueError on an embedded NUL (e.g. a stray b"\\x00" in a
+    PATCH body), and that raise happens before either previous_env/previous_attr
+    is used for anything. Writing the attribute first would leave it holding
+    the new value with no os.environ write to match and nothing queued to roll
+    it back with -- a drift from os.environ and LLM_CHAIN that would persist
+    until restart, since the except block below only ever fires for
+    reload_llm_chain()'s RuntimeError, not for this.
     """
     previous_env = os.environ.get(key)
     previous_attr = globals()[key]
-    globals()[key] = value
     os.environ[key] = value
+    globals()[key] = value
     try:
         reload_llm_chain()
     except RuntimeError:
