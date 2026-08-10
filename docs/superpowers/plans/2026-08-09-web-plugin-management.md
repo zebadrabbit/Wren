@@ -1178,12 +1178,12 @@ Then inside `register_routes`, add the handlers and register them:
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `pytest -q tests/test_webchat_plugins.py`
-Expected: PASS, 9 passed
+Expected: PASS, 12 passed
 
 - [ ] **Step 5: Run the full suite**
 
 Run: `pytest -q`
-Expected: PASS, 600 passed
+Expected: PASS, 603 passed
 
 - [ ] **Step 6: Commit**
 
@@ -1217,11 +1217,19 @@ def test_page_has_the_plugins_panel_and_its_gear():
     assert "/api/plugins" in src
 
 
-def test_panel_fetches_settings_and_toggles():
+def test_panel_wires_every_endpoint_it_needs():
     src = PAGE.read_text(encoding="utf-8")
-    assert "/api/settings" in src
-    # channels are status-only: the panel must not offer a channel toggle
-    assert "PATCH" in src or "patch" in src
+    for fragment in ('"/api/settings"', '"/api/plugins"', "/api/plugins/${s.module}"):
+        assert fragment in src, f"panel never calls {fragment}"
+
+
+def test_panel_renders_server_text_without_building_html():
+    # Plugin names and inactive reasons come from the server. The page's
+    # standing rule is escape-first, never build HTML from a value -- so these
+    # go in via textContent, not interpolation.
+    src = PAGE.read_text(encoding="utf-8")
+    assert "textContent = s.name" in src
+    assert "textContent = c.name" not in src or "innerHTML = `${c.name}" not in src
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -1381,7 +1389,7 @@ Expected: PASS
 - [ ] **Step 9: Run the full suite**
 
 Run: `pytest -q`
-Expected: PASS, 602 passed
+Expected: PASS, 605 passed
 
 - [ ] **Step 10: Manual smoke test**
 
@@ -1455,7 +1463,7 @@ Under the hard rules, extend rule 6's neighbourhood with:
 - [ ] **Step 3: Run the full suite**
 
 Run: `pytest -q`
-Expected: PASS, 602 passed
+Expected: PASS, 605 passed
 
 - [ ] **Step 4: Commit**
 
