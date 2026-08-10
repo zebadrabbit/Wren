@@ -42,18 +42,22 @@ def skill_key(plugin) -> str:
 def is_enabled(plugin) -> bool:
     # Default on: a skill with no row is enabled, so the table records only
     # what the owner changed and a fresh install behaves exactly as before.
-    #
-    # ponytail: a missing TABLE reads the same way as a missing ROW (no
-    # stored deviation -> enabled). Production always calls settings.init_db()
-    # before this can run (run.py's init_dbs(), ahead of every plugin start),
-    # but all_intents()/all_guidelines() are also called from wren/core.py's
-    # module import, which many tests trigger directly against a fresh,
-    # never-initialized DB. Catching here -- the one place a skill's
-    # enabled-ness is actually read -- means every caller gets a sane default
-    # for free instead of each one having to remember to init_db() first.
     try:
         return settings.get(f"skill.{skill_key(plugin)}.enabled") != "0"
-    except sqlite3.OperationalError:
+    except sqlite3.OperationalError as e:
+        if "no such table" not in str(e):
+            raise
+        # ponytail: a missing TABLE reads the same way as a missing ROW (no
+        # stored deviation -> enabled), but ONLY for that one specific cause.
+        # Reachable only during import: core.py registers the intent list
+        # with brain at module scope, which walks all_intents() ->
+        # is_enabled(), and that can run before any init_db(). In production
+        # run.py's init_dbs() has always run first, so a missing table here
+        # means bootstrap, not damage. Anything else -- a locked database, a
+        # disk I/O error -- must NOT be silently reported as "enabled"; once
+        # Task 4 wires this into per-message dispatch, swallowing those would
+        # mean a broken DB silently ignores the owner's configuration on
+        # every message instead of surfacing the failure. It propagates.
         return True
 
 

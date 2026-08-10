@@ -1,3 +1,7 @@
+import sqlite3
+
+import pytest
+
 from wren import registry
 from wren import settings
 from wren.skills import notes_skill
@@ -76,3 +80,30 @@ def test_enabled_plugins_excludes_the_disabled_ones():
         assert notes_skill in registry.enabled_plugins()
     finally:
         registry.set_enabled(web_skill, True)
+
+
+def test_is_enabled_defaults_true_when_settings_table_does_not_exist_yet():
+    # Deliberately no settings.init_db() call. This is the bootstrap path
+    # is_enabled() must tolerate: core.py's module-level
+    # brain.register_plugins(registry.all_intents(), ...) walks is_enabled()
+    # for every plugin, and that can run before anything has created the
+    # settings table (e.g. a test importing wren.core directly, or a
+    # brand-new install before run.py's init_dbs() has run). conftest's
+    # isolated_db fixture points WREN_DB at a fresh, table-less file for this
+    # test, so this is the "no such table" branch, not the "row is missing"
+    # one -- both must default to enabled.
+    assert registry.is_enabled(notes_skill) is True
+
+
+def test_is_enabled_reraises_operational_errors_other_than_missing_table(monkeypatch):
+    # The narrowing this guards: only "no such table" (bootstrap) is
+    # swallowed. A locked database or disk I/O error must NOT be silently
+    # reported as "enabled" -- Task 4 wires is_enabled() into per-message
+    # dispatch, where swallowing that would mean a broken DB silently
+    # ignores the owner's configuration on every message.
+    def boom(key):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(settings, "get", boom)
+    with pytest.raises(sqlite3.OperationalError):
+        registry.is_enabled(notes_skill)
