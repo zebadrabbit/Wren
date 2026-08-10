@@ -11,10 +11,11 @@ from .skills import pins_store as pins
 from . import registry
 from .skills import reminders_store as reminders
 from .skills import shopping_store as shopping
+from . import settings
 
 logging.basicConfig(level=logging.INFO)
 
-_STORAGE = (notes, shopping, reminders, contacts, github_state, pins, conversations)
+_STORAGE = (notes, shopping, reminders, contacts, github_state, pins, conversations, settings)
 
 
 def init_dbs() -> None:
