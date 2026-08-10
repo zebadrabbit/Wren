@@ -256,3 +256,40 @@ def test_plugin_rows_can_wrap_so_the_reason_gets_its_own_line():
     src = PAGE.read_text(encoding="utf-8")
     start = src.index(".prow {")
     assert "flex-wrap: wrap" in src[start:src.index("}", start)]
+
+
+# ── landing screen ───────────────────────────────────────────────────────
+
+def test_the_mark_is_defined_once_and_referenced():
+    # Branding inlined the silhouette in the sidebar; the landing header needs
+    # it too. Define it once as a <symbol> and <use> it, rather than pasting
+    # the geometry a third time.
+    src = PAGE.read_text(encoding="utf-8")
+    assert src.count('<symbol id="wren-mark"') == 1
+    assert src.count('href="#wren-mark"') >= 2
+
+
+def test_landing_greets_and_offers_starters():
+    src = PAGE.read_text(encoding="utf-8")
+    assert "/api/me" in src
+    assert "Good " in src            # the greeting template
+    assert "STARTERS" in src
+
+
+def test_every_pill_starter_maps_to_a_real_skill_module():
+    # A renamed module would otherwise leave a pill that silently does nothing.
+    from wren import registry
+    src = PAGE.read_text(encoding="utf-8")
+    block = src[src.index("const STARTERS"):]
+    block = block[:block.index("}")]
+    real = {registry.skill_key(p) for p in registry.PLUGINS}
+    for line in block.splitlines():
+        if ":" not in line or "_skill" not in line:
+            continue
+        module = line.split(":")[0].strip().strip('"\',')
+        assert module in real, f"{module} is not a registered skill module"
+
+
+def test_model_selector_is_wired_to_its_endpoint():
+    src = PAGE.read_text(encoding="utf-8")
+    assert "/api/models" in src
