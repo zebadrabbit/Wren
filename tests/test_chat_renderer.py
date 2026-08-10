@@ -293,3 +293,25 @@ def test_every_pill_starter_maps_to_a_real_skill_module():
 def test_model_selector_is_wired_to_its_endpoint():
     src = PAGE.read_text(encoding="utf-8")
     assert "/api/models" in src
+
+
+def test_model_change_handler_has_error_handling():
+    # This is a substring grep, not an execution of the JS -- it cannot prove
+    # the try/catch actually runs at runtime, that #modeltext genuinely becomes
+    # visible in a browser, or that the select's displayed value truly reverts.
+    # It can only prove the handler's *source* contains the shape of error
+    # handling (a catch, something touching #modeltext, a revert of the
+    # select's value) rather than a bare unguarded await -- which is exactly
+    # the silent-failure bug code review caught here, and exactly the class of
+    # bug this kind of test cannot catch again if a future edit keeps these
+    # substrings but rewires the logic behind them (e.g. swaps which branch
+    # reverts vs. which reports, or reverts to the wrong value).
+    src = PAGE.read_text(encoding="utf-8")
+    start = src.index('$("#model").onchange = async')
+    end = src.index("};", start)
+    block = src[start:end]
+    assert "catch" in block, "the PATCH is unguarded -- a 400 becomes an unhandled rejection"
+    assert '$("#modeltext")' in block, "a failed change is never surfaced to the user"
+    assert '$("#model").value = d.current' in block, (
+        "a failed change leaves the dropdown showing a selection the server never saved"
+    )

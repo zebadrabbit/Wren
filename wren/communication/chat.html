@@ -198,6 +198,9 @@ footer { border-top: 1px solid var(--line); padding: 12px 20px; }
   color: var(--muted); font: inherit; font-size: 13px; padding: 4px 6px;
 }
 #modeltext { color: var(--muted); font-size: 13px; align-self: center; }
+/* Reuses the same red already used for #login .err and .perr elsewhere in this
+   file -- an established, already-tested error colour, not a new one-off. */
+#modeltext.err { color: #c0503f; }
 @media (max-width: 640px) { aside { width: 190px; } }
 </style>
 </head>
@@ -596,8 +599,24 @@ async function loadModels(fallbackModel) {
   $("#model").hidden = false;
   $("#model").onchange = async () => {
     const key = d.provider.toUpperCase() + "_MODEL";
-    await api("/api/settings", { method: "PATCH",
-      body: JSON.stringify({ [key]: $("#model").value }) });
+    const chosen = $("#model").value;
+    $("#modeltext").hidden = true; $("#modeltext").classList.remove("err");
+    try {
+      await api("/api/settings", { method: "PATCH",
+        body: JSON.stringify({ [key]: chosen }) });
+      d.current = chosen;   // keep our snapshot in sync so a later failed
+                             // change has the right value to revert to
+    } catch (e) {
+      // PATCH /api/settings can genuinely 400 here -- config.set_override
+      // rejects a model that fails to resolve. Revert the visible selection
+      // to the last value that actually saved (simpler than re-fetching
+      // /api/models, and d.current is already the source of truth we have in
+      // hand) rather than let the dropdown show a choice the server never
+      // accepted as though it had taken.
+      $("#model").value = d.current;
+      $("#modeltext").textContent = "Couldn't switch model: " + (e.message || "unknown error");
+      $("#modeltext").hidden = false; $("#modeltext").classList.add("err");
+    }
   };
 }
 
