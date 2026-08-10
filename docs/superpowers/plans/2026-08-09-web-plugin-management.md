@@ -769,9 +769,9 @@ pass — reuse it rather than writing a new driver):
 def test_disabling_the_skill_does_not_stop_reminders_already_set():
     # Deliberate, and it looks like a bug until you know why: switching
     # Reminders off stops Wren OFFERING it, but a reminder already set for 6pm
-    # still arrives. The loop marks a reminder fired only once delivery
-    # succeeds, so a stopped poller would pile them up and then fire the lot on
-    # re-enable -- and marking them fired without delivering would silently
+    # still arrives. Only the poll loop marks a reminder fired, so a stopped
+    # poller would pile them up unfired and then deliver the lot on re-enable --
+    # and suppressing the poller while marking them fired would silently
     # destroy something the user explicitly asked for.
     from wren import registry, settings
     from wren.skills import reminder_skill
