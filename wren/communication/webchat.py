@@ -147,12 +147,15 @@ async def _fetch_models(base_url: str, api_key: str) -> list[str]:
     import aiohttp
 
     url = base_url.rstrip("/") + "/models"
-    # Some providers (ollama) need no key at all; sending "Bearer" with a
-    # falsy or placeholder value would be a malformed header for no benefit.
+    # Some providers (ollama) need no key at all, so a falsy value omits the
+    # header rather than sending "Bearer None". A placeholder like ollama's
+    # own "not-needed" IS sent as a real Bearer value -- harmless, and
+    # consistent with how brain.py treats the same api_key for chat traffic.
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     timeout = aiohttp.ClientTimeout(total=8)
     async with aiohttp.ClientSession(timeout=timeout) as session:
         async with session.get(url, headers=headers) as resp:
+            resp.raise_for_status()  # a JSON error body must not read as "zero models"
             body = await resp.json()
     return [m["id"] for m in body.get("data", []) if m.get("id")]
 

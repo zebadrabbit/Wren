@@ -326,3 +326,25 @@ def test_models_degrades_to_an_empty_list_when_the_provider_is_down(monkeypatch)
     assert body["models"] == []
     assert body["reason"]
     assert body["current"] == "a-model"
+
+
+def test_models_surfaces_a_reason_on_a_provider_error_status(monkeypatch):
+    # An HTTP error with a JSON body (a 401 from a bad/expired key, say) must
+    # not be silently reported as "this provider genuinely has zero models" --
+    # raise_for_status() inside _fetch_models is what turns it into a caught,
+    # reason-carrying failure instead. request_info only needs a `real_url`
+    # attribute because that is all ClientResponseError.__str__ touches, and
+    # the handler's logging.warning(f"...{e}") call must not itself blow up.
+    import types
+    import aiohttp
+
+    async def unauthorized(base_url, api_key):
+        request_info = types.SimpleNamespace(real_url="http://test/models")
+        raise aiohttp.ClientResponseError(request_info, (), status=401, message="unauthorized")
+    monkeypatch.setattr(webchat, "_fetch_models", unauthorized)
+    monkeypatch.setattr(config, "LLM_CHAIN", [
+        {"name": "ollama", "base_url": "http://test", "api_key": "x", "model": "a-model"}])
+    status, body = call("get", "/api/models", token=TOKEN_OWNER)
+    assert status == 200
+    assert body["models"] == []
+    assert body["reason"]
