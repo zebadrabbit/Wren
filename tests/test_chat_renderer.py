@@ -229,3 +229,24 @@ def test_page_makes_no_external_requests():
     for scheme in ("http://", "https://"):
         for tag in ("src=", "href="):
             assert f'{tag}"{scheme}' not in src, f"external {tag} reference found"
+
+
+def test_every_panel_button_declares_its_own_background():
+    # The global `button` rule sets only font/color/cursor. A button that
+    # declares no background renders as a white browser default AND inherits
+    # the dark theme's near-white text, so its label is invisible -- which is
+    # exactly how the plugins panel first shipped: a column of blank white
+    # boxes. Every other button on the page (#new, .convo button) sets one.
+    src = PAGE.read_text(encoding="utf-8")
+    for selector in (".ptoggle", "#pclose"):
+        start = src.index(selector + " {")
+        rule = src[start:src.index("}", start)]
+        assert "background" in rule, f"{selector} has no background; it will render white"
+
+
+def test_plugin_rows_can_wrap_so_the_reason_gets_its_own_line():
+    # .why is flex-basis:100%, which only takes a new line if the row wraps.
+    # Without this the reason sits inline and squeezes the plugin name.
+    src = PAGE.read_text(encoding="utf-8")
+    start = src.index(".prow {")
+    assert "flex-wrap: wrap" in src[start:src.index("}", start)]

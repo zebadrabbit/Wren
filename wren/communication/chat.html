@@ -97,10 +97,29 @@ aside header b { flex: 1; font-size: 15px; display: flex; align-items: center; g
 #plugins h4 { margin: 18px 0 8px; font-size: 12px; letter-spacing: .08em;
               text-transform: uppercase; color: var(--muted); }
 #plugins h4 small { text-transform: none; letter-spacing: 0; font-weight: 400; }
-.prow { display: flex; align-items: center; gap: 8px; padding: 8px 0;
-        border-bottom: 1px solid var(--line); }
+/* flex-wrap so .why's flex-basis:100% can actually take its own line. Without
+   it the reason stays inline and squeezes the plugin name into two lines. */
+.prow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+        padding: 8px 0; border-bottom: 1px solid var(--line); }
 .prow .pname { flex: 1; }
 .prow .why { flex-basis: 100%; color: var(--muted); font-size: 13px; }
+
+/* The global `button` rule sets only font/color/cursor, so a button with no
+   background of its own renders as a white browser default -- and inherits the
+   theme's near-white text, making the label invisible on dark. Every other
+   button on this page (#new, .convo button) declares its own background for
+   exactly this reason; these two must too. */
+.ptoggle {
+  border: 1px solid var(--line); background: transparent; border-radius: 6px;
+  padding: 4px 12px; font-size: 13px; min-width: 46px; color: var(--muted);
+}
+.ptoggle:hover { border-color: var(--line-2, var(--muted)); }
+.ptoggle[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
+#pclose {
+  border: 0; background: transparent; color: var(--muted);
+  padding: 2px 6px; border-radius: 4px; font-size: 14px; line-height: 1;
+}
+#pclose:hover { background: var(--line); }
 .pset { display: flex; align-items: center; gap: 8px; padding: 6px 0; }
 .pset label { flex: 1; font-size: 14px; }
 .pset input { width: 190px; padding: 6px 8px; border: 1px solid var(--line);
@@ -386,8 +405,10 @@ async function loadPlugins() {
   d.skills.forEach(s => {
     const row = document.createElement("div");
     row.className = "prow";
+    // aria-pressed is both the correct semantics for a toggle button and the
+    // hook .ptoggle[aria-pressed="true"] styles the enabled state from.
     row.innerHTML = `<span class="pname"></span>
-                     <button class="ptoggle">${s.enabled ? "on" : "off"}</button>`;
+                     <button class="ptoggle" aria-pressed="${s.enabled}">${s.enabled ? "on" : "off"}</button>`;
     row.querySelector(".pname").textContent = s.name;
     row.querySelector(".ptoggle").onclick = async () => {
       await api(`/api/plugins/${s.module}`,
