@@ -42,6 +42,10 @@ def _warn_if_notifications_go_nowhere(loaded: dict) -> None:
 
 async def main() -> None:
     init_dbs()
+    # After init_dbs (the settings table must exist) and before any plugin
+    # starts (or a plugin reads a stale value during startup). The ordering
+    # looks arbitrary and is not.
+    config.apply_overrides()
 
     if not config.COMMUNICATION_PLUGINS:
         raise RuntimeError("No communication plugins enabled. Set COMMUNICATION_PLUGINS (e.g. COMMUNICATION_PLUGINS=discord,http).")
