@@ -182,3 +182,32 @@ def test_panel_renders_server_text_without_building_html():
     src = PAGE.read_text(encoding="utf-8")
     assert "textContent = s.name" in src
     assert "textContent = c.name" not in src or "innerHTML = `${c.name}" not in src
+
+
+# ── branding ─────────────────────────────────────────────────────────────
+
+def test_page_carries_the_wren_favicon_inline():
+    src = PAGE.read_text(encoding="utf-8")
+    assert 'rel="icon"' in src
+    assert "data:image/svg+xml" in src, "favicon must be inline, not a separate request"
+    assert 'name="theme-color"' in src
+
+
+def test_login_screen_shows_the_lockup():
+    src = PAGE.read_text(encoding="utf-8")
+    assert 'id="brandmark"' in src
+
+
+def test_sidebar_uses_the_simple_mark_not_the_full_one():
+    # Below ~24px the full mark's wing and eye stop resolving and read as dirt.
+    # The sidebar icon is ~20px, so it must be the one-colour silhouette.
+    src = PAGE.read_text(encoding="utf-8")
+    assert 'class="sidemark"' in src
+
+
+def test_page_makes_no_external_requests():
+    # The whole point of inlining: one file, no network. Guard it.
+    src = PAGE.read_text(encoding="utf-8")
+    for scheme in ("http://", "https://"):
+        for tag in ("src=", "href="):
+            assert f'{tag}"{scheme}' not in src, f"external {tag} reference found"
