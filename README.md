@@ -211,14 +211,14 @@ the greeting is just the time of day: the whitelist alias for the owner is the
 literal string `owner`, and being greeted as "owner" is worse than not being
 greeted by name. Contacts are greeted by their own alias.
 
-Changing the model rewrites that provider's `*_MODEL` setting and rebuilds the
-provider chain, so it applies everywhere Wren answers — Discord and reminders
-included — and survives a restart. Wren has one engine; there is no
-web-chat-only model. Picking a model for a provider that had none configured
-adds that provider to the fallback chain, not just its model — an unset model
-is how a provider stays out of the chain in the first place. The model list
-comes from the provider itself; if it is unreachable, or you are not the
-owner, the selector falls back to showing the current model as text.
+Changing the model rewrites the active provider's `*_MODEL` setting and
+rebuilds the provider chain, so it applies everywhere Wren answers — Discord
+and reminders included — and survives a restart. Wren has one engine; there
+is no web-chat-only model. The selector only ever lists models for whichever
+provider is currently active; it cannot switch you to a different provider,
+only to a different model of the one already in use. The model list comes
+from the provider itself; if it is unreachable, or you are not the owner, the
+selector falls back to showing the current model as text.
 
 ### The plugins panel
 
@@ -236,6 +236,18 @@ Channels are read-only status, not toggles. `COMMUNICATION_PLUGINS` is read
 once at startup, so enabling Telegram is still two lines in `.env` and a
 restart — a toggle here would be a dead control, and the endpoint refuses a
 channel PATCH with a 400 rather than pretend one would work.
+
+Unlike the landing screen's own model selector (above, scoped to the one
+active provider), the settings list here shows all five `*_MODEL` fields —
+`GET /api/plugins` lists every key in `config.SETTABLE` unconditionally, not
+just the providers `LLM_PROVIDERS` actually names. Typing a model into a
+provider already named in `LLM_PROVIDERS` that had none configured genuinely
+revives it into the fallback chain. Typing one into a provider that was never
+named in `LLM_PROVIDERS` does not: `reload_llm_chain()` only re-resolves the
+providers captured from `LLM_PROVIDERS` at import, so that provider is never
+even attempted — and the field still returns a 200, silently doing nothing.
+`LLM_PROVIDERS` itself is `.env`-only and needs a restart to change; this
+panel cannot substitute for it.
 
 Switching a skill off does not undo what it already did. Reminders keeps
 firing what you already scheduled even with the skill switched off in this

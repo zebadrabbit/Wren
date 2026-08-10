@@ -147,9 +147,16 @@ place. The matching `*_API_KEY` entries are credentials and are not added.
 One consequence worth knowing rather than discovering: `providers.resolve()`
 returns `None` when a provider's model is unset, which is how an unconfigured
 provider stays out of the chain. Setting `LMSTUDIO_MODEL` from the panel can
-therefore *add* LM Studio to the fallback chain, not merely change its model.
-That is useful and intended, but it means a model field is slightly more
-powerful than it looks.
+therefore *revive* LM Studio into the fallback chain, if it is already named
+in `LLM_PROVIDERS` but was missing a model — not merely change its model.
+It cannot go further than that: `reload_llm_chain()` only re-resolves
+`_provider_names`, captured once at import from `LLM_PROVIDERS`, which is
+itself not in `SETTABLE`. Setting the model of a provider `LLM_PROVIDERS`
+never named at boot changes nothing observable, and `SETTABLE` cannot tell
+the difference — it lists all five `*_MODEL` keys unconditionally, so that
+write still reports success. Reviving an already-listed provider is useful
+and intended; silently doing nothing for one that was never listed is not,
+and the panel does not warn you which case you are in.
 
 ```python
 def reload_llm_chain() -> None:

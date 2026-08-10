@@ -280,8 +280,12 @@ SETTABLE = {
     # matching *_API_KEY values are and never will. Listed literally rather
     # than derived from LLM_PROVIDERS so the allowlist stays readable in one
     # place. Note a side effect worth knowing: providers.resolve() returns None
-    # when a provider's model is unset, so setting one here can ADD that
-    # provider to the fallback chain, not merely change its model.
+    # when a provider's model is unset, so setting one here can REVIVE that
+    # provider into the fallback chain if it is already named in LLM_PROVIDERS
+    # -- but reload_llm_chain() only re-resolves _provider_names (captured once
+    # at import from LLM_PROVIDERS, itself not in SETTABLE), so this can never
+    # add a provider LLM_PROVIDERS never named; that write just silently does
+    # nothing.
     "OLLAMA_MODEL":     Setting(str.strip, apply=_apply_model),
     "LMSTUDIO_MODEL":   Setting(str.strip, apply=_apply_model),
     "OPENAI_MODEL":     Setting(str.strip, apply=_apply_model),
