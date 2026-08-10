@@ -121,9 +121,41 @@ curl -s localhost:8787/message \
   -d '{"text":"add potatoes to shopping"}'
 ```
 
-It binds `127.0.0.1` by default. To reach it from other machines set
-`WREN_HTTP_HOST=0.0.0.0` — on a trusted LAN only, since the bearer token is
-the only thing guarding it. There is no TLS.
+It binds `127.0.0.1` by default, and Wren serves plain HTTP with no TLS of its
+own. Setting `WREN_HTTP_HOST=0.0.0.0` to reach it from other machines therefore
+puts the bearer token — the only thing guarding your notes and shopping list —
+on the wire in clear text, readable by anything on the network.
+
+**The better shape is to leave the binding at `127.0.0.1` and put a TLS
+reverse proxy in front.** Wren stays unreachable from the network, the proxy
+terminates TLS, and the token never travels unencrypted. A minimal nginx
+server block:
+
+```nginx
+server {
+    listen 192.168.1.10:8444 ssl;      # your LAN address, NOT 0.0.0.0
+    ssl_certificate     /etc/nginx/certs/wren.crt;
+    ssl_certificate_key /etc/nginx/certs/wren.key;
+    client_max_body_size 25m;          # matches Wren's own cap, for /voice
+
+    location / {
+        proxy_pass http://127.0.0.1:8787;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_read_timeout 300;        # an LLM reply is slow and not streamed
+    }
+}
+```
+
+Bind the listener to your LAN address explicitly rather than `0.0.0.0`. A host
+with a public IPv6 address is internet-reachable on every interface it listens
+on, and `0.0.0.0`/`[::]` will happily publish your household assistant. A
+self-signed certificate is fine here and avoids the trap of a publicly
+resolvable name: your browser asks once, and reaching a public hostname would
+route over the internet rather than the LAN anyway.
+
+Note the page uses absolute paths (`/api/conversations`), so it must be proxied
+at a server root — a subpath like `/wren/` needs URL rewriting.
 
 **The http plugin is send-only.** It has no way to push, so
 `NOTIFY_VIA=http` cannot deliver reminders — it logs and drops them.
@@ -538,8 +570,15 @@ The brand assets carry the project's licence.
 Wren is *private* in the sense that it runs on your hardware and your data stays
 on your network. That is not the same as hardened:
 
-- **The HTTP plugin has no TLS.** A bearer token is the only thing guarding it.
-  Keep it on `127.0.0.1`, or on a LAN you trust.
+- **The HTTP plugin speaks plain HTTP.** A bearer token is the only thing
+  guarding it, so on `0.0.0.0` that token crosses the network in clear text.
+  Keep the binding on `127.0.0.1` and terminate TLS in a reverse proxy — see
+  [Communication plugins](#communication-plugins) for a worked nginx block.
+- **Check what your host is actually exposed on.** A machine with a public
+  IPv6 address is reachable from the internet on every interface it listens on,
+  so `0.0.0.0` and `[::]` are not "LAN only" — bind proxies to the LAN address
+  explicitly, and confirm with `ss -ltn` and your firewall rules rather than
+  assuming.
 - **Authorization is a flat whitelist.** `core.handle_message` refuses any user
   id not in the contacts table. Communication plugins authenticate (who are
   you); core authorizes (are you allowed) — kept in one place so a new channel
