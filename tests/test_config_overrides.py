@@ -240,3 +240,47 @@ def test_apply_overrides_accepts_a_stored_notify_via_with_an_empty_router():
         # has no path back to _DEFAULTS once the row is gone.
         config.clear_override("NOTIFY_VIA")
         router.reset()
+
+
+def test_every_settable_is_a_setting_record():
+    for key, spec in config.SETTABLE.items():
+        assert isinstance(spec, config.Setting), f"{key} is not a Setting"
+        assert callable(spec.coerce), f"{key}.coerce is not callable"
+
+
+def test_every_settable_round_trips_through_serialize():
+    # serialize_setting(key) must produce a string that set_override(key, ...)
+    # turns back into the identical value. This is the property that broke when
+    # GITHUB_WATCH was served as a Python repr.
+    settings.init_db()
+    for key in config.SETTABLE:
+        if key == "NOTIFY_VIA":
+            continue  # validated against the router, which is empty in tests
+        original = getattr(config, key)
+        text = config.serialize_setting(key)
+        try:
+            config.set_override(key, text)
+            assert getattr(config, key) == original, f"{key} did not round-trip"
+        finally:
+            config.clear_override(key)
+
+
+def test_notify_via_still_validates_strictly_on_the_interactive_path():
+    settings.init_db()
+    router.reset()
+    with pytest.raises(ValueError):
+        config.set_override("NOTIFY_VIA", "telegram")
+
+
+def test_notify_via_still_applies_leniently_at_boot():
+    # apply_overrides runs before any plugin registers, so the router is empty
+    # and a strict check would discard every stored value.
+    settings.init_db()
+    router.reset()
+    settings.set("NOTIFY_VIA", "telegram")
+    try:
+        config.apply_overrides()
+        assert config.NOTIFY_VIA == "telegram"
+    finally:
+        settings.unset("NOTIFY_VIA")
+        config.apply_overrides()

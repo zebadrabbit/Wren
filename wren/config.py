@@ -1,6 +1,7 @@
 import logging
 import os
 import zoneinfo
+from typing import Callable, NamedTuple
 from dotenv import load_dotenv
 
 from . import providers
@@ -178,54 +179,57 @@ def _coerce_notify_via(raw: str) -> str:
     return name
 
 
-SETTABLE = {
-    "TIMEZONE": _validate_timezone,
-    "REMINDER_POLL_SECONDS": _coerce_poll_seconds,
-    "EMAIL_POLL_SECONDS": _coerce_poll_seconds,
-    "GITHUB_POLL_SECONDS": _coerce_poll_seconds,
-    "SEARXNG_URL": str.strip,
-    "FIRECRAWL_URL": str.strip,
-    "GITHUB_WATCH": _parse_github_watch,
-    "EMAIL_WATCH": _parse_email_watch,
-    "NOTIFY_VIA": _coerce_notify_via,
-}
+def _apply_attr(key: str, value) -> None:
+    """Default apply: assign onto this module. Works because every ordinary
+    consumer reads config.X at call time."""
+    globals()[key] = value
 
-# Inverse of the two container-typed parsers above. Every other settable is
-# already a str/int, so str() round-trips it fine -- but str(["a/b"]) and
-# str({"a@b.com": "x"}) are Python reprs that the parsers cannot read back
-# (["a/b"] -> the literal characters "['a/b']"), so a value shown by
-# GET /api/plugins and PATCHed straight back through PATCH /api/settings
-# would silently turn into garbage that _parse_github_watch's bare
-# comma-split happily accepts. Anything not listed here falls back to str.
-_SERIALIZE = {
-    "GITHUB_WATCH": _serialize_github_watch,
-    "EMAIL_WATCH": _serialize_email_watch,
+
+class Setting(NamedTuple):
+    """Everything the system needs to know about one runtime-editable setting.
+
+    Previously three dicts keyed by the same names -- SETTABLE, _SERIALIZE and
+    _BOOT_COERCERS -- with nothing enforcing they stayed in step. One record
+    means adding a setting is one edit in one place.
+    """
+    coerce: Callable[[str], object]
+    # Used by apply_overrides instead of coerce when boot cannot do the full
+    # check. NOTIFY_VIA validates against the router, which is empty at boot.
+    boot_coerce: Callable[[str], object] | None = None
+    serialize: Callable[[object], str] = str
+    apply: Callable[[str, object], None] = _apply_attr
+
+
+SETTABLE = {
+    "TIMEZONE":              Setting(_validate_timezone),
+    "REMINDER_POLL_SECONDS": Setting(_coerce_poll_seconds),
+    "EMAIL_POLL_SECONDS":    Setting(_coerce_poll_seconds),
+    "GITHUB_POLL_SECONDS":   Setting(_coerce_poll_seconds),
+    "SEARXNG_URL":           Setting(str.strip),
+    "FIRECRAWL_URL":         Setting(str.strip),
+    "GITHUB_WATCH":          Setting(_parse_github_watch, serialize=_serialize_github_watch),
+    "EMAIL_WATCH":           Setting(_parse_email_watch, serialize=_serialize_email_watch),
+    "NOTIFY_VIA":            Setting(_coerce_notify_via, boot_coerce=str.strip),
 }
 
 
 def serialize_setting(key: str) -> str:
-    """The inverse of SETTABLE[key] -- the string form that, fed straight
-    back into set_override(key, ...), reproduces config.<key> exactly.
+    """The inverse of SETTABLE[key].coerce -- the string form that, fed
+    straight back into set_override(key, ...), reproduces config.<key>
+    exactly.
 
     This is what GET /api/plugins and the return value of PATCH /api/settings
     must use instead of str(getattr(config, key)) for every settable value.
     webchat.py has no domain logic (hard rule 2 in CLAUDE.md), so both call
     sites go through this one function rather than each reimplementing it.
     """
-    return _SERIALIZE.get(key, str)(globals()[key])
+    return SETTABLE[key].serialize(globals()[key])
 
 
 # Snapshot of what .env produced, taken before any override is applied, so
 # clear_override() can restore the file's value exactly rather than trying to
 # re-derive it.
 _DEFAULTS = {key: globals()[key] for key in SETTABLE}
-
-# NOTIFY_VIA is validated against the router only on the interactive path.
-# At boot, apply_overrides() runs before any plugin has started, so the
-# router is empty and a strict check would reject every stored value and
-# silently fall back to .env. run.py's _warn_if_notifications_go_nowhere()
-# already covers the boot case, with a louder and more specific warning.
-_BOOT_COERCERS = {"NOTIFY_VIA": str.strip}
 
 
 def apply_overrides() -> None:
@@ -249,15 +253,16 @@ def apply_overrides() -> None:
             # training the operator to ignore the one warning that actually
             # means something (a row written by a genuinely older Wren).
             continue
-        coerce = _BOOT_COERCERS.get(key, SETTABLE.get(key))
-        if coerce is None:
+        spec = SETTABLE.get(key)
+        if spec is None:
             # A version that no longer knows this key must still boot -- the
             # row was written by an older Wren, and crashing on it would make
             # the upgrade unrecoverable without hand-editing the database.
             logging.warning(f"ignoring unknown stored setting '{key}'")
             continue
+        coerce = spec.boot_coerce or spec.coerce
         try:
-            globals()[key] = coerce(raw)
+            spec.apply(key, coerce(raw))
         except (ValueError, RuntimeError) as e:
             logging.warning(f"ignoring invalid stored setting '{key}'={raw!r}: {e}")
 
@@ -273,9 +278,10 @@ def set_override(key: str, raw: str):
 
     if key not in SETTABLE:
         raise KeyError(key)
-    value = SETTABLE[key](raw)       # raises ValueError/RuntimeError if bad
+    spec = SETTABLE[key]
+    value = spec.coerce(raw)         # raises ValueError/RuntimeError if bad
     settings.set(key, raw)
-    globals()[key] = value
+    spec.apply(key, value)
     return value
 
 
@@ -286,4 +292,4 @@ def clear_override(key: str) -> None:
     if key not in SETTABLE:
         raise KeyError(key)
     settings.unset(key)
-    globals()[key] = _DEFAULTS[key]
+    SETTABLE[key].apply(key, _DEFAULTS[key])
