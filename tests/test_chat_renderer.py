@@ -158,3 +158,27 @@ def test_unordered_list(tmp_path):
 
 def test_plain_text_passes_through_unchanged(tmp_path):
     assert render("Saved.", tmp_path) == "Saved."
+
+
+# ── the plugins panel ────────────────────────────────────────────────────────
+
+def test_page_has_the_plugins_panel_and_its_gear():
+    src = PAGE.read_text(encoding="utf-8")
+    assert 'id="gear"' in src
+    assert 'id="plugins"' in src
+    assert "/api/plugins" in src
+
+
+def test_panel_wires_every_endpoint_it_needs():
+    src = PAGE.read_text(encoding="utf-8")
+    for fragment in ('"/api/settings"', '"/api/plugins"', "/api/plugins/${s.module}"):
+        assert fragment in src, f"panel never calls {fragment}"
+
+
+def test_panel_renders_server_text_without_building_html():
+    # Plugin names and inactive reasons come from the server. The page's
+    # standing rule is escape-first, never build HTML from a value -- so these
+    # go in via textContent, not interpolation.
+    src = PAGE.read_text(encoding="utf-8")
+    assert "textContent = s.name" in src
+    assert "textContent = c.name" not in src or "innerHTML = `${c.name}" not in src
