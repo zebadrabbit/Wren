@@ -200,15 +200,20 @@ def test_login_screen_shows_the_lockup():
 
 def test_lockup_wordmark_uses_currentcolor_not_hardcoded_ink():
     # A substring check, like its neighbours -- it proves the literal string
-    # "currentColor" is present inside the brandmark svg, nothing more. It
-    # cannot see actual rendered contrast; it only stops a future edit from
-    # silently reverting to the hardcoded fill="#3A322B" ink, which measures
-    # ~1.40:1 (invisible) against the dark-mode --bg.
+    # fill="currentColor" is present inside the brandmark svg's markup, and
+    # that the hardcoded ink is not, nothing more. It cannot see actual
+    # rendered contrast; it only stops a future edit from silently reverting
+    # to fill="#3A322B", which measures ~1.40:1 (invisible) against the
+    # dark-mode --bg.
     src = PAGE.read_text(encoding="utf-8")
-    start = src.index('id="brandmark"')
-    end = src.index("</svg>", start)
-    brandmark_svg = src[start:end]
-    assert "currentColor" in brandmark_svg
+    block = src[src.index('<svg id="brandmark"'):]
+    block = block[:block.index("</svg>") + len("</svg>")]
+    # Strip comments first: the comment above the path explains WHY the fill
+    # is currentColor and contains that word, which would satisfy a naive
+    # substring check even if the attribute itself were reverted.
+    markup = re.sub(r"<!--.*?-->", "", block, flags=re.S)
+    assert 'fill="currentColor"' in markup
+    assert 'fill="#3A322B"' not in markup, "wordmark ink is invisible on the dark theme"
 
 
 def test_sidebar_uses_the_simple_mark_not_the_full_one():
