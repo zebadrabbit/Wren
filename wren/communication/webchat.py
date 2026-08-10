@@ -94,14 +94,19 @@ async def _json_object(request: web.Request) -> dict:
     return body
 
 
-def _plugin_row(module, running: bool) -> dict:
+def _plugin_row(module, running: bool | None = None) -> dict:
     active = getattr(module, "is_active", lambda: True)()
     row = {
         "module": module.__name__.rsplit(".", 1)[-1],
         "name": getattr(module, "PLUGIN_NAME", module.__name__),
         "active": active,
-        "running": running,
     }
+    if running is not None:
+        # Only channels have a meaningful "running" (started from
+        # COMMUNICATION_PLUGINS at boot). Skills are always live the moment
+        # they're enabled, so callers building skill rows omit `running`
+        # entirely rather than pass a hardcoded filler chat.html never reads.
+        row["running"] = running
     if not active:
         reason = getattr(module, "inactive_reason", lambda: "Not configured.")()
         row["reason"] = reason
@@ -237,11 +242,11 @@ def register_routes(app: web.Application, authenticate) -> None:
         from .. import registry
         return web.json_response({
             "skills": [
-                dict(_plugin_row(p, running=True), enabled=registry.is_enabled(p))
+                dict(_plugin_row(p), enabled=registry.is_enabled(p))
                 for p in registry.PLUGINS
             ],
             "channels": _channel_rows(),
-            "settings": {key: str(getattr(config, key)) for key in config.SETTABLE},
+            "settings": {key: config.serialize_setting(key) for key in config.SETTABLE},
         })
 
     async def patch_plugin(request):
@@ -258,7 +263,7 @@ def register_routes(app: web.Application, authenticate) -> None:
                     status=400)
             return web.json_response({"error": "unknown plugin"}, status=404)
         registry.set_enabled(target, bool(body.get("enabled")))
-        return web.json_response(dict(_plugin_row(target, running=True),
+        return web.json_response(dict(_plugin_row(target),
                                       enabled=registry.is_enabled(target)))
 
     async def patch_settings(request):
@@ -271,7 +276,7 @@ def register_routes(app: web.Application, authenticate) -> None:
                 return web.json_response({"error": f"'{key}' is not a settable option"}, status=400)
             except (ValueError, RuntimeError) as e:
                 return web.json_response({"error": f"{key}: {e}"}, status=400)
-        return web.json_response({key: str(getattr(config, key)) for key in config.SETTABLE})
+        return web.json_response({key: config.serialize_setting(key) for key in config.SETTABLE})
 
     app.router.add_get("/", page)
     app.router.add_get("/api/conversations", list_conversations)

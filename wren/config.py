@@ -102,6 +102,11 @@ def _parse_email_watch(raw: str) -> dict[str, str]:
     return result
 
 
+def _serialize_email_watch(value: dict[str, str]) -> str:
+    """Inverse of _parse_email_watch, so a value handed back to it round-trips."""
+    return ",".join(f"{addr}:{name}" for addr, name in value.items())
+
+
 IMAP_HOST = os.environ.get("IMAP_HOST", "")
 IMAP_USER = os.environ.get("IMAP_USER", "")
 IMAP_PASSWORD = os.environ.get("IMAP_PASSWORD", "")
@@ -111,6 +116,11 @@ EMAIL_WATCH: dict[str, str] = _parse_email_watch(os.environ.get("EMAIL_WATCH", "
 
 def _parse_github_watch(raw: str) -> list[str]:
     return [r.strip() for r in raw.split(",") if r.strip()]
+
+
+def _serialize_github_watch(value: list[str]) -> str:
+    """Inverse of _parse_github_watch, so a value handed back to it round-trips."""
+    return ",".join(value)
 
 
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
@@ -180,6 +190,31 @@ SETTABLE = {
     "NOTIFY_VIA": _coerce_notify_via,
 }
 
+# Inverse of the two container-typed parsers above. Every other settable is
+# already a str/int, so str() round-trips it fine -- but str(["a/b"]) and
+# str({"a@b.com": "x"}) are Python reprs that the parsers cannot read back
+# (["a/b"] -> the literal characters "['a/b']"), so a value shown by
+# GET /api/plugins and PATCHed straight back through PATCH /api/settings
+# would silently turn into garbage that _parse_github_watch's bare
+# comma-split happily accepts. Anything not listed here falls back to str.
+_SERIALIZE = {
+    "GITHUB_WATCH": _serialize_github_watch,
+    "EMAIL_WATCH": _serialize_email_watch,
+}
+
+
+def serialize_setting(key: str) -> str:
+    """The inverse of SETTABLE[key] -- the string form that, fed straight
+    back into set_override(key, ...), reproduces config.<key> exactly.
+
+    This is what GET /api/plugins and the return value of PATCH /api/settings
+    must use instead of str(getattr(config, key)) for every settable value.
+    webchat.py has no domain logic (hard rule 2 in CLAUDE.md), so both call
+    sites go through this one function rather than each reimplementing it.
+    """
+    return _SERIALIZE.get(key, str)(globals()[key])
+
+
 # Snapshot of what .env produced, taken before any override is applied, so
 # clear_override() can restore the file's value exactly rather than trying to
 # re-derive it.
@@ -206,6 +241,14 @@ def apply_overrides() -> None:
     from . import settings
 
     for key, raw in settings.all().items():
+        if key.startswith("skill."):
+            # registry.py owns this namespace (skill.<module>.enabled, read
+            # via registry.is_enabled()) -- it shares this table but is not a
+            # SETTABLE entry, so without this skip every toggled skill would
+            # log a false "unknown stored setting" warning on every boot,
+            # training the operator to ignore the one warning that actually
+            # means something (a row written by a genuinely older Wren).
+            continue
         coerce = _BOOT_COERCERS.get(key, SETTABLE.get(key))
         if coerce is None:
             # A version that no longer knows this key must still boot -- the

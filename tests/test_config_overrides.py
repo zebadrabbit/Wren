@@ -8,8 +8,16 @@ from wren import settings
 def test_secrets_are_not_settable():
     # The security boundary. SETTABLE is a positive allowlist; if a credential
     # ever appears in it, GET /api/plugins leaks it.
+    #
+    # FIRECRAWL_API_KEY sits directly beside the settable FIRECRAWL_URL in
+    # config.py -- exactly the credential a future "add Firecrawl settings"
+    # change would sweep in alongside its URL by accident. OPENAI_API_KEY is
+    # kept even though it is not a `config` attribute at all (it's read
+    # straight from os.environ inside providers.py), so this particular
+    # assertion is a no-op for it -- harmless to keep, real for the rest.
     for secret in ("DISCORD_TOKEN", "TELEGRAM_TOKEN", "IMAP_PASSWORD",
-                   "GITHUB_TOKEN", "OPENAI_API_KEY", "WREN_TOKENS"):
+                   "GITHUB_TOKEN", "OPENAI_API_KEY", "WREN_TOKENS",
+                   "FIRECRAWL_API_KEY"):
         assert secret not in config.SETTABLE
 
 
@@ -76,6 +84,46 @@ def test_github_watch_is_parsed_into_a_list():
         config.clear_override("GITHUB_WATCH")
 
 
+def test_github_watch_round_trips_through_serialize_setting():
+    # Finding 1: GET /api/plugins and PATCH /api/settings both show this value
+    # via config.serialize_setting(). str(["a/b", "c/d"]) would emit the repr
+    # "['a/b', 'c/d']", which _parse_github_watch's bare comma-split accepts
+    # without complaint and turns into garbage entries. Feeding the
+    # serialized form straight back through set_override() must reproduce
+    # the original list exactly.
+    settings.init_db()
+    config.set_override("GITHUB_WATCH", "zebadrabbit/Wren,other/repo")
+    try:
+        serialized = config.serialize_setting("GITHUB_WATCH")
+        config.set_override("GITHUB_WATCH", serialized)
+        assert config.GITHUB_WATCH == ["zebadrabbit/Wren", "other/repo"]
+    finally:
+        config.clear_override("GITHUB_WATCH")
+
+
+def test_email_watch_round_trips_through_serialize_setting():
+    # Same failure mode as GITHUB_WATCH above, but for the dict-typed setting:
+    # str({...}) emits a repr that _parse_email_watch's split(":", 1) mangles
+    # into garbage keys instead of rejecting.
+    settings.init_db()
+    config.set_override("EMAIL_WATCH", "alice@example.com:alice,bob@example.com:bob")
+    try:
+        serialized = config.serialize_setting("EMAIL_WATCH")
+        config.set_override("EMAIL_WATCH", serialized)
+        assert config.EMAIL_WATCH == {"alice@example.com": "alice", "bob@example.com": "bob"}
+    finally:
+        config.clear_override("EMAIL_WATCH")
+
+
+def test_serialize_setting_defaults_to_str_for_scalar_settings():
+    settings.init_db()
+    config.set_override("REMINDER_POLL_SECONDS", "45")
+    try:
+        assert config.serialize_setting("REMINDER_POLL_SECONDS") == "45"
+    finally:
+        config.clear_override("REMINDER_POLL_SECONDS")
+
+
 def test_notify_via_must_name_a_running_channel():
     settings.init_db()
     router.reset()
@@ -127,6 +175,25 @@ def test_apply_overrides_reads_stored_rows_onto_the_module():
         # would leave config.SEARXNG_URL at "http://from-db" for the rest of
         # the process.
         config.clear_override("SEARXNG_URL")
+
+
+def test_apply_overrides_skips_the_skill_namespace_but_still_warns_on_unknown_keys(caplog):
+    # Finding 3: skill.<module>.enabled rows are registry.py's namespace
+    # (applied via registry.is_enabled(), not SETTABLE), sharing this same
+    # settings table. Without the skip, apply_overrides() treats every one
+    # of them as an unknown stored setting and logs a false warning on every
+    # boot that has a toggled skill -- which trains the operator to ignore
+    # the one warning that would actually mean something.
+    settings.init_db()
+    settings.set("skill.notes_skill.enabled", "0")
+    settings.set("SETTING_FROM_THE_FUTURE", "x")
+    try:
+        config.apply_overrides()
+        assert "skill.notes_skill.enabled" not in caplog.text
+        assert "SETTING_FROM_THE_FUTURE" in caplog.text
+    finally:
+        settings.unset("skill.notes_skill.enabled")
+        settings.unset("SETTING_FROM_THE_FUTURE")
 
 
 def test_apply_overrides_ignores_an_unknown_key_instead_of_crashing(caplog):

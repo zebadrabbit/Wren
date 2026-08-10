@@ -87,8 +87,14 @@ def all_guidelines() -> str:
     )
 
 def plugin_status() -> list[tuple[str, bool]]:
+    # is_active() alone answers "is it configured", not "is it on" -- without
+    # the is_enabled() check here, an owner who switches a skill off in the
+    # panel still gets told in chat that it's active. Safe for WATCHERS too:
+    # they have no skill.<module>.enabled row, so is_enabled() defaults True
+    # and their behaviour is unchanged.
     return [
-        (p.PLUGIN_NAME if hasattr(p, "PLUGIN_NAME") else p.__name__, getattr(p, "is_active", lambda: True)())
+        (p.PLUGIN_NAME if hasattr(p, "PLUGIN_NAME") else p.__name__,
+         getattr(p, "is_active", lambda: True)() and is_enabled(p))
         for p in PLUGINS + WATCHERS
     ]
 

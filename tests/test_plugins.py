@@ -137,7 +137,10 @@ def test_all_intents_includes_pins_intents():
 # plugin_status() reports PLUGINS + WATCHERS, so these single-entry assertions
 # blank out WATCHERS to isolate the naming/is_active behaviour under test.
 def test_plugin_status_defaults_to_active_true_when_is_active_absent(monkeypatch):
-    fake = types.SimpleNamespace(PLUGIN_NAME="Fake Plugin")
+    # __name__ is required here (not just PLUGIN_NAME): plugin_status() now
+    # also consults is_enabled(), which keys off __name__ via skill_key(),
+    # same as any real plugin module.
+    fake = types.SimpleNamespace(PLUGIN_NAME="Fake Plugin", __name__="wren.fake_plugin")
     monkeypatch.setattr(plugins, "PLUGINS", [fake])
     monkeypatch.setattr(plugins, "WATCHERS", [])
     assert plugins.plugin_status() == [("Fake Plugin", True)]
@@ -197,3 +200,22 @@ def test_plugin_status_always_active_plugin_reports_true():
     assert status["Reminders"] is True
     assert status["Contacts"] is True
     assert status["Pins"] is True
+
+
+def test_plugin_status_reflects_a_skill_disabled_through_the_panel():
+    # Finding 2: plugin_status() used to report only is_active() (is it
+    # configured), never is_enabled() (did the owner switch it off). An owner
+    # who disables Notes in the panel and then asks "what plugins do you
+    # have" was told it was still on. The existing regression test at
+    # test_core.py::test_list_plugins_sends_one_line_per_plugin only counts
+    # lines, so it could not have caught this.
+    from wren import settings
+
+    settings.init_db()
+    plugins.set_enabled(notes_plugin, False)
+    try:
+        status = dict(plugins.plugin_status())
+        assert status["Notes & Ideas"] is False
+    finally:
+        plugins.set_enabled(notes_plugin, True)
+    assert dict(plugins.plugin_status())["Notes & Ideas"] is True

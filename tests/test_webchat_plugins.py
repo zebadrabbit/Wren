@@ -62,6 +62,28 @@ def test_settings_payload_contains_no_credential():
     assert "DISCORD_TOKEN" not in body["settings"]
 
 
+def test_skill_rows_have_no_running_field():
+    # Finding 5: `running` only means something for channels (started from
+    # COMMUNICATION_PLUGINS at boot, restart-required to change). Skill rows
+    # hardcoded running=True, a value chat.html never reads for skills --
+    # dead data on a public JSON surface.
+    _, body = call("get", "/api/plugins", token=TOKEN_OWNER)
+    assert all("running" not in s for s in body["skills"])
+    assert all("running" in c for c in body["channels"])
+
+
+def test_patch_plugin_response_has_no_running_field():
+    try:
+        status, body = call("patch", "/api/plugins/notes_skill",
+                             token=TOKEN_OWNER, json={"enabled": False})
+        assert status == 200
+        assert "running" not in body
+    finally:
+        settings.unset("skill.notes_skill.enabled")
+        from wren.skills import notes_skill
+        registry.set_enabled(notes_skill, True)
+
+
 def test_channels_include_one_that_is_not_enabled():
     # The case the panel exists to show: Telegram is present in the package but
     # absent from COMMUNICATION_PLUGINS.
@@ -121,6 +143,42 @@ def test_an_invalid_setting_is_400_and_persists_nothing():
     assert status == 400
     assert config.REMINDER_POLL_SECONDS == original
     assert settings.get("REMINDER_POLL_SECONDS") is None
+
+
+def test_github_watch_survives_a_round_trip_through_the_panel():
+    # Finding 1. Set it, read back what GET /api/plugins shows, PATCH that
+    # exact string back in (this is what the panel does on every save) --
+    # the result must be the same list, not mangled garbage that GITHUB_WATCH
+    # then silently applies.
+    try:
+        status, _ = call("patch", "/api/settings", token=TOKEN_OWNER,
+                         json={"GITHUB_WATCH": "zebadrabbit/Wren,other/repo"})
+        assert status == 200
+        _, body = call("get", "/api/plugins", token=TOKEN_OWNER)
+        shown = body["settings"]["GITHUB_WATCH"]
+
+        status, body = call("patch", "/api/settings", token=TOKEN_OWNER,
+                            json={"GITHUB_WATCH": shown})
+        assert status == 200
+        assert config.GITHUB_WATCH == ["zebadrabbit/Wren", "other/repo"]
+    finally:
+        config.clear_override("GITHUB_WATCH")
+
+
+def test_email_watch_survives_a_round_trip_through_the_panel():
+    try:
+        status, _ = call("patch", "/api/settings", token=TOKEN_OWNER,
+                         json={"EMAIL_WATCH": "alice@example.com:alice"})
+        assert status == 200
+        _, body = call("get", "/api/plugins", token=TOKEN_OWNER)
+        shown = body["settings"]["EMAIL_WATCH"]
+
+        status, body = call("patch", "/api/settings", token=TOKEN_OWNER,
+                            json={"EMAIL_WATCH": shown})
+        assert status == 200
+        assert config.EMAIL_WATCH == {"alice@example.com": "alice"}
+    finally:
+        config.clear_override("EMAIL_WATCH")
 
 
 def test_a_secret_cannot_be_set_through_the_api():
