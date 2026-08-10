@@ -212,12 +212,20 @@ Reminders is the only skill with a background task. Switching it off removes
 its intents, so "remind me to X" stops working, but the poller keeps running
 and a reminder already set for 6pm still arrives.
 
-This is a deliberate choice and it looks like a bug until you know that. The
-loop marks a reminder fired only once delivery succeeds, so a stopped poller
-means due reminders pile up and then all fire at once on re-enable — and
-marking them fired without delivering would silently destroy something the user
+This is a deliberate choice and it looks like a bug until you know that. Only
+the poll loop marks a reminder fired, so a stopped poller means due reminders
+pile up unfired and then all deliver at once on re-enable. Suppressing the
+poller *and* marking them fired would silently destroy something the user
 explicitly asked for. Offering-off, honouring-what-exists is the only option
 that loses nothing. There is a test asserting it.
+
+Worth knowing while reading that loop, because an earlier draft of this spec
+got it backwards: `mark_fired()` is called **unconditionally**, outside the
+`if not ok` branch — a reminder is consumed once delivery has been *attempted*,
+not once it has succeeded. That is not a bug either. It follows `router.notify`'s
+documented contract, where `False` means a permanent failure and the caller is
+expected to consume what it was delivering; transient failures raise instead, so
+they never reach that line.
 
 ### The panel
 

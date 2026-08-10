@@ -170,3 +170,27 @@ def test_detect_intent_blowing_up_is_reported_not_raised(monkeypatch):
 ])
 def test_format_uptime(seconds, expected):
     assert core._format_uptime(seconds) == expected
+
+
+# --- disabled-skill dispatch guard -----------------------------------------
+
+def test_disabled_skill_intent_falls_through_to_chat(monkeypatch):
+    # A model can still emit an intent it was never offered -- a stale prompt
+    # cache, or plain hallucination. Dispatch must refuse it rather than run a
+    # skill the owner switched off.
+    from wren import registry, settings
+    from wren.skills import notes_skill, notes_store
+
+    settings.init_db()
+    notes_store.init_db()
+    monkeypatch.setattr(brain, "detect_intent", lambda *a, **k: {"intent": "save_note", "content": "milk"})
+    monkeypatch.setattr(brain, "chat", lambda *a, **k: "chatty reply")
+    registry.set_enabled(notes_skill, False)
+
+    channel = CollectingChannel()
+    try:
+        asyncio.run(core.handle_message(1, "save a note", channel))
+    finally:
+        registry.set_enabled(notes_skill, True)
+
+    assert channel.sent == ["chatty reply"]

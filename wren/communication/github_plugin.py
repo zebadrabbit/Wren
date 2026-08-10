@@ -11,6 +11,10 @@ ROLE = "input"   # input-only: watches repo activity, never sends; notify a chat
 def is_active() -> bool:
     return bool(config.GITHUB_WATCH)
 
+
+def inactive_reason() -> str:
+    return "GITHUB_WATCH is empty — no repositories are being watched."
+
 def _headers() -> dict:
     headers = {"Accept": "application/vnd.github+json"}
     if config.GITHUB_TOKEN:

@@ -769,9 +769,9 @@ pass — reuse it rather than writing a new driver):
 def test_disabling_the_skill_does_not_stop_reminders_already_set():
     # Deliberate, and it looks like a bug until you know why: switching
     # Reminders off stops Wren OFFERING it, but a reminder already set for 6pm
-    # still arrives. The loop marks a reminder fired only once delivery
-    # succeeds, so a stopped poller would pile them up and then fire the lot on
-    # re-enable -- and marking them fired without delivering would silently
+    # still arrives. Only the poll loop marks a reminder fired, so a stopped
+    # poller would pile them up unfired and then deliver the lot on re-enable --
+    # and suppressing the poller while marking them fired would silently
     # destroy something the user explicitly asked for.
     from wren import registry, settings
     from wren.skills import reminder_skill
@@ -1178,12 +1178,12 @@ Then inside `register_routes`, add the handlers and register them:
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `pytest -q tests/test_webchat_plugins.py`
-Expected: PASS, 9 passed
+Expected: PASS, 12 passed
 
 - [ ] **Step 5: Run the full suite**
 
 Run: `pytest -q`
-Expected: PASS, 600 passed
+Expected: PASS, 603 passed
 
 - [ ] **Step 6: Commit**
 
@@ -1217,11 +1217,19 @@ def test_page_has_the_plugins_panel_and_its_gear():
     assert "/api/plugins" in src
 
 
-def test_panel_fetches_settings_and_toggles():
+def test_panel_wires_every_endpoint_it_needs():
     src = PAGE.read_text(encoding="utf-8")
-    assert "/api/settings" in src
-    # channels are status-only: the panel must not offer a channel toggle
-    assert "PATCH" in src or "patch" in src
+    for fragment in ('"/api/settings"', '"/api/plugins"', "/api/plugins/${s.module}"):
+        assert fragment in src, f"panel never calls {fragment}"
+
+
+def test_panel_renders_server_text_without_building_html():
+    # Plugin names and inactive reasons come from the server. The page's
+    # standing rule is escape-first, never build HTML from a value -- so these
+    # go in via textContent, not interpolation.
+    src = PAGE.read_text(encoding="utf-8")
+    assert "textContent = s.name" in src
+    assert "textContent = c.name" not in src or "innerHTML = `${c.name}" not in src
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -1381,7 +1389,7 @@ Expected: PASS
 - [ ] **Step 9: Run the full suite**
 
 Run: `pytest -q`
-Expected: PASS, 602 passed
+Expected: PASS, 605 passed
 
 - [ ] **Step 10: Manual smoke test**
 
@@ -1455,13 +1463,155 @@ Under the hard rules, extend rule 6's neighbourhood with:
 - [ ] **Step 3: Run the full suite**
 
 Run: `pytest -q`
-Expected: PASS, 602 passed
+Expected: PASS, 605 passed
 
 - [ ] **Step 4: Commit**
 
 ```bash
 git add README.md CLAUDE.md
 git commit -m "docs: the plugins panel and the settings allowlist rule"
+```
+
+---
+
+### Task 9: Brand the chat window
+
+Added after the plan was written, at the owner's request: the web chat is unbranded — a plain
+`<h1>Wren</h1>` on the login screen, a plain `<b>Wren</b>` in the sidebar, and the browser's
+default document icon. `Brand/` now ships the marks, so use them.
+
+**Files:**
+- Modify: `wren/communication/chat.html` (head, login screen, sidebar header, plus CSS)
+- Test: `tests/test_chat_renderer.py` (append)
+
+**Interfaces:** none — this is presentation only. No Python changes, no new routes.
+
+**Source assets** (read them, do not retype the path data by hand):
+- `Brand/favicon/favicon.svg` — 64×64, clay rounded square with a cream bird. The favicon.
+- `Brand/brand/mark-simple.svg` — 128×128, one clay path, silhouette only. The sidebar.
+- `Brand/brand/lockup.svg` — 338×153, mark + wordmark as outlines. The login screen.
+
+**Two rules from the brand system that decide the sizing** (`Brand/README.md`):
+- The full mark's wing, eye and supercilium stop resolving below roughly 24 px and read as dirt.
+  Anything smaller uses the **simple mark**. The sidebar icon is ~20 px, so it MUST be
+  `mark-simple.svg`, not `mark.svg`.
+- Clear space is **0.35 × the mark's height** on every side. Nothing intrudes.
+
+**Why inline rather than serve the files:** `chat.html` is one self-contained file with no
+external requests — no webfonts, no CDN, nothing to 404. Serving `Brand/` would add a static
+route and make the running service depend on a directory that is really a design source. The
+SVGs are 0.9–2.2 KB, so inlining costs nothing. The tradeoff is real and must be commented: the
+geometry is now duplicated, and if the mark is ever regenerated, `chat.html` goes stale. Name
+the source file and the regeneration command in the comment so the next person knows.
+
+**Do NOT re-theme the page.** The chat UI's accent is green (`--accent: #5b6f4e`); the brand is
+clay. Making those agree is a separate decision the owner has not asked for. Add the marks, leave
+the palette alone.
+
+- [ ] **Step 1: Write the failing tests**
+
+Append to `tests/test_chat_renderer.py`:
+
+```python
+def test_page_carries_the_wren_favicon_inline():
+    src = PAGE.read_text(encoding="utf-8")
+    assert 'rel="icon"' in src
+    assert "data:image/svg+xml" in src, "favicon must be inline, not a separate request"
+    assert 'name="theme-color"' in src
+
+
+def test_login_screen_shows_the_lockup():
+    src = PAGE.read_text(encoding="utf-8")
+    assert 'id="brandmark"' in src
+
+
+def test_sidebar_uses_the_simple_mark_not_the_full_one():
+    # Below ~24px the full mark's wing and eye stop resolving and read as dirt.
+    # The sidebar icon is ~20px, so it must be the one-colour silhouette.
+    src = PAGE.read_text(encoding="utf-8")
+    assert 'class="sidemark"' in src
+
+
+def test_page_makes_no_external_requests():
+    # The whole point of inlining: one file, no network. Guard it.
+    src = PAGE.read_text(encoding="utf-8")
+    for scheme in ("http://", "https://"):
+        for tag in ("src=", "href="):
+            assert f'{tag}"{scheme}' not in src, f"external {tag} reference found"
+```
+
+- [ ] **Step 2: Run them and confirm they fail**
+
+Run: `pytest -q tests/test_chat_renderer.py -k "favicon or lockup or sidemark or external"`
+Expected: FAIL on the first three; the fourth should already pass and must KEEP passing.
+
+- [ ] **Step 3: Inline the favicon**
+
+Generate the data URI from the real file rather than hand-encoding. URL-encode it (percent-encode
+`#`, `<`, `>`, `"`, and newlines); do NOT base64 — a plain-text SVG data URI stays readable and
+diffable:
+
+```python
+# one-off, to produce the string you paste:
+import urllib.parse, pathlib
+svg = pathlib.Path("Brand/favicon/favicon.svg").read_text().strip()
+print("data:image/svg+xml," + urllib.parse.quote(svg, safe="/:=\"' "))
+```
+
+Add to `<head>`, after the existing `<title>`:
+
+```html
+<!-- Inlined from Brand/favicon/favicon.svg so the page stays one self-contained
+     file with no external requests. Regenerate with:
+     cd Brand && python3 build.py && python3 render_pngs.py  -- then re-inline. -->
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,...">
+<meta name="theme-color" content="#C4694A">
+```
+
+- [ ] **Step 4: Put the lockup on the login screen**
+
+Replace `<h1>Wren</h1>` in the `#login` block with the inlined contents of
+`Brand/brand/lockup.svg`, given `id="brandmark"`, and sized in CSS rather than by the SVG's own
+width/height attributes (drop those, keep `viewBox`). Keep the SVG's `role="img"` and
+`aria-label="Wren"` — they replace the heading's accessible text, so do not also leave a visually
+hidden "Wren" heading or the name is announced twice.
+
+- [ ] **Step 5: Put the simple mark in the sidebar**
+
+Replace `<b>Wren</b>` in the sidebar header with the inlined contents of
+`Brand/brand/mark-simple.svg` carrying `class="sidemark"`, followed by the text `Wren`. The mark
+is decorative here because the word is right beside it, so give the SVG `aria-hidden="true"` and
+drop its `role`/`aria-label`.
+
+- [ ] **Step 6: Add the CSS**
+
+Beside the existing `aside header` rules, respecting the file's custom properties:
+
+```css
+#brandmark { width: 190px; height: auto; display: block; margin: 0 auto 18px; }
+aside header b { display: flex; align-items: center; gap: 8px; }
+.sidemark { width: 20px; height: 20px; flex: none; }
+```
+
+Clear space is 0.35 × height: at 20 px that is a 7 px minimum gap, so the 8 px `gap` satisfies it.
+At 190 px the lockup needs ~24 px; the 18 px bottom margin plus the surrounding padding covers it.
+
+- [ ] **Step 7: Run the tests**
+
+Run: `pytest -q tests/test_chat_renderer.py tests/test_webchat.py`
+Expected: PASS. The renderer tests are also your canary — if they fail, you have damaged the
+U+E000 placeholder region; restore with `git show HEAD:wren/communication/chat.html`.
+
+- [ ] **Step 8: Run the full suite**
+
+Run: `pytest -q`
+Expected: PASS
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add wren/communication/chat.html tests/test_chat_renderer.py
+git commit -m "feat(webchat): brand the chat window with the Wren marks"
 ```
 
 ---

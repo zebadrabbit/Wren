@@ -155,11 +155,48 @@ or touch another's conversations.
 | `PATCH /api/conversations/{id}` | `{title}` | rename |
 | `DELETE /api/conversations/{id}` | — | delete it and its messages |
 | `POST /api/conversations/{id}/message` | `{text}` | `{replies, files}` |
+| `GET /api/plugins` | — | `{skills, channels, settings}` — owner only |
+| `PATCH /api/plugins/{module}` | `{enabled}` | toggle a skill — owner only |
+| `PATCH /api/settings` | `{KEY: value}` | change a non-secret setting — owner only |
 
 Titles come from the first message and can be renamed. Replies are **not**
 streamed — `brain` returns a finished string and intent detection has to
 happen first, so you get a thinking indicator rather than tokens appearing.
 That is the main thing that will feel different from claude.ai.
+
+### The plugins panel
+
+The gear beside "New" opens an owner-only panel: every skill and channel with
+the reason any of them is inactive, switches for the skills, and the settings
+that are not credentials.
+
+Credentials are deliberately absent. The bearer token buys a chat window; it
+must not also buy `DISCORD_TOKEN`. `GET /api/plugins` returns setting VALUES,
+and that is safe only because `config.SETTABLE` — the allowlist of what this
+endpoint can even see — holds no credentials. Those two facts stand or fall
+together: never add a secret to `SETTABLE`.
+
+Channels are read-only status, not toggles. `COMMUNICATION_PLUGINS` is read
+once at startup, so enabling Telegram is still two lines in `.env` and a
+restart — a toggle here would be a dead control, and the endpoint refuses a
+channel PATCH with a 400 rather than pretend one would work.
+
+Switching a skill off does not undo what it already did. Reminders keeps
+firing what you already scheduled even with the skill switched off in this
+panel: `registry.start_all()` starts every skill's background task
+unconditionally, and the enable flag only gates the *dispatch* of chat
+intents in `core.py`. Turning Reminders off stops Wren from offering to set
+new ones — it does not pause the poller already delivering the old ones.
+This looks like a bug and is not.
+
+Settings changes apply immediately (`config.apply_overrides()` writes onto
+`config`'s own globals, which every consumer reads at call time) and persist
+in a `settings` table that overrides `.env`. Wren never writes to `.env`.
+
+The panel itself is owner-only: the gear stays hidden for every other
+whitelisted user, because the page probes `GET /api/plugins` on load and
+only reveals the gear if that call succeeds — everyone else gets a 403 from
+all three routes.
 
 ### Where notifications go
 
@@ -453,9 +490,21 @@ them in the browser on load rather than quoting remembered numbers.
 2. **README hero** — already wired up at the top of this file, pointing at a
    committed image rather than an upload URL, so it survives the account that
    uploaded it.
-3. **Favicons** — copy `Brand/favicon/` to your web root and paste
-   `Brand/favicon/head-snippet.html` into `<head>`. For Wren's own browser chat
-   that means serving it alongside `wren/communication/chat.html`.
+3. **Favicons** — for a generic web root, copy `Brand/favicon/` and paste
+   `Brand/favicon/head-snippet.html` into `<head>`. Wren's own browser chat
+   does not use this path: `wren/communication/chat.html` already carries the
+   favicon, the login-screen lockup, and the sidebar's simple mark **inlined**
+   as literal SVG/data-URI markup, so the page stays one file with zero
+   external requests — no CDN, no webfont, nothing that can 404. The
+   trade-off is duplicated geometry: if you regenerate the marks (below),
+   `chat.html` must be re-inlined by hand, or it silently starts shipping the
+   old artwork. The sidebar deliberately uses `mark-simple.svg`, not the full
+   mark — it renders at under 24 px, right where the full mark's wing and eye
+   stop resolving and start reading as dirt (see Reduction, above). The
+   lockup's wordmark uses `fill="currentColor"` rather than the brand ink
+   (`#3A322B`) so it tracks the page's `--text` token and stays legible in
+   both themes; `#3A322B` against the dark theme's background measures
+   ~1.4:1 — effectively invisible — so do not "restore" it.
 4. **Avatars and banners** — `Brand/social/`. On X the avatar covers the
    lower-left of `x-banner-1500x500`; the lockup is already placed clear of it.
    Check LinkedIn's current crop before using its banner, it changes.

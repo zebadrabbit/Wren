@@ -158,3 +158,74 @@ def test_unordered_list(tmp_path):
 
 def test_plain_text_passes_through_unchanged(tmp_path):
     assert render("Saved.", tmp_path) == "Saved."
+
+
+# ── the plugins panel ────────────────────────────────────────────────────────
+
+def test_page_has_the_plugins_panel_and_its_gear():
+    src = PAGE.read_text(encoding="utf-8")
+    assert 'id="gear"' in src
+    assert 'id="plugins"' in src
+    assert "/api/plugins" in src
+
+
+def test_panel_wires_every_endpoint_it_needs():
+    src = PAGE.read_text(encoding="utf-8")
+    for fragment in ('"/api/settings"', '"/api/plugins"', "/api/plugins/${s.module}"):
+        assert fragment in src, f"panel never calls {fragment}"
+
+
+def test_panel_renders_server_text_without_building_html():
+    # Plugin names and inactive reasons come from the server. The page's
+    # standing rule is escape-first, never build HTML from a value -- so these
+    # go in via textContent, not interpolation.
+    src = PAGE.read_text(encoding="utf-8")
+    assert "textContent = s.name" in src
+    assert "textContent = c.name" not in src or "innerHTML = `${c.name}" not in src
+
+
+# ── branding ─────────────────────────────────────────────────────────────
+
+def test_page_carries_the_wren_favicon_inline():
+    src = PAGE.read_text(encoding="utf-8")
+    assert 'rel="icon"' in src
+    assert "data:image/svg+xml" in src, "favicon must be inline, not a separate request"
+    assert 'name="theme-color"' in src
+
+
+def test_login_screen_shows_the_lockup():
+    src = PAGE.read_text(encoding="utf-8")
+    assert 'id="brandmark"' in src
+
+
+def test_lockup_wordmark_uses_currentcolor_not_hardcoded_ink():
+    # A substring check, like its neighbours -- it proves the literal string
+    # fill="currentColor" is present inside the brandmark svg's markup, and
+    # that the hardcoded ink is not, nothing more. It cannot see actual
+    # rendered contrast; it only stops a future edit from silently reverting
+    # to fill="#3A322B", which measures ~1.40:1 (invisible) against the
+    # dark-mode --bg.
+    src = PAGE.read_text(encoding="utf-8")
+    block = src[src.index('<svg id="brandmark"'):]
+    block = block[:block.index("</svg>") + len("</svg>")]
+    # Strip comments first: the comment above the path explains WHY the fill
+    # is currentColor and contains that word, which would satisfy a naive
+    # substring check even if the attribute itself were reverted.
+    markup = re.sub(r"<!--.*?-->", "", block, flags=re.S)
+    assert 'fill="currentColor"' in markup
+    assert 'fill="#3A322B"' not in markup, "wordmark ink is invisible on the dark theme"
+
+
+def test_sidebar_uses_the_simple_mark_not_the_full_one():
+    # Below ~24px the full mark's wing and eye stop resolving and read as dirt.
+    # The sidebar icon is ~20px, so it must be the one-colour silhouette.
+    src = PAGE.read_text(encoding="utf-8")
+    assert 'class="sidemark"' in src
+
+
+def test_page_makes_no_external_requests():
+    # The whole point of inlining: one file, no network. Guard it.
+    src = PAGE.read_text(encoding="utf-8")
+    for scheme in ("http://", "https://"):
+        for tag in ("src=", "href="):
+            assert f'{tag}"{scheme}' not in src, f"external {tag} reference found"

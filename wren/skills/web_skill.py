@@ -15,6 +15,10 @@ PROMPT_GUIDELINES = """- web_search: user wants current/live/real-world informat
 def is_active() -> bool:
     return bool(config.SEARXNG_URL)
 
+
+def inactive_reason() -> str:
+    return "SEARXNG_URL is not set — web search and page reading are disabled."
+
 _last_results: dict[int, list[dict]] = {}
 # ponytail: in-memory, lost on restart — fine for "read the first one"
 # follow-ups. Persist only if that limitation actually bites.

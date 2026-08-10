@@ -48,6 +48,10 @@ Run with `python3 -m wren.run`. Full architecture doc: `README.md`
    `pytest` is safe by construction — only manual scripts are the risk.
    (This has caused real data loss once before — see README's Development
    section for the story.)
+7. **Runtime-mutable state is `contacts` and `settings`, nothing else.**
+   Everything else comes from `.env` and is read at import. `settings` stores
+   only deviations, and `config.SETTABLE` is a positive allowlist — never add
+   a credential to it, because `GET /api/plugins` returns its values.
 
 ## Env vars that changed in the v2 restart
 
@@ -80,7 +84,7 @@ Module path renames (for grep/context when reading old plans/specs):
 ```bash
 source venv/bin/activate
 pip install -r requirements.txt
-pytest -q                        # 522 passed as of 2026-08-09
+pytest -q                        # 621 passed as of 2026-08-09
 python3 -m wren.run              # needs .env; see .env.example
 ```
 

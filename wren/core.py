@@ -123,7 +123,10 @@ async def handle_message(user_id: int, text: str, channel: Channel) -> None:
             when=result.get("when"),
         )
 
-        if intent in registry.INTENT_HANDLERS:
+        # is_enabled as well as membership: all_intents() already stops
+        # offering a disabled skill, but a model can emit an intent it was
+        # never offered. Treat that as unknown so it falls through to chat.
+        if intent in registry.INTENT_HANDLERS and registry.is_enabled(registry.INTENT_HANDLERS[intent]):
             await registry.INTENT_HANDLERS[intent].handle(intent, ctx)
 
         elif intent == "help":

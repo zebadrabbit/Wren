@@ -14,6 +14,12 @@ def registered() -> list[str]:
     return sorted(_surfaces)
 
 
+def surface(name: str):
+    """The registered surface for a name, or None. Exists so callers can check
+    a channel's CAN_NOTIFY without reaching into _surfaces."""
+    return _surfaces.get(name)
+
+
 def reset() -> None:
     _surfaces.clear()
 
