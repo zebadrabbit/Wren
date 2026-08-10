@@ -248,7 +248,7 @@ def register_routes(app: web.Application, authenticate) -> None:
         _owner(request)
         from .. import registry
         module_name = request.match_info["module"]
-        body = await request.json()
+        body = await _json_object(request)
         target = next((p for p in registry.PLUGINS if registry.skill_key(p) == module_name), None)
         if target is None:
             if any(r["module"] == module_name for r in _channel_rows()):
@@ -263,7 +263,7 @@ def register_routes(app: web.Application, authenticate) -> None:
 
     async def patch_settings(request):
         _owner(request)
-        body = await request.json()
+        body = await _json_object(request)
         for key, value in body.items():
             try:
                 config.set_override(key, str(value))

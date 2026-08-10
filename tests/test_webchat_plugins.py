@@ -128,3 +128,37 @@ def test_a_secret_cannot_be_set_through_the_api():
                      token=TOKEN_OWNER, json={"DISCORD_TOKEN": "hunter2"})
     assert status == 400
     assert settings.get("DISCORD_TOKEN") is None
+
+
+# ── malformed bodies must be a clean 400, not a 500 ─────────────────────────
+# request.json() is plain json.loads: a non-dict body like [1,2,3] decodes
+# fine and then .get()/.items() raises AttributeError deeper in the handler,
+# and malformed text raises inside request.json() itself. _json_object()
+# (already used by the pre-existing conversation routes) turns both into a
+# clean 400 -- these routes must go through it too, not call request.json()
+# directly.
+
+def test_patch_plugin_with_a_non_dict_body_is_400_not_500():
+    status, _ = call("patch", "/api/plugins/notes_skill",
+                     token=TOKEN_OWNER, json=[1, 2, 3])
+    assert status == 400
+    assert settings.get("skill.notes_skill.enabled") is None
+
+
+def test_patch_plugin_with_malformed_json_is_400_not_500():
+    status, _ = call("patch", "/api/plugins/notes_skill",
+                     token=TOKEN_OWNER, data="not json")
+    assert status == 400
+    assert settings.get("skill.notes_skill.enabled") is None
+
+
+def test_patch_settings_with_a_non_dict_body_is_400_not_500():
+    status, _ = call("patch", "/api/settings", token=TOKEN_OWNER, json=[1, 2, 3])
+    assert status == 400
+    assert settings.get("SEARXNG_URL") is None
+
+
+def test_patch_settings_with_malformed_json_is_400_not_500():
+    status, _ = call("patch", "/api/settings", token=TOKEN_OWNER, data="not json")
+    assert status == 400
+    assert settings.get("SEARXNG_URL") is None
