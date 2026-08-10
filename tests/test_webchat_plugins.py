@@ -328,13 +328,86 @@ def test_models_degrades_to_an_empty_list_when_the_provider_is_down(monkeypatch)
     assert body["current"] == "a-model"
 
 
-def test_models_surfaces_a_reason_on_a_provider_error_status(monkeypatch):
-    # An HTTP error with a JSON body (a 401 from a bad/expired key, say) must
-    # not be silently reported as "this provider genuinely has zero models" --
-    # raise_for_status() inside _fetch_models is what turns it into a caught,
-    # reason-carrying failure instead. request_info only needs a `real_url`
-    # attribute because that is all ClientResponseError.__str__ touches, and
-    # the handler's logging.warning(f"...{e}") call must not itself blow up.
+class _FakeErrorResponse:
+    """Stands in for aiohttp's ClientResponse on an HTTP error status.
+
+    Offers BOTH raise_for_status() and json(), same as a real response would --
+    that is what makes this test able to fail: with the fix, raise_for_status()
+    raises and json() is never reached; without it (or if json() bypassed the
+    error), it would parse the body below into an empty model list, same as the
+    pre-fix bug.
+    """
+
+    def __init__(self, status: int, body: dict):
+        self._status = status
+        self._body = body
+
+    def raise_for_status(self):
+        import types
+        import aiohttp
+
+        request_info = types.SimpleNamespace(real_url="http://test/models")
+        raise aiohttp.ClientResponseError(
+            request_info, (), status=self._status, message="unauthorized")
+
+    async def json(self):
+        return self._body
+
+
+class _FakeGetContextManager:
+    """What session.get(...) returns: an async context manager yielding a response."""
+
+    def __init__(self, response):
+        self._response = response
+
+    async def __aenter__(self):
+        return self._response
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+
+class _FakeSession:
+    """What aiohttp.ClientSession(...) returns: an async context manager with .get()."""
+
+    def __init__(self, response, *args, **kwargs):
+        self._response = response
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    def get(self, url, headers=None):
+        return _FakeGetContextManager(self._response)
+
+
+def test_fetch_models_raises_on_a_provider_error_status(monkeypatch):
+    # Drives the REAL _fetch_models -- unlike monkeypatching _fetch_models
+    # itself (which replaces the whole function and never executes
+    # raise_for_status() at all), this fakes only the session one level down,
+    # so the fix under test actually runs. Proven by mutation: deleting
+    # raise_for_status() from _fetch_models makes this test fail (see the
+    # report for the observed failure); it is not a test that passes either way.
+    import aiohttp
+
+    response = _FakeErrorResponse(401, {"error": "unauthorized"})
+    monkeypatch.setattr(aiohttp, "ClientSession",
+                        lambda *a, **kw: _FakeSession(response, *a, **kw))
+    with pytest.raises(aiohttp.ClientResponseError):
+        asyncio.run(webchat._fetch_models("http://test", "x"))
+
+
+def test_models_endpoint_degrades_on_a_client_response_error(monkeypatch):
+    # This covers get_models's exception handling, NOT the raise_for_status
+    # line itself (that is test_fetch_models_raises_on_a_provider_error_status,
+    # above) -- it stubs out _fetch_models entirely to prove that whatever
+    # error it produces, the handler still returns 200 with an empty list and
+    # a non-empty reason rather than propagating a 5xx. request_info only
+    # needs a `real_url` attribute because that is all ClientResponseError's
+    # __str__ touches, and the handler's logging.warning(f"...{e}") call must
+    # not itself blow up on it.
     import types
     import aiohttp
 
