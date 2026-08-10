@@ -1,4 +1,7 @@
 import asyncio
+import sqlite3
+
+from . import settings
 from .skills import notes_skill
 from .skills import shopping_skill
 from .communication import gmail_plugin
@@ -27,12 +30,55 @@ INTENT_HANDLERS = {
     for intent in getattr(plugin, "INTENTS", [])
 }
 
+def skill_key(plugin) -> str:
+    """Settings key for a skill's on/off row.
+
+    The module basename, not PLUGIN_NAME: a display name can be reworded, and
+    a stored row must not lose its meaning when it is.
+    """
+    return plugin.__name__.rsplit(".", 1)[-1]
+
+
+def is_enabled(plugin) -> bool:
+    # Default on: a skill with no row is enabled, so the table records only
+    # what the owner changed and a fresh install behaves exactly as before.
+    #
+    # ponytail: a missing TABLE reads the same way as a missing ROW (no
+    # stored deviation -> enabled). Production always calls settings.init_db()
+    # before this can run (run.py's init_dbs(), ahead of every plugin start),
+    # but all_intents()/all_guidelines() are also called from wren/core.py's
+    # module import, which many tests trigger directly against a fresh,
+    # never-initialized DB. Catching here -- the one place a skill's
+    # enabled-ness is actually read -- means every caller gets a sane default
+    # for free instead of each one having to remember to init_db() first.
+    try:
+        return settings.get(f"skill.{skill_key(plugin)}.enabled") != "0"
+    except sqlite3.OperationalError:
+        return True
+
+
+def set_enabled(plugin, on: bool) -> None:
+    settings.set(f"skill.{skill_key(plugin)}.enabled", "1" if on else "0")
+    # core.py registers the intent list with brain ONCE, at import. Without
+    # re-registering here the LLM would keep being offered a skill the owner
+    # just switched off. Local import: this is the single choke point every
+    # writer goes through, so doing it here makes it impossible to forget --
+    # and keeps brain out of registry's module-level imports.
+    from . import brain
+
+    brain.register_plugins(all_intents(), all_guidelines())
+
+
+def enabled_plugins() -> list:
+    return [p for p in PLUGINS if is_enabled(p)]
+
+
 def all_intents() -> list[str]:
-    return [intent for plugin in PLUGINS for intent in getattr(plugin, "INTENTS", [])]
+    return [intent for plugin in enabled_plugins() for intent in getattr(plugin, "INTENTS", [])]
 
 def all_guidelines() -> str:
     return "\n".join(
-        text for plugin in PLUGINS
+        text for plugin in enabled_plugins()
         if (text := getattr(plugin, "PROMPT_GUIDELINES", ""))
     )
 

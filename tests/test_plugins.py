@@ -37,7 +37,9 @@ def test_start_all_noop_when_no_plugin_defines_start(monkeypatch):
 def test_event_only_plugin_contributes_nothing_to_intents_or_guidelines(monkeypatch):
     intents_before = plugins.all_intents()
     guidelines_before = plugins.all_guidelines()
-    fake = types.SimpleNamespace()  # no INTENTS, no PROMPT_GUIDELINES, no handle
+    # no INTENTS, no PROMPT_GUIDELINES, no handle -- __name__ is still needed,
+    # same as any real plugin module, now that is_enabled() keys off of it.
+    fake = types.SimpleNamespace(__name__="wren.fake_event_plugin")
     monkeypatch.setattr(plugins, "PLUGINS", plugins.PLUGINS + [fake])
     assert plugins.all_intents() == intents_before
     assert plugins.all_guidelines() == guidelines_before
