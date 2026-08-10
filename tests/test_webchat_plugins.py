@@ -289,3 +289,40 @@ def test_me_lists_only_enabled_skills():
         assert "notes_skill" not in body["skills"]
     finally:
         registry.set_enabled(notes_skill, True)
+
+
+# ── GET /api/models ──────────────────────────────────────────────────────────
+# Owner-only: unlike /api/me, this proxies a call to the internal LLM host,
+# and it must never 5xx -- it feeds the landing screen, which has to render
+# even while the LLM host is rebooting.
+
+def test_models_is_owner_only():
+    status, _ = call("get", "/api/models", token=TOKEN_OTHER)
+    assert status == 403
+
+
+def test_models_reports_the_current_model(monkeypatch):
+    async def fake_fetch(base_url, api_key):
+        return ["a-model", "b-model"]
+    monkeypatch.setattr(webchat, "_fetch_models", fake_fetch)
+    monkeypatch.setattr(config, "LLM_CHAIN", [
+        {"name": "ollama", "base_url": "http://test", "api_key": "x", "model": "a-model"}])
+    status, body = call("get", "/api/models", token=TOKEN_OWNER)
+    assert status == 200
+    assert body["provider"] == "ollama"
+    assert body["current"] == "a-model"
+    assert body["models"] == ["a-model", "b-model"]
+
+
+def test_models_degrades_to_an_empty_list_when_the_provider_is_down(monkeypatch):
+    # The landing screen must not break because the LLM host is rebooting.
+    async def boom(base_url, api_key):
+        raise OSError("connection refused")
+    monkeypatch.setattr(webchat, "_fetch_models", boom)
+    monkeypatch.setattr(config, "LLM_CHAIN", [
+        {"name": "ollama", "base_url": "http://test", "api_key": "x", "model": "a-model"}])
+    status, body = call("get", "/api/models", token=TOKEN_OWNER)
+    assert status == 200
+    assert body["models"] == []
+    assert body["reason"]
+    assert body["current"] == "a-model"

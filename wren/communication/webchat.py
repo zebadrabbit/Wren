@@ -1,5 +1,6 @@
 import base64
 import importlib
+import logging
 import pathlib
 import pkgutil
 
@@ -136,6 +137,26 @@ def _channel_rows() -> list[dict]:
     return rows
 
 
+async def _fetch_models(base_url: str, api_key: str) -> list[str]:
+    """The active provider's /v1/models, as plain ids.
+
+    Proxied rather than fetched by the browser: once Wren is bound to
+    127.0.0.1 the browser can only reach the reverse proxy, and this keeps the
+    internal LLM endpoint out of the page source.
+    """
+    import aiohttp
+
+    url = base_url.rstrip("/") + "/models"
+    # Some providers (ollama) need no key at all; sending "Bearer" with a
+    # falsy or placeholder value would be a malformed header for no benefit.
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    timeout = aiohttp.ClientTimeout(total=8)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with session.get(url, headers=headers) as resp:
+            body = await resp.json()
+    return [m["id"] for m in body.get("data", []) if m.get("id")]
+
+
 async def page(request: web.Request) -> web.Response:
     # unauthenticated on purpose: a static shell containing no user data. It
     # renders a "paste your token" box, and every request it then makes carries
@@ -261,6 +282,29 @@ def register_routes(app: web.Application, authenticate) -> None:
                                     content_type="application/json")
         return user_id
 
+    async def get_models(request):
+        _owner(request)
+        if not config.LLM_CHAIN:
+            return web.json_response(
+                {"provider": None, "current": None, "models": [],
+                 "reason": "no LLM provider is configured"})
+        active = config.LLM_CHAIN[0]
+        try:
+            models = await _fetch_models(active["base_url"], active["api_key"])
+            reason = None
+        except Exception as e:
+            # 200 with an empty list, never a 5xx: this feeds the landing
+            # screen, which must render even when the LLM host is down. The
+            # dropdown degrades to the current model as static text.
+            logging.warning(f"could not list models from {active['name']}: {e}")
+            models, reason = [], f"{active['name']} is not reachable right now"
+        return web.json_response({
+            "provider": active["name"],
+            "current": active["model"],
+            "models": models,
+            "reason": reason,
+        })
+
     async def get_plugins(request):
         _owner(request)
         from .. import registry
@@ -310,6 +354,7 @@ def register_routes(app: web.Application, authenticate) -> None:
     app.router.add_delete("/api/conversations/{id}", delete_conversation)
     app.router.add_post("/api/conversations/{id}/message", post_message)
     app.router.add_get("/api/me", get_me)
+    app.router.add_get("/api/models", get_models)
     app.router.add_get("/api/plugins", get_plugins)
     app.router.add_patch("/api/plugins/{module}", patch_plugin)
     app.router.add_patch("/api/settings", patch_settings)
