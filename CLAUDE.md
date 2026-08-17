@@ -116,17 +116,22 @@ a module.
 
 ## Known loose ends from the restart
 
-- `wren/communication/telegram_plugin.py` is implemented (Bot API over
-  aiohttp, long-polling `getUpdates`) but deliberately **not wired in**:
-  there is no bot token yet, so `TELEGRAM_TOKEN` is unset and "telegram" is
-  absent from `COMMUNICATION_PLUGINS`. Enabling it is those two `.env` lines
-  plus whitelisting the Telegram user id as a contact.
+- **User ids are per-surface, and only Telegram translates.** Wren keys the
+  authz gate in `core.handle_message` plus every note, reminder and pin off one
+  id per person, but the number Telegram calls you is not the number Discord
+  calls you. `telegram_plugin._wren_user_id` / `_telegram_chat_id` map the
+  owner's `TELEGRAM_OWNER_ID` to and from `config.WHITELIST["owner"]`, so
+  Telegram is a second door into the same Wren rather than a second, empty one.
+  Translation is authn, which is the surface's job — do not push it into
+  `core`. It covers the owner only; a second person on Telegram needs a real
+  per-surface id column in `contacts`.
 - `wren.service` runs this working tree **in place**
   (`/home/winter/work/Wren/venv/bin/python3 -m wren.run`), so an edit here is
-  a production edit the moment anything restarts it. As of 2026-08-09 the
-  live PID predates the v2 restructure and is still running v1 code from
-  memory — nothing on disk has been exercised by the service yet. Assume any
-  breakage you leave on disk is armed, not inert.
+  a production edit the moment anything restarts it. As of 2026-08-17 the live
+  PID *is* v2 (restarted 17:47 that day), so the old "still running v1 from
+  memory" caveat no longer applies — but the reverse now does: on-disk breakage
+  is live at the next restart, and there is no stale-process grace period left.
+  Assume any breakage you leave on disk is armed, not inert.
 - Old local git history (pre-restart, 8 commits ahead of `origin/main`) is
   preserved at `.git-wren-v1-archive/` (gitignored). The current repo was
   git-init'd fresh. GitHub remote is still `git@github.com:zebadrabbit/Wren.git`

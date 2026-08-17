@@ -27,6 +27,14 @@ DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN", "")
 # not a per-install choice (see _LONG_POLL_SECONDS there).
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 
+# The owner's Telegram user id (ask @userinfobot). User ids are per-surface:
+# the number Telegram calls you is not the number Discord calls you, and Wren
+# keys every note, reminder and pin off ONE id per person. Setting this makes
+# Telegram a second door into the same Wren instead of a second, empty one —
+# telegram_plugin translates in both directions. Leave it unset on a
+# Telegram-only install, where OWNER_ID is already the Telegram id.
+TELEGRAM_OWNER_ID = int(os.environ.get("TELEGRAM_OWNER_ID") or 0)
+
 COMMUNICATION_PLUGINS = [s.strip() for s in os.environ.get("COMMUNICATION_PLUGINS", "discord").split(",") if s.strip()]
 
 # where unprompted messages (reminders, watcher alerts) go. Defaults to the

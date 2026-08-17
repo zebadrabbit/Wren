@@ -86,8 +86,8 @@ to this taxonomy — reusing, not rewriting, the working code:
 - `wren/plugins.py` → `wren/registry.py` — now only registers Skills;
   Communication plugins are started directly by `run.py` from
   `COMMUNICATION_PLUGINS`.
-- New `wren/communication/telegram_plugin.py` **stub** — documents the shape
-  of the next chat plugin to build (not wired in yet).
+- New `wren/communication/telegram_plugin.py` — a complete second chat
+  plugin, written to prove the Communication/Skill split (see below).
 - Env vars renamed for clarity: `SURFACES` → `COMMUNICATION_PLUGINS`,
   `NOTIFY_SURFACE` → `NOTIFY_VIA`. `.env.example` and `README.md` updated.
 - All 33 test files' imports updated to the new module paths; every import

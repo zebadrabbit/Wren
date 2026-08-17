@@ -101,7 +101,7 @@ no business needing — and writes what it finds to `src/arch.json`.
 Measured at the last build:
 
 ```text
-2 chat channels (discord, http) · 2 input watchers (gmail, github) · 1 stub (telegram)
+3 chat channels (discord, http, telegram) · 2 input watchers (gmail, github)
 6 skills · 22 intents
 ```
 

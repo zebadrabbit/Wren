@@ -38,6 +38,11 @@ _CLIENT_TIMEOUT_SECONDS = _LONG_POLL_SECONDS + 15
 _RETRY_SECONDS = 5
 _MAX_RETRY_SECONDS = 300
 
+# Telegram rejects a longer sendMessage with a 400. notify() reads 400 as
+# permanent (see there), so an over-long reminder would be marked delivered and
+# destroyed — hence _chunks() rather than trusting callers to be brief.
+_MAX_MESSAGE_CHARS = 4096
+
 
 def is_active() -> bool:
     return bool(config.TELEGRAM_TOKEN)
@@ -97,6 +102,64 @@ async def _api(method: str, *, data=None):
     return body.get("result")
 
 
+def _chunks(text: str) -> list[str]:
+    """`text` split into pieces Telegram will accept, longest-first.
+
+    Cuts on the last line break that fits so a note dump breaks between lines
+    rather than mid-word, and falls back to a hard cut when one line is longer
+    than the whole ceiling. The break itself is dropped — it is the seam, and
+    keeping it would open the next message with a blank line.
+    """
+    parts = []
+    while len(text) > _MAX_MESSAGE_CHARS:
+        # from 1, not 0: a leading newline would cut an empty first message,
+        # which is its own 400 ("text must be non-empty").
+        cut = text.rfind("\n", 1, _MAX_MESSAGE_CHARS + 1)
+        if cut < 1:
+            parts.append(text[:_MAX_MESSAGE_CHARS])
+            text = text[_MAX_MESSAGE_CHARS:]
+        else:
+            parts.append(text[:cut])
+            text = text[cut + 1:]
+    parts.append(text)
+    return parts
+
+
+async def _send_text(chat_id: int, text: str) -> None:
+    """The single path text takes to a Telegram chat — both the reply to a
+    message and an unprompted notify() come through here, so neither can be
+    the one that forgets to split."""
+    for part in _chunks(text):
+        await _api("sendMessage", data={"chat_id": chat_id, "text": part})
+
+
+def _wren_user_id(chat_id: int) -> int:
+    """The Telegram id of whoever is talking -> the Wren user id they are.
+
+    Ids are per-surface, and core keys the authz gate plus every note, reminder
+    and pin off exactly one id per person. Left untranslated, the owner
+    arriving from Telegram is an unknown id that core drops in silence; and
+    whitelisting that id separately would make Telegram a second, empty Wren
+    with its own notes. Translating is authn, which core.handle_message's
+    docstring puts in the surface — so it belongs here and not in core.
+
+    ponytail: the owner only. A second person on Telegram needs a real
+    per-surface id column in contacts; add it when there is a second person.
+    """
+    if config.TELEGRAM_OWNER_ID and chat_id == config.TELEGRAM_OWNER_ID:
+        return config.WHITELIST["owner"]
+    return chat_id
+
+
+def _telegram_chat_id(user_id: int) -> int:
+    """The inverse, for notify(): a reminder filed from any surface carries the
+    Wren user id, and sending that number to Telegram is a 400 'chat not
+    found'."""
+    if config.TELEGRAM_OWNER_ID and user_id == config.WHITELIST["owner"]:
+        return config.TELEGRAM_OWNER_ID
+    return user_id
+
+
 class TelegramChannel:
     """Channel implementation backed by one Telegram chat."""
 
@@ -104,9 +167,7 @@ class TelegramChannel:
         self._chat_id = chat_id
 
     async def send(self, text: str) -> None:
-        # No chunking at Telegram's 4096-char ceiling: a reply that long would
-        # raise and land in core's error path, same as Discord's 2000-char one.
-        await _api("sendMessage", data={"chat_id": self._chat_id, "text": text})
+        await _send_text(self._chat_id, text)
 
     async def send_file(self, data: bytes, filename: str) -> None:
         form = aiohttp.FormData()
@@ -184,8 +245,10 @@ async def _poll_once(offset: int | None) -> int | None:
             continue
         user_id, text = parsed
         try:
-            # In a private chat the chat id IS the user id, which is also what
-            # lets notify() address a user with no lookup table.
+            # Two different ids on purpose: core gets the Wren user id (see
+            # _wren_user_id), the channel keeps the raw Telegram chat id it has
+            # to answer into. In a private chat the chat id IS the user id, so
+            # the one from the update serves as both.
             #
             # Awaited inline rather than spawned as a task: handle_message can
             # sit in the LLM for many seconds, and the cost of waiting is that
@@ -194,7 +257,7 @@ async def _poll_once(offset: int | None) -> int | None:
             # A task would be more responsive but needs a strong reference kept
             # somewhere (fire-and-forget tasks can be garbage collected
             # mid-flight) and lets two replies interleave in one chat.
-            await core.handle_message(user_id, text, TelegramChannel(user_id))
+            await core.handle_message(_wren_user_id(user_id), text, TelegramChannel(user_id))
         except Exception as e:
             # Never log the body — Telegram DMs are as private as reminders
             # (see http_plugin.notify).
@@ -203,9 +266,12 @@ async def _poll_once(offset: int | None) -> int | None:
 
 
 async def notify(user_id: int, text: str) -> bool:
-    # In a private chat the chat id is the user id, so no id mapping is needed.
     try:
-        await _api("sendMessage", data={"chat_id": user_id, "text": text})
+        # ponytail: a text long enough to split can be delivered in part and
+        # then fail, and this still answers False, so the caller consumes it.
+        # Losing the tail of a >4096-char reminder to a mid-send block beats
+        # the alternative of re-delivering the head on every retry.
+        await _send_text(_telegram_chat_id(user_id), text)
         return True
     except TelegramError as e:
         # router.notify()'s contract, and it matters: False means PERMANENT.

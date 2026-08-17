@@ -395,3 +395,123 @@ def test_api_returns_the_result_field():
 def test_client_timeout_outlives_the_long_poll():
     # otherwise every quiet poll dies on our own deadline before Telegram answers
     assert telegram_plugin._CLIENT_TIMEOUT_SECONDS > telegram_plugin._LONG_POLL_SECONDS
+
+
+# ── the 4096-char ceiling ────────────────────────────────────────────────────
+
+def _sent_texts(api) -> list[str]:
+    return [call.kwargs["data"]["text"] for call in api.await_args_list]
+
+
+def test_send_splits_text_over_the_ceiling():
+    long_text = "x" * 5000
+    api = AsyncMock(return_value={})
+    with patch.object(telegram_plugin, "_api", new=api):
+        asyncio.run(telegram_plugin.TelegramChannel(42).send(long_text))
+
+    parts = _sent_texts(api)
+    assert len(parts) == 2
+    assert all(len(p) <= 4096 for p in parts)
+    # nothing may be silently dropped on the way through the splitter
+    assert "".join(parts) == long_text
+
+
+def test_send_splits_on_a_line_break_when_there_is_one():
+    # a note dump is lines; cutting mid-line is uglier than cutting between two
+    first_line = "a" * 4000
+    long_text = f"{first_line}\n" + "b" * 500
+    api = AsyncMock(return_value={})
+    with patch.object(telegram_plugin, "_api", new=api):
+        asyncio.run(telegram_plugin.TelegramChannel(42).send(long_text))
+
+    parts = _sent_texts(api)
+    assert parts == [first_line, "b" * 500]
+
+
+def test_text_exactly_at_the_ceiling_is_one_message():
+    api = AsyncMock(return_value={})
+    with patch.object(telegram_plugin, "_api", new=api):
+        asyncio.run(telegram_plugin.TelegramChannel(42).send("x" * 4096))
+
+    assert len(api.await_args_list) == 1
+
+
+def test_a_leading_newline_never_produces_an_empty_message():
+    # an empty "text" is its own 400; splitting must not manufacture one
+    api = AsyncMock(return_value={})
+    with patch.object(telegram_plugin, "_api", new=api):
+        asyncio.run(telegram_plugin.TelegramChannel(42).send("\n" + "x" * 5000))
+
+    assert all(_sent_texts(api))
+
+
+def test_notify_splits_too():
+    # the whole point: a >4096 reminder used to come back as a 400, which
+    # notify() reads as permanent, so the caller marked it delivered and
+    # destroyed it. It must never reach Telegram over-long in the first place.
+    api = AsyncMock(return_value={"message_id": 1})
+    with patch.object(telegram_plugin, "_api", new=api):
+        assert asyncio.run(telegram_plugin.notify(42, "x" * 9000)) is True
+
+    assert len(api.await_args_list) == 3
+
+
+# ── owner identity across surfaces ───────────────────────────────────────────
+
+@pytest.fixture
+def telegram_owner(monkeypatch):
+    """The owner's Telegram id (999) is not their Wren id (1)."""
+    monkeypatch.setattr(config, "TELEGRAM_OWNER_ID", 999)
+    return 999
+
+
+def test_the_owners_telegram_id_becomes_their_wren_id(telegram_owner):
+    api = AsyncMock(return_value=[_update(text="add milk", user_id=999)])
+    with patch.object(telegram_plugin, "_api", new=api), \
+         patch.object(core, "handle_message", new=AsyncMock()) as handle:
+        asyncio.run(telegram_plugin._poll_once(None))
+
+    user_id, _text, channel = handle.await_args.args
+    # core keys notes, reminders and pins off this, and its authz gate rejects
+    # any id not in the whitelist — so the raw Telegram id would be a silent
+    # drop, and whitelisting it separately would be a second, empty Wren
+    assert user_id == config.WHITELIST["owner"]
+    # ...but the reply still has to go back to the Telegram chat
+    assert channel._chat_id == 999
+
+
+def test_other_telegram_users_are_not_remapped(telegram_owner):
+    api = AsyncMock(return_value=[_update(text="hi", user_id=42)])
+    with patch.object(telegram_plugin, "_api", new=api), \
+         patch.object(core, "handle_message", new=AsyncMock()) as handle:
+        asyncio.run(telegram_plugin._poll_once(None))
+
+    assert handle.await_args.args[0] == 42
+
+
+def test_notify_to_the_owner_goes_to_their_telegram_chat(telegram_owner):
+    api = AsyncMock(return_value={"message_id": 1})
+    with patch.object(telegram_plugin, "_api", new=api):
+        asyncio.run(telegram_plugin.notify(config.WHITELIST["owner"], "kettle boiled"))
+
+    # a reminder filed on Discord fires through NOTIFY_VIA with the Wren id;
+    # sending that number to Telegram is a 400 "chat not found"
+    assert api.await_args.kwargs["data"]["chat_id"] == 999
+
+
+def test_notify_to_anyone_else_is_unmapped(telegram_owner):
+    api = AsyncMock(return_value={"message_id": 1})
+    with patch.object(telegram_plugin, "_api", new=api):
+        asyncio.run(telegram_plugin.notify(42, "hi"))
+
+    assert api.await_args.kwargs["data"]["chat_id"] == 42
+
+
+def test_nothing_is_remapped_when_telegram_owner_id_is_unset(monkeypatch):
+    monkeypatch.setattr(config, "TELEGRAM_OWNER_ID", 0)
+    api = AsyncMock(return_value=[_update(text="hi", user_id=config.WHITELIST["owner"])])
+    with patch.object(telegram_plugin, "_api", new=api), \
+         patch.object(core, "handle_message", new=AsyncMock()) as handle:
+        asyncio.run(telegram_plugin._poll_once(None))
+
+    assert handle.await_args.args[0] == config.WHITELIST["owner"]

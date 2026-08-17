@@ -76,9 +76,16 @@ say") resolve here.
 ### `telegram` — role: chat
 
 DM the bot on Telegram. Requires `TELEGRAM_TOKEN` from
-[@BotFather](https://t.me/botfather), and your Telegram user id must be
-whitelisted as a contact — `OWNER_ID` on a Telegram-first install, or added
-from a channel you already have ("add 123456789 as phone").
+[@BotFather](https://t.me/botfather) and `TELEGRAM_OWNER_ID`, your Telegram
+user id (ask [@userinfobot](https://t.me/userinfobot)).
+
+User ids are per-surface: the number Telegram calls you is not the number
+Discord calls you, and Wren keys the whitelist and every note, reminder and pin
+off one id per person. `TELEGRAM_OWNER_ID` is what translates the two, so
+adding Telegram to an install that already has Discord gives you a second door
+into the same Wren rather than a second, empty one. Unset it only on a
+Telegram-first install, where `OWNER_ID` is already the Telegram id. Anyone
+else is a plain contact ("add 123456789 as phone").
 
 Long-polls `getUpdates` over `aiohttp`; there is no Telegram client library in
 the dependency list. Private chats only — group messages are ignored. The Bot
@@ -454,8 +461,9 @@ external event ──▶ communication plugin (input-only) ──▶ router.noti
 - `wren/communication/telegram_plugin.py` — Telegram bot, `TelegramChannel`
   (typing indicator implements `ack`; `history` is `None` — the Bot API gives
   a bot no way to read a chat's backlog). Long-polls `getUpdates` over aiohttp,
-  no Telegram library. `ROLE = "chat"`. Not enabled unless `TELEGRAM_TOKEN` is
-  set and "telegram" is in `COMMUNICATION_PLUGINS`.
+  no Telegram library, and translates the owner's Telegram id to their Wren id
+  in both directions (`TELEGRAM_OWNER_ID`). `ROLE = "chat"`. Not enabled unless
+  `TELEGRAM_TOKEN` is set and "telegram" is in `COMMUNICATION_PLUGINS`.
 - `wren/communication/http_plugin.py` + `webchat.py` — aiohttp app, bearer-token
   auth, and the browser chat UI (conversations with real history). `ROLE = "chat"`.
 - `wren/communication/gmail_plugin.py` — IMAP inbox watcher. `ROLE = "input"`.
