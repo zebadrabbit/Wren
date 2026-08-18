@@ -207,6 +207,16 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
   border: 0; border-radius: 8px; padding: 6px 12px; font: inherit;
   background: var(--accent); color: var(--accent-fg);
 }
+.card .cwhen { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.card .ctags { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 14px;
+               border-bottom: 1px solid var(--line); }
+.card .ctag { border: 1px solid var(--line); background: transparent;
+              color: var(--muted); border-radius: 999px; padding: 2px 10px;
+              font-size: 12px; cursor: pointer; }
+.card .ctag:hover { background: var(--wash); }
+.card .ctag.on { background: var(--accent); color: var(--accent-fg);
+                 border-color: var(--accent); }
+.card li[hidden] { display: none; }
 /* ── landing ───────────────────────────────────────────────────────────── */
 #landing { text-align: center; margin-top: 14vh; }
 .landmark { width: 28px; height: 28px; display: block; margin: 0 auto 10px; }
@@ -579,6 +589,37 @@ function cardStatus(mount, msg) {
 // tidies itself. Tune here; nothing else depends on the value.
 const UNDO_MS = 8000;
 
+// Every card needs the same three things: a serialised dispatch (so two quick
+// clicks cannot redraw out of order), a status line for the skill's own reply,
+// and a refresh that re-reads from the server. Four cards sharing one copy.
+function cardShell(mount, refreshIntent, refreshParams) {
+  async function guarded(fn) {
+    if (mount._busy) return;
+    mount._busy = true;
+    try { await fn(); }
+    catch (e) { cardStatus(mount, e.message || "Something went wrong."); }
+    finally { mount._busy = false; }
+  }
+  // `r` is the mutation's own response: its `replies` carry the skill's text
+  // ("No idea found matching that.") even on a 200, and that must reach the
+  // card or a no-op looks identical to a success.
+  async function refresh(r) {
+    const fresh = await dispatch(refreshIntent, refreshParams || {});
+    if (fresh.cards && fresh.cards.length) {
+      renderCard(fresh.cards[0], mount);
+      cardStatus(mount, ((r && r.replies) || []).join(" "));
+    } else {
+      cardStatus(mount, ((r && r.replies) || []).join(" ") || "Could not refresh.");
+    }
+  }
+  // Dispatch an action, then redraw from a fresh read. Used by every row
+  // control on every card.
+  function action(intent, content) {
+    return guarded(async () => refresh(await dispatch(intent, { content })));
+  }
+  return { guarded, refresh, action };
+}
+
 function shoppingCard(data, mount) {
   const items = data.items || [];
   const rows = items.map(i =>
@@ -600,31 +641,7 @@ function shoppingCard(data, mount) {
       "<button>+</button></form>" +
     "</div>";
 
-  // Refresh after a mutation, sharing one path so both handlers redraw and
-  // report the same way. `r` is the mutation's own response (its `replies`
-  // carry the skill's own text, e.g. "milk wasn't on the list.", even on a
-  // 200) -- that text must reach the card, or a no-op looks like a success.
-  async function refresh(r) {
-    const fresh = await dispatch("recall_shopping", {});
-    if (fresh.cards && fresh.cards.length) {
-      renderCard({ kind: "shopping", data: fresh.cards[0].data }, mount);
-      cardStatus(mount, (r.replies || []).join(" "));
-    } else {
-      // guard against an empty cards[] (e.g. a malformed response) rather
-      // than crash on fresh.cards[0]
-      cardStatus(mount, (r.replies || []).join(" ") || "Could not refresh the list.");
-    }
-  }
-
-  // Run the refresh under the same in-flight flag the handlers use, so a
-  // timer firing mid-dispatch cannot redraw over a newer response.
-  async function guarded(fn) {
-    if (mount._busy) return;
-    mount._busy = true;
-    try { await fn(); }
-    catch (e) { cardStatus(mount, e.message || "Something went wrong."); }
-    finally { mount._busy = false; }
-  }
+  const { guarded, refresh } = cardShell(mount, "recall_shopping", {});
 
   for (const b of mount.querySelectorAll(".cx")) {
     b.onclick = async () => {
@@ -681,7 +698,83 @@ function shoppingCard(data, mount) {
   };
 }
 
-const CARDS = { shopping: shoppingCard };
+function notesCard(data, mount) {
+  const notes = data.notes || [];
+  const allTags = [...new Set(notes.flatMap(n => n.tags || []))].sort();
+  const chips = allTags.map(t =>
+    '<button class="ctag" data-tag="' + esc(t) + '">' + esc(t) + "</button>").join("");
+  const rows = notes.map(n =>
+    '<li data-tags="' + esc((n.tags || []).join(",")) + '">' +
+      '<span class="citem">' + esc(n.content) + "</span>" +
+      '<span class="cwhen">' + esc((n.created_at || "").slice(0, 10)) + "</span>" +
+    "</li>").join("");
+  mount.innerHTML =
+    '<div class="card notes">' +
+      "<header>Notes · " + notes.length + "</header>" +
+      (allTags.length ? '<div class="ctags">' + chips + "</div>" : "") +
+      (notes.length ? "<ul>" + rows + "</ul>"
+                    : '<p class="cempty">Nothing saved yet.</p>') +
+      '<p class="cstatus" hidden></p>' +
+    "</div>";
+
+  // Filtering is local: the tags are already in the payload, so narrowing the
+  // list is a DOM pass, not a round trip.
+  for (const chip of mount.querySelectorAll(".ctag")) {
+    chip.onclick = () => {
+      const on = chip.classList.toggle("on");
+      for (const other of mount.querySelectorAll(".ctag")) {
+        if (other !== chip) other.classList.remove("on");
+      }
+      const want = on ? chip.dataset.tag : null;
+      for (const li of mount.querySelectorAll("li")) {
+        const tags = (li.dataset.tags || "").split(",").filter(Boolean);
+        li.hidden = want !== null && !tags.includes(want);
+      }
+    };
+  }
+}
+
+function ideasCard(data, mount) {
+  const ideas = data.ideas || [];
+  const { action } = cardShell(mount, "recall_ideas", {});
+  const rows = ideas.map(i =>
+    '<li><span class="citem">' + esc(i.content) + "</span>" +
+    '<button class="cx" data-item="' + esc(i.content) + '" title="discard">✕</button></li>'
+  ).join("");
+  mount.innerHTML =
+    '<div class="card ideas">' +
+      "<header>Ideas · " + ideas.length + "</header>" +
+      (ideas.length ? "<ul>" + rows + "</ul>"
+                    : '<p class="cempty">No ideas saved.</p>') +
+      '<p class="cstatus" hidden></p>' +
+    "</div>";
+  for (const b of mount.querySelectorAll(".cx")) {
+    b.onclick = () => action("discard_idea", b.dataset.item);
+  }
+}
+
+function remindersCard(data, mount) {
+  const items = data.reminders || [];
+  const { action } = cardShell(mount, "recall_reminders", {});
+  const rows = items.map(r =>
+    '<li><span class="cwhen">' + esc(r.local) + "</span>" +
+    '<span class="citem">' + esc(r.content) + "</span>" +
+    '<button class="cx" data-item="' + esc(r.content) + '" title="cancel">✕</button></li>'
+  ).join("");
+  mount.innerHTML =
+    '<div class="card reminders">' +
+      "<header>Reminders · " + items.length + "</header>" +
+      (items.length ? "<ul>" + rows + "</ul>"
+                    : '<p class="cempty">Nothing scheduled.</p>') +
+      '<p class="cstatus" hidden></p>' +
+    "</div>";
+  for (const b of mount.querySelectorAll(".cx")) {
+    b.onclick = () => action("cancel_reminder", b.dataset.item);
+  }
+}
+
+const CARDS = { shopping: shoppingCard, notes: notesCard,
+                ideas: ideasCard, reminders: remindersCard };
 
 function renderCard(card, mount) {
   const draw = CARDS[card.kind];

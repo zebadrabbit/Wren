@@ -612,3 +612,36 @@ def test_the_page_javascript_actually_parses():
             os.unlink(path)
         assert done.returncode == 0, (
             f"<script> block {i} does not parse:\n{done.stderr}")
+
+
+def test_every_card_kind_has_a_renderer():
+    src = PAGE.read_text(encoding="utf-8")
+    block = src[src.index("const CARDS = {"):src.index("}", src.index("const CARDS = {"))]
+    for kind in ("shopping", "notes", "ideas", "reminders"):
+        assert kind in block, f"no renderer registered for {kind}"
+
+
+def test_the_card_scaffolding_is_shared_not_copied():
+    # four cards needing the same busy flag, status line and refresh is three
+    # copies waiting to drift apart
+    src = PAGE.read_text(encoding="utf-8")
+    assert "function cardShell(" in src
+    assert src.count("mount._busy = true") <= 2, (
+        "busy handling looks copied per card rather than shared in cardShell")
+
+
+def test_the_notes_card_filters_tags_without_a_round_trip():
+    # the tags are already in the payload, so narrowing the list is a DOM pass.
+    # notesCard is read-only: if it dispatches at all, filtering has become a
+    # server round trip.
+    src = PAGE.read_text(encoding="utf-8")
+    start = src.index("function notesCard(")
+    block = src[start:src.index("\nfunction ", start + 1)]
+    assert "dispatch(" not in block
+    assert "ctag" in block and "li.hidden" in block
+
+
+def test_card_actions_dispatch_the_right_intents():
+    src = PAGE.read_text(encoding="utf-8")
+    assert "discard_idea" in src
+    assert "cancel_reminder" in src
