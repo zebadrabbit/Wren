@@ -10,21 +10,39 @@
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64.0 64.0%22 width=%2264%22 height=%2264%22 role=%22img%22 aria-label=%22Wren%22%3E%0A%3Crect width=%2264%22 height=%2264%22 rx=%2212.0%22 fill=%22%23C4694A%22/%3E%0A%3Cg transform=%22translate%288.32%2C8.32%29 scale%280.4736%29%22%3E%0A%3Cpath d=%22M 4.00 49.38 C 6.66 48.28 15.11 44.77 18.50 43.36 C 19.67 40.97 21.14 36.12 23.52 33.10 C 25.89 30.08 31.17 21.52 36.34 20.72 C 41.51 19.92 48.30 26.23 53.07 28.53 C 57.83 30.82 63.37 33.72 66.45 35.22 C 69.53 36.72 73.47 41.00 74.81 39.12 C 76.15 37.24 82.96 14.19 84.29 10.13 C 85.93 11.14 94.36 16.36 96.00 17.38 C 94.44 21.83 86.20 45.12 84.85 49.16 C 83.50 53.20 82.12 61.31 79.83 65.89 C 77.54 70.47 74.07 77.50 68.68 81.50 C 63.29 85.49 55.26 89.66 47.49 89.86 C 39.72 90.07 31.67 86.61 26.30 82.61 C 20.94 78.61 18.59 71.06 16.82 67.00 C 15.06 62.94 14.96 58.76 15.15 56.97 C 15.35 55.17 17.72 52.86 18.50 51.61 C 15.11 51.09 6.66 49.79 4.00 49.38 Z%22 fill=%22%23F4EDE2%22/%3E%0A%3C/g%3E%0A%3C/svg%3E">
 <meta name="theme-color" content="#C4694A">
 <style>
+/* Palette is Brand/src/tokens.css verbatim -- paper ground, ink text, clay
+   accent, with the night set after dark. Clay #C4694A is a graphic colour
+   (3.30:1); wherever it has to carry text or fill a labelled button the
+   lifted --accent (clay-ink #A04E33 / night-clay #E08D6C) is used instead. */
 :root {
-  --bg: #faf9f7; --panel: #f0eeea; --line: #ddd9d2; --text: #26241f;
-  --muted: #6f6a61; --accent: #5b6f4e; --bubble-user: #e4e9de; --code: #eceae5;
+  --bg: #F4EDE2; --panel: #FBF7F0; --well: #EBE2D4;
+  --line: #DDD0BC; --line-2: #C9B9A1;
+  --text: #3A322B; --muted: #6E6255;
+  --clay: #C4694A; --accent: #A04E33; --accent-fg: #F4EDE2; --wash: #E9CDBF;
+  --ok: #4F7343; --warn: #8F5F10; --alert: #B4462F;
+  --code: #EBE2D4;
+  --shadow: 0 1px 2px rgba(58,50,43,.07);
+  --shadow-lg: 0 8px 28px rgba(58,50,43,.12);
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #1a1917; --panel: #221f1c; --line: #34302b; --text: #ece8e1;
-    --muted: #9a938a; --accent: #9dbb87; --bubble-user: #2b3327; --code: #14130f;
+    --bg: #241F1A; --panel: #2E2822; --well: #1B1713;
+    --line: #443C33; --line-2: #5C5245;
+    --text: #F4EDE2; --muted: #C4B7A5;
+    --clay: #E08D6C; --accent: #E08D6C; --accent-fg: #241F1A;
+    --wash: rgba(224,141,108,.15);
+    --ok: #9CB388; --warn: #D7A65C; --alert: #E58968;
+    --code: #1B1713;
+    --shadow: 0 1px 2px rgba(0,0,0,.25);
+    --shadow-lg: 0 8px 28px rgba(0,0,0,.4);
   }
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
 body {
   display: flex; background: var(--bg); color: var(--text);
-  font: 15px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 15px/1.6 "Inter", "Source Sans 3", -apple-system, BlinkMacSystemFont,
+       "Segoe UI", Roboto, system-ui, sans-serif;
 }
 /* background: transparent is load-bearing, not tidiness. Without it a button
    that declares no background of its own gets the browser default -- white --
@@ -35,54 +53,52 @@ body {
 button { font: inherit; color: inherit; cursor: pointer; background: transparent; }
 
 /* ── login ─────────────────────────────────────────────────────────────── */
-#login { margin: auto; max-width: 380px; padding: 24px; text-align: center; }
+#login {
+  margin: auto; width: min(400px, 92vw); padding: 32px 28px; text-align: center;
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 16px; box-shadow: var(--shadow-lg);
+}
 /* Clear space is 0.35x the mark's height (Brand/README.md); at 190px wide the
    lockup is ~86px tall, so ~24-30px clear space wanted. The 18px margin plus
-   #login's own 24px padding above and #login p's 20px margin below cover it. */
+   #login's own padding above and #login p's 20px margin below cover it. */
 #brandmark { width: 190px; height: auto; display: block; margin: 0 auto 18px; }
 #login p { color: var(--muted); margin: 0 0 20px; font-size: 14px; }
 #login input {
   width: 100%; padding: 10px 12px; border: 1px solid var(--line);
-  border-radius: 8px; background: var(--panel); color: var(--text); font: inherit;
+  border-radius: 10px; background: var(--bg); color: var(--text); font: inherit;
 }
+#login input:focus { outline: none; border-color: var(--clay); }
 #login button {
-  width: 100%; margin-top: 10px; padding: 10px; border: 0; border-radius: 8px;
-  background: var(--accent); color: var(--bg); font-weight: 600;
+  width: 100%; margin-top: 10px; padding: 10px; border: 0; border-radius: 10px;
+  background: var(--accent); color: var(--accent-fg); font-weight: 600;
 }
-#login .err { color: #c0503f; font-size: 13px; min-height: 18px; margin-top: 8px; }
+#login .err { color: var(--alert); font-size: 13px; min-height: 18px; margin-top: 8px; }
 
 /* ── layout ────────────────────────────────────────────────────────────── */
 #app { display: none; width: 100%; height: 100%; }
 #app.on { display: flex; }
 aside {
-  width: 250px; flex: none; background: var(--panel);
+  width: 260px; flex: none; background: var(--well);
   border-right: 1px solid var(--line); display: flex; flex-direction: column;
 }
-aside header {
-  padding: 12px; border-bottom: 1px solid var(--line);
-  display: flex; align-items: center; gap: 8px;
-}
-aside header b { flex: 1; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+aside header { padding: 14px 14px 10px; display: flex; align-items: center; gap: 8px; }
+aside header b { font-size: 16px; }
 /* Clear space 0.35 x height (Brand/README.md): at 20px that's a 7px minimum
    gap, so the 8px gap above already satisfies it. */
 .sidemark { width: 20px; height: 20px; flex: none; }
-#gear {
-  border: 0; color: var(--muted); padding: 2px 6px; border-radius: 6px;
-  font-size: 15px; line-height: 1;
-}
-#gear:hover { background: var(--bg); color: var(--text); }
-#gear[hidden] { display: none; }
 #new {
-  border: 1px solid var(--line); background: transparent; border-radius: 6px;
-  padding: 4px 10px; font-size: 13px;
+  margin: 2px 10px 10px; padding: 8px; border: 0; border-radius: 10px;
+  background: var(--accent); color: var(--accent-fg); font-weight: 600;
+  font-size: 14px; box-shadow: var(--shadow);
 }
-#convos { flex: 1; overflow-y: auto; padding: 6px; }
+#new:hover { filter: brightness(1.06); }
+#convos { flex: 1; overflow-y: auto; padding: 2px 8px; }
 .convo {
-  display: flex; align-items: center; gap: 4px; padding: 7px 9px;
-  border-radius: 6px; cursor: pointer; font-size: 14px;
+  display: flex; align-items: center; gap: 4px; padding: 8px 10px;
+  border-radius: 8px; cursor: pointer; font-size: 14px;
 }
-.convo:hover { background: var(--bg); }
-.convo.active { background: var(--bg); font-weight: 600; }
+.convo:hover { background: var(--wash); }
+.convo.active { background: var(--wash); font-weight: 600; }
 .convo span {
   flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
@@ -92,62 +108,43 @@ aside header b { flex: 1; font-size: 15px; display: flex; align-items: center; g
 }
 .convo:hover button { opacity: 1; }
 .convo button:hover { background: var(--line); }
+#side-foot {
+  border-top: 1px solid var(--line); padding: 10px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+#whoname { font-weight: 600; font-size: 13px; padding: 0 2px; }
+.footbtns { display: flex; gap: 6px; }
+.footbtns button {
+  flex: 1; border: 1px solid var(--line); border-radius: 8px; padding: 6px 4px;
+  font-size: 12.5px; color: var(--muted); background: var(--panel);
+}
+.footbtns button:hover { color: var(--text); border-color: var(--line-2); }
+#gear[hidden] { display: none; }
 
-/* ── plugins panel ─────────────────────────────────────────────────────── */
-#plugins { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; justify-content: flex-end; }
-#plugins[hidden] { display: none; }
-#plugins .sheet {
-  width: 420px; max-width: 100%; background: var(--bg); height: 100%;
-  display: flex; flex-direction: column; border-left: 1px solid var(--line);
-}
-#plugins header {
-  display: flex; align-items: center; padding: 12px 16px;
-  border-bottom: 1px solid var(--line);
-}
-#plugins header b { flex: 1; }
-#plugins .pbody { flex: 1; overflow-y: auto; padding: 16px; }
-#plugins h4 { margin: 18px 0 8px; font-size: 12px; letter-spacing: .08em;
-              text-transform: uppercase; color: var(--muted); }
-#plugins h4 small { text-transform: none; letter-spacing: 0; font-weight: 400; }
-/* flex-wrap so .why's flex-basis:100% can actually take its own line. Without
-   it the reason stays inline and squeezes the plugin name into two lines. */
-.prow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
-        padding: 8px 0; border-bottom: 1px solid var(--line); }
-.prow .pname { flex: 1; }
-.prow .why { flex-basis: 100%; color: var(--muted); font-size: 13px; }
-
-/* The global `button` rule sets only font/color/cursor, so a button with no
-   background of its own renders as a white browser default -- and inherits the
-   theme's near-white text, making the label invisible on dark. Every other
-   button on this page (#new, .convo button) declares its own background for
-   exactly this reason; these two must too. */
-.ptoggle {
-  border: 1px solid var(--line); background: transparent; border-radius: 6px;
-  padding: 4px 12px; font-size: 13px; min-width: 46px; color: var(--muted);
-}
-.ptoggle:hover { border-color: var(--line-2, var(--muted)); }
-.ptoggle[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
-#pclose {
-  border: 0; background: transparent; color: var(--muted);
-  padding: 2px 6px; border-radius: 4px; font-size: 14px; line-height: 1;
-}
-#pclose:hover { background: var(--line); }
-.pset { display: flex; align-items: center; gap: 8px; padding: 6px 0; }
-.pset label { flex: 1; font-size: 14px; }
-.pset input { width: 190px; padding: 6px 8px; border: 1px solid var(--line);
-              border-radius: 6px; background: var(--panel); color: var(--text); font: inherit; }
-.perr { color: #c0503f; font-size: 13px; padding: 0 16px 12px; min-height: 18px; }
-
+/* ── chat column ───────────────────────────────────────────────────────── */
 main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-#log { flex: 1; overflow-y: auto; padding: 24px 20px; }
-#inner { max-width: 720px; margin: 0 auto; }
-.msg { margin-bottom: 18px; display: flex; }
+#topbar {
+  display: flex; align-items: center; gap: 10px; padding: 10px 20px;
+  border-bottom: 1px solid var(--line); min-height: 48px;
+}
+#ctitle {
+  flex: 1; font-weight: 600; font-size: 15px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+#log { flex: 1; overflow-y: auto; padding: 28px 20px; }
+#inner { max-width: 760px; margin: 0 auto; }
+.msg { margin-bottom: 20px; display: flex; gap: 10px; }
+/* Off-screen but still in the layout, so it lands in a copy/paste (and in a
+   screen reader) while staying invisible. display:none would drop it from both. */
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden;
+      clip-path: inset(50%); white-space: nowrap; }
 .msg.user { justify-content: flex-end; }
 .msg .body {
-  max-width: 82%; padding: 10px 14px; border-radius: 12px; overflow-wrap: anywhere;
+  max-width: 82%; padding: 10px 14px; border-radius: 14px; overflow-wrap: anywhere;
 }
-.msg.user .body { background: var(--bubble-user); }
-.msg.assistant .body { background: transparent; padding-left: 0; max-width: 100%; }
+.msg.user .body { background: var(--wash); border-bottom-right-radius: 4px; }
+.msg.assistant .body { background: transparent; padding: 2px 0 0; max-width: 100%; }
+.mavatar { width: 22px; height: 22px; flex: none; margin-top: 2px; }
 .msg .body > :first-child { margin-top: 0; }
 .msg .body > :last-child { margin-bottom: 0; }
 .msg pre {
@@ -162,16 +159,17 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .msg a { color: var(--accent); }
 .msg ul { padding-left: 20px; margin: 6px 0; }
 .msg .dl { display: inline-block; margin-top: 6px; color: var(--accent); }
+
 /* ── landing ───────────────────────────────────────────────────────────── */
 #landing { text-align: center; margin-top: 14vh; }
 .landmark { width: 28px; height: 28px; display: block; margin: 0 auto 10px; }
 #greet { font-size: 22px; font-weight: 500; margin: 0 0 4px; }
 #pills { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 18px; }
 .pill {
-  border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px;
-  font-size: 13px; color: var(--muted);
+  border: 1px solid var(--line); background: var(--panel); border-radius: 999px;
+  padding: 7px 16px; font-size: 13px; color: var(--muted); box-shadow: var(--shadow);
 }
-.pill:hover { color: var(--text); border-color: var(--muted); }
+.pill:hover { color: var(--accent); border-color: var(--clay); }
 
 .dots span {
   display: inline-block; width: 6px; height: 6px; margin-right: 3px;
@@ -181,41 +179,133 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .dots span:nth-child(3) { animation-delay: .4s }
 @keyframes b { 0%,60%,100% { opacity:.25 } 30% { opacity:1 } }
 
-footer { border-top: 1px solid var(--line); padding: 12px 20px; }
-#composer { max-width: 720px; margin: 0 auto; display: flex; gap: 8px; }
+/* ── composer ──────────────────────────────────────────────────────────── */
+main footer { padding: 10px 20px 18px; }
+#composer {
+  max-width: 760px; margin: 0 auto; display: flex; gap: 8px; padding: 8px;
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 16px; box-shadow: var(--shadow);
+}
+#composer:focus-within { border-color: var(--line-2); }
 #text {
-  flex: 1; resize: none; padding: 10px 12px; border: 1px solid var(--line);
-  border-radius: 10px; background: var(--panel); color: var(--text);
-  font: inherit; max-height: 180px;
+  flex: 1; resize: none; padding: 6px 8px; border: 0; background: transparent;
+  color: var(--text); font: inherit; max-height: 180px; outline: none;
 }
 #send {
-  border: 0; border-radius: 10px; background: var(--accent); color: var(--bg);
-  padding: 0 18px; font-weight: 600;
+  border: 0; border-radius: 10px; background: var(--accent);
+  color: var(--accent-fg); padding: 0 18px; font-weight: 600;
+  align-self: flex-end; height: 36px;
 }
 #send:disabled { opacity: .5; cursor: default; }
 #model {
   border: 1px solid var(--line); border-radius: 8px; background: var(--panel);
   color: var(--muted); font: inherit; font-size: 13px; padding: 4px 6px;
-  /* #composer is display:flex with the default align-items:stretch, so
-     without align-self this <select> grows to match #text's height (up to
-     180px) as you type. max-width plus the overflow rules below stop a long
-     id (e.g. a full openrouter slug) from squeezing #text down instead of
-     just truncating with an ellipsis. */
-  align-self: center; max-width: 160px; overflow: hidden;
+  /* #topbar is display:flex with the default align-items:stretch, so without
+     align-self this <select> would grow to the bar's height. max-width plus
+     the overflow rules stop a long id (e.g. a full openrouter slug) from
+     squeezing the title instead of just truncating with an ellipsis. */
+  align-self: center; max-width: 220px; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap;
 }
 #modeltext { color: var(--muted); font-size: 13px; align-self: center; }
-/* Reuses the same red already used for #login .err and .perr elsewhere in this
-   file -- an established, already-tested error colour, not a new one-off. */
-#modeltext.err { color: #c0503f; }
-@media (max-width: 640px) { aside { width: 190px; } }
+#modeltext.err { color: var(--alert); }
+
+/* ── plugins & settings sheet ──────────────────────────────────────────── */
+#plugins { position: fixed; inset: 0; background: rgba(36,31,26,.4); display: flex; justify-content: flex-end; }
+#plugins[hidden] { display: none; }
+#plugins .sheet {
+  width: 560px; max-width: 100%; background: var(--bg); height: 100%;
+  display: flex; flex-direction: column; border-left: 1px solid var(--line);
+  box-shadow: var(--shadow-lg);
+}
+#plugins header {
+  display: flex; align-items: center; padding: 14px 18px 10px;
+}
+#plugins header b { flex: 1; font-size: 16px; }
+#ptabs { display: flex; gap: 4px; padding: 0 18px; border-bottom: 1px solid var(--line); }
+#ptabs .tab {
+  border: 0; padding: 8px 12px; font-size: 14px; color: var(--muted);
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+#ptabs .tab.on { color: var(--text); font-weight: 600; border-bottom-color: var(--clay); }
+#plugins .pbody { flex: 1; overflow-y: auto; padding: 6px 18px 18px; }
+#plugins h4 { margin: 18px 0 8px; font-size: 12px; letter-spacing: .08em;
+              text-transform: uppercase; color: var(--muted); }
+#plugins h4 small { text-transform: none; letter-spacing: 0; font-weight: 400; }
+/* flex-wrap so .why's flex-basis:100% can actually take its own line. Without
+   it the reason stays inline and squeezes the plugin name into two lines. */
+.prow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+        padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px;
+        background: var(--panel); margin-bottom: 8px; box-shadow: var(--shadow); }
+.prow .pname { flex: 1; font-weight: 600; font-size: 14px; }
+.prow .why { flex-basis: 100%; color: var(--muted); font-size: 13px; }
+.prow .why.warn { color: var(--warn); }
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--line-2); }
+.dot.ok { background: var(--ok); }
+.dot.warn { background: var(--warn); }
+.badge {
+  font-size: 11px; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--muted); border: 1px solid var(--line); border-radius: 999px;
+  padding: 1px 8px;
+}
+.pstate { font-size: 12.5px; color: var(--muted); }
+.skey { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; font-weight: 600; flex: 1; }
+
+/* toggle switch -- a real checkbox underneath, so keyboard and screen-reader
+   behaviour come from the platform rather than being re-implemented */
+.switch { position: relative; width: 36px; height: 20px; flex: none; }
+.switch input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
+.switch .knob {
+  position: absolute; inset: 0; border-radius: 999px; background: var(--line-2);
+  transition: background .15s; pointer-events: none;
+}
+.switch .knob::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px;
+  border-radius: 50%; background: var(--panel); transition: left .15s;
+  box-shadow: var(--shadow);
+}
+.switch input:checked + .knob { background: var(--ok); }
+.switch input:checked + .knob::after { left: 18px; }
+.switch input:focus-visible + .knob { outline: 2px solid var(--clay); outline-offset: 2px; }
+
+#pclose {
+  border: 0; background: transparent; color: var(--muted);
+  padding: 2px 6px; border-radius: 4px; font-size: 14px; line-height: 1;
+}
+#pclose:hover { background: var(--line); }
+.pset {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  padding: 10px 0; border-bottom: 1px solid var(--line);
+}
+.pslabel { flex: 1; min-width: 0; }
+.pslabel label { font-size: 14px; font-weight: 600; display: block; }
+.pslabel .phelp { display: block; color: var(--muted); font-size: 12.5px; line-height: 1.45; margin-top: 1px; }
+.pset input, .pset select {
+  width: 200px; padding: 6px 9px; border: 1px solid var(--line);
+  border-radius: 8px; background: var(--panel); color: var(--text);
+  font: inherit; font-size: 13.5px;
+}
+.pset input:focus, .pset select:focus { outline: none; border-color: var(--clay); }
+.savestat { flex-basis: 100%; font-size: 12.5px; text-align: right; }
+.savestat:empty { display: none; }
+.savestat.ok { color: var(--ok); }
+.savestat.err { color: var(--alert); }
+.phint { color: var(--muted); font-size: 13px; margin: 10px 0; }
+#tab-secrets pre {
+  background: var(--code); padding: 10px 12px; border-radius: 8px;
+  font-size: 12.5px; overflow-x: auto;
+}
+.perr { color: var(--alert); font-size: 13px; padding: 0 18px 12px; min-height: 18px; }
+
+@media (max-width: 640px) { aside { width: 200px; } }
 </style>
 </head>
 <body>
 
-<!-- The Wren silhouette, defined once. Both the sidebar and the landing
-     header <use> it, so the geometry from Brand/brand/mark-simple.svg is
-     inlined once rather than per site. Regenerate with:
+<!-- The Wren silhouette, defined once. The sidebar, the landing header and
+     every assistant message <use> it, so the geometry from
+     Brand/brand/mark-simple.svg is inlined once rather than per site.
+     Regenerate with:
      cd Brand && python3 build.py && python3 render_pngs.py  -- then re-inline. -->
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <symbol id="wren-mark" viewBox="0 0 128.0 128.0">
@@ -248,7 +338,8 @@ footer { border-top: 1px solid var(--line); padding: 12px 20px; }
 <g transform="translate(154.24,105.28)"><path d="M0.45 -35.01 13.82 0.00H18.94L26.50 -23.23L34.11 0.00H39.17L52.74 -35.01H48.13L36.74 -5.70L28.48 -30.72H24.58L16.32 -5.70L5.18 -35.01Z M60.74 0.00H65.47V-20.42C65.47 -26.94 68.80 -30.53 75.39 -31.17V-35.84C70.34 -35.58 67.33 -33.86 65.47 -30.02V-35.01H60.74Z M82.18 -17.66C82.18 -7.30 90.30 0.83 100.67 0.83C108.61 0.83 115.46 -4.86 117.70 -11.52H112.77C110.78 -6.72 105.86 -3.52 100.54 -3.52C93.38 -3.52 87.30 -9.02 86.91 -15.94H118.59C118.59 -28.35 110.72 -35.84 100.35 -35.84C90.18 -35.84 82.18 -27.84 82.18 -17.66ZM87.04 -20.22C88.32 -26.94 93.63 -31.49 100.29 -31.49C107.07 -31.49 112.26 -27.20 113.86 -20.22Z M128.64 0.00H133.38V-19.26C133.38 -27.84 137.73 -31.49 144.06 -31.49C150.53 -31.49 154.88 -27.90 154.88 -18.37V0.00H159.62V-18.37C159.62 -30.66 153.41 -35.84 144.64 -35.84C140.03 -35.84 136.32 -34.05 133.38 -30.46V-35.01H128.64Z" fill="currentColor"/></g>
 </svg>
   <p>Paste a token from this Wren's <code>WREN_TOKENS</code> — the part
-     <em>before</em> the colon. What follows it is the user id, not the token.</p>
+     <em>before</em> the colon. New tokens are minted on the host with
+     <code>./manage.sh token add</code>.</p>
   <input id="token" type="password" placeholder="token" autocomplete="current-password">
   <button id="signin">Connect</button>
   <div class="err" id="loginerr"></div>
@@ -256,23 +347,35 @@ footer { border-top: 1px solid var(--line); padding: 12px 20px; }
 
 <div id="app">
   <aside>
-    <header><b>
+    <header>
       <!-- Inlined from Brand/brand/mark-simple.svg (one-colour silhouette --
            the full mark's wing/eye detail stops resolving below ~24px, and
            this icon renders at ~20px). Regenerate with:
            cd Brand && python3 build.py && python3 render_pngs.py  -- then re-inline.
            Decorative: the word "Wren" sits right next to it. -->
       <svg class="sidemark" aria-hidden="true"><use href="#wren-mark"/></svg>
-      Wren</b><button id="gear" title="Plugins">⚙</button><button id="new">New</button></header>
+      <b>Wren</b>
+    </header>
+    <button id="new">+ New chat</button>
     <div id="convos"></div>
+    <footer id="side-foot">
+      <div id="whoname"></div>
+      <div class="footbtns">
+        <button id="gear" hidden title="Plugins &amp; Settings">⚙ Plugins</button>
+        <button id="signout">Sign out</button>
+      </div>
+    </footer>
   </aside>
   <main>
+    <header id="topbar">
+      <span id="ctitle"></span>
+      <select id="model" hidden></select>
+      <span id="modeltext" hidden></span>
+    </header>
     <div id="log"><div id="inner"></div></div>
     <footer>
       <div id="composer">
         <textarea id="text" rows="1" placeholder="Message Wren…"></textarea>
-        <select id="model" hidden></select>
-        <span id="modeltext" hidden></span>
         <button id="send">Send</button>
       </div>
     </footer>
@@ -281,15 +384,44 @@ footer { border-top: 1px solid var(--line); padding: 12px 20px; }
 
 <div id="plugins" hidden>
   <div class="sheet">
-    <header><b>Plugins</b><button id="pclose">✕</button></header>
+    <header><b>Plugins &amp; Settings</b><button id="pclose">✕</button></header>
+    <nav id="ptabs">
+      <button class="tab on" data-tab="plugins">Plugins</button>
+      <button class="tab" data-tab="settings">Settings</button>
+      <button class="tab" data-tab="secrets">Secrets</button>
+    </nav>
     <div class="pbody">
-      <h4>Skills</h4><div id="pskills"></div>
-      <h4>Channels <small>restart required</small></h4><div id="pchannels"></div>
-      <h4>Settings</h4><div id="psettings"></div>
+      <section id="tab-plugins">
+        <h4>Skills</h4><div id="pskills"></div>
+        <h4>Channels <small>restart required</small></h4><div id="pchannels"></div>
+      </section>
+      <section id="tab-settings" hidden><div id="psettings"></div></section>
+      <section id="tab-secrets" hidden>
+        <p class="phint">Credentials never leave this machine and are never shown
+        here — only whether each one is configured. Manage them in a terminal on
+        the host Wren runs on:</p>
+        <pre>./manage.sh secret list
+./manage.sh secret set KEY</pre>
+        <div id="psecrets"></div>
+        <p class="phint">Restart Wren afterwards (<code>./manage.sh restart</code>)
+        — credentials are read at startup.</p>
+      </section>
     </div>
     <div class="perr" id="perr"></div>
   </div>
 </div>
+
+<datalist id="tzlist">
+  <option value="UTC"></option>
+  <option value="America/Chicago"></option>
+  <option value="America/New_York"></option>
+  <option value="America/Denver"></option>
+  <option value="America/Phoenix"></option>
+  <option value="America/Los_Angeles"></option>
+  <option value="Europe/London"></option>
+  <option value="Europe/Berlin"></option>
+  <option value="Australia/Sydney"></option>
+</datalist>
 
 <script>
 const $ = s => document.querySelector(s);
@@ -338,22 +470,27 @@ async function api(path, opts = {}) {
     headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json",
                ...(opts.headers || {}) },
   });
-  if (res.status === 401) { signOut(); throw new Error("unauthorized"); }
+  if (res.status === 401) { signOut("That token was rejected."); throw new Error("unauthorized"); }
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
   return res.json();
 }
 
-function signOut() {
+function signOut(message = "") {
   localStorage.removeItem("wren_token"); token = "";
   $("#app").classList.remove("on"); $("#login").style.display = "";
-  $("#loginerr").textContent = "That token was rejected.";
+  $("#loginerr").textContent = message;
 }
 
 /* ── rendering ─────────────────────────────────────────────────────────── */
 function bubble(role, html) {
   const d = document.createElement("div");
   d.className = "msg " + role;
-  d.innerHTML = '<div class="body">' + html + "</div>";
+  const avatar = role === "assistant"
+    ? '<svg class="mavatar" aria-hidden="true"><use href="#wren-mark"/></svg>' : "";
+  // Speaker label is invisible on screen but comes out in a copied transcript,
+  // which is otherwise an unattributed wall of alternating lines.
+  const who = '<span class="sr">' + (role === "assistant" ? "Wren: " : "You: ") + "</span>";
+  d.innerHTML = who + avatar + '<div class="body">' + html + "</div>";
   $("#inner").append(d);
   $("#log").scrollTop = $("#log").scrollHeight;
   return d;
@@ -369,6 +506,9 @@ async function loadConvos() {
   const box = $("#convos");
   box.innerHTML = "";
   for (const c of list) {
+    // the topbar title lives here so a rename and an auto-title (the server
+    // names a chat from its first message) both land in one place
+    if (c.id === active) $("#ctitle").textContent = c.title;
     const el = document.createElement("div");
     el.className = "convo" + (c.id === active ? " active" : "");
     const name = document.createElement("span");
@@ -394,7 +534,10 @@ async function renameConvo(c) {
 async function delConvo(c) {
   if (!confirm("Delete “" + c.title + "”?")) return;
   await api("/api/conversations/" + c.id, { method: "DELETE" });
-  if (active === c.id) { active = null; $("#inner").innerHTML = ""; showEmpty(); }
+  if (active === c.id) {
+    active = null; $("#inner").innerHTML = ""; $("#ctitle").textContent = "";
+    showEmpty();
+  }
   loadConvos();
 }
 const STARTERS = {
@@ -461,6 +604,10 @@ async function showEmpty(mePromise) {
 async function openConvo(id) {
   active = id;
   const convo = await api("/api/conversations/" + id);
+  if (active !== id) return;   // a later click superseded this fetch: without
+  // this, the slower response would render conversation A's history while
+  // `active` (and every subsequent send) points at conversation B
+  $("#ctitle").textContent = convo.title;
   $("#inner").innerHTML = "";
   if (!convo.messages.length) showEmpty();
   for (const m of convo.messages) {
@@ -479,29 +626,140 @@ async function newConvo() {
 async function send() {
   const text = $("#text").value.trim();
   if (!text || busy) return;
-  if (active === null) await newConvo();
+  // busy is set BEFORE the first await: a second Enter during newConvo()'s
+  // round-trip used to pass the guard above and create a duplicate
+  // conversation plus a double post of the same message.
   busy = true; $("#send").disabled = true;
   $("#text").value = ""; $("#text").style.height = "auto";
-  const gone = $("#landing"); if (gone) gone.remove();
-  bubble("user", esc(text));
-  const thinking = bubble("assistant", '<div class="dots"><span></span><span></span><span></span></div>');
+  let thinking = null;
   try {
+    if (active === null) await newConvo();
+    const gone = $("#landing"); if (gone) gone.remove();
+    bubble("user", esc(text));
+    thinking = bubble("assistant", '<div class="dots"><span></span><span></span><span></span></div>');
     const data = await api("/api/conversations/" + active + "/message",
                            { method: "POST", body: JSON.stringify({ text }) });
-    thinking.remove();
+    thinking.remove(); thinking = null;
     for (const r of data.replies) bubble("assistant", md(r));
     for (const f of data.files || []) bubble("assistant", fileLink(f));
     if (!data.replies.length && !(data.files || []).length) bubble("assistant", "<em>(no reply)</em>");
     loadConvos();
   } catch (e) {
-    thinking.remove();
+    if (thinking) thinking.remove();
     bubble("assistant", '<em>' + esc(e.message || "Something went wrong.") + "</em>");
   } finally {
     busy = false; $("#send").disabled = false; $("#text").focus();
   }
 }
 
-/* ── plugins panel ─────────────────────────────────────────────────────── */
+/* ── plugins & settings sheet ──────────────────────────────────────────── */
+// What each skill is for, in the user's own words. UI copy, so it lives in
+// the UI: the server's PLUGIN_NAME stays the identity, this is the caption.
+// A module missing here renders with no caption, which is fine.
+const SKILL_INFO = {
+  notes_skill:    "Notes and ideas — “remember that…”, then ask about them later.",
+  shopping_skill: "The shared shopping list — add things, read it back, clear it.",
+  reminder_skill: "Reminders — “remind me to…” — delivered via the notify channel.",
+  web_skill:      "Web lookup — search and summarise pages (needs SearXNG below).",
+  contacts_skill: "Owner-only: add or remove the people Wren will talk to.",
+  pins_skill:     "Pins — save links and snippets worth keeping.",
+};
+
+const SECRET_INFO = {
+  WREN_TOKENS:        "Web-chat sign-in tokens",
+  DISCORD_TOKEN:      "Discord bot token",
+  TELEGRAM_TOKEN:     "Telegram bot token",
+  IMAP_PASSWORD:      "Email-watcher IMAP password",
+  GITHUB_TOKEN:       "GitHub watcher token",
+  OPENAI_API_KEY:     "OpenAI API key",
+  ANTHROPIC_API_KEY:  "Anthropic API key",
+  OPENROUTER_API_KEY: "OpenRouter API key",
+  FIRECRAWL_API_KEY:  "Firecrawl API key",
+};
+
+const MODEL_HELP = "Applies live — but only providers named in LLM_PROVIDERS (.env) are ever used.";
+const SETTING_META = {
+  OWNER_NAME:            { group: "General", label: "Your name",
+                           help: "Used in the landing-screen greeting." },
+  TIMEZONE:              { group: "General", label: "Timezone",
+                           help: "IANA name, e.g. America/Chicago. Reminders fire on this clock.",
+                           listId: "tzlist" },
+  NOTIFY_VIA:            { group: "General", label: "Notify via",
+                           help: "Which channel delivers reminders and watcher alerts. Must be running and able to push (the web chat can't).",
+                           channels: true },
+  REMINDER_POLL_SECONDS: { group: "Watchers", label: "Reminder poll (seconds)",
+                           help: "How often due reminders are checked. Minimum 5.", num: true },
+  EMAIL_WATCH:           { group: "Watchers", label: "Email watch list",
+                           help: "sender@example.com:contact, comma-separated. Empty turns the Gmail watcher off." },
+  EMAIL_POLL_SECONDS:    { group: "Watchers", label: "Email poll (seconds)",
+                           help: "How often the inbox is checked. Minimum 5.", num: true },
+  GITHUB_WATCH:          { group: "Watchers", label: "GitHub watch list",
+                           help: "owner/repo, comma-separated. Empty turns the GitHub watcher off." },
+  GITHUB_POLL_SECONDS:   { group: "Watchers", label: "GitHub poll (seconds)",
+                           help: "How often watched repos are checked. Minimum 5.", num: true },
+  SEARXNG_URL:           { group: "Web lookup", label: "SearXNG URL",
+                           help: "Your SearXNG instance (JSON format enabled). Empty disables web search." },
+  FIRECRAWL_URL:         { group: "Web lookup", label: "Firecrawl URL",
+                           help: "Used to fetch and clean pages. Its API key, if any, is a host-side secret." },
+  OLLAMA_MODEL:          { group: "Models", label: "Ollama model", help: MODEL_HELP },
+  LMSTUDIO_MODEL:        { group: "Models", label: "LM Studio model", help: MODEL_HELP },
+  OPENAI_MODEL:          { group: "Models", label: "OpenAI model", help: MODEL_HELP },
+  CLAUDE_MODEL:          { group: "Models", label: "Claude model", help: MODEL_HELP },
+  OPENROUTER_MODEL:      { group: "Models", label: "OpenRouter model", help: MODEL_HELP },
+};
+const SETTING_GROUPS = ["General", "Watchers", "Web lookup", "Models", "Other"];
+
+function showTab(name) {
+  document.querySelectorAll("#ptabs .tab").forEach(t =>
+    t.classList.toggle("on", t.dataset.tab === name));
+  document.querySelectorAll("#plugins .pbody > section").forEach(s =>
+    s.hidden = s.id !== "tab-" + name);
+}
+
+function settingRow(key, value, channels) {
+  const meta = SETTING_META[key] || { group: "Other", label: key };
+  const row = document.createElement("div");
+  row.className = "pset";
+  row.innerHTML = `<div class="pslabel"><label></label><small class="phelp"></small></div>`;
+  row.querySelector("label").textContent = meta.label || key;
+  row.querySelector(".phelp").textContent = meta.help || "";
+  let input;
+  if (meta.channels) {
+    input = document.createElement("select");
+    // running channels are candidates; the server still rejects one that
+    // can't push, and that rejection lands in this row's status line
+    const names = channels.filter(c => c.running)
+                          .map(c => c.module.replace(/_plugin$/, ""));
+    if (value && !names.includes(value)) names.unshift(value);
+    for (const n of names) {
+      const o = document.createElement("option");
+      o.value = n; o.textContent = n; o.selected = (n === value);
+      input.append(o);
+    }
+  } else {
+    input = document.createElement("input");
+    if (meta.num) { input.type = "number"; input.min = 5; }
+    if (meta.listId) input.setAttribute("list", meta.listId);
+    input.value = value;
+  }
+  const stat = document.createElement("span");
+  stat.className = "savestat";
+  input.onchange = async () => {
+    stat.textContent = "…"; stat.className = "savestat";
+    try {
+      const saved = await api("/api/settings",
+        { method: "PATCH", body: JSON.stringify({ [key]: input.value }) });
+      if (key in saved) input.value = saved[key];   // the server's normalised form
+      stat.textContent = "✓ saved"; stat.classList.add("ok");
+      setTimeout(() => { if (stat.textContent === "✓ saved") stat.textContent = ""; }, 2500);
+    } catch (e) {
+      stat.textContent = String(e.message || e); stat.classList.add("err");
+    }
+  };
+  row.append(input, stat);
+  return row;
+}
+
 async function loadPlugins() {
   const d = await api("/api/plugins");
 
@@ -509,19 +767,34 @@ async function loadPlugins() {
   d.skills.forEach(s => {
     const row = document.createElement("div");
     row.className = "prow";
-    // aria-pressed is both the correct semantics for a toggle button and the
-    // hook .ptoggle[aria-pressed="true"] styles the enabled state from.
-    row.innerHTML = `<span class="pname"></span>
-                     <button class="ptoggle" aria-pressed="${s.enabled}">${s.enabled ? "on" : "off"}</button>`;
+    row.innerHTML = `<span class="dot"></span><span class="pname"></span>
+                     <label class="switch"><input type="checkbox"><span class="knob"></span></label>`;
     row.querySelector(".pname").textContent = s.name;
-    row.querySelector(".ptoggle").onclick = async () => {
-      await api(`/api/plugins/${s.module}`,
-                { method: "PATCH", body: JSON.stringify({ enabled: !s.enabled }) });
+    // three states, one dot: on and configured (ok), on but unconfigured
+    // (warn -- the reason line says what's missing), or switched off
+    row.querySelector(".dot").classList.add(!s.enabled ? "off" : s.active ? "ok" : "warn");
+    const box = row.querySelector("input");
+    box.checked = s.enabled;
+    box.onchange = async () => {
+      $("#perr").textContent = "";
+      try {
+        await api(`/api/plugins/${s.module}`,
+                  { method: "PATCH", body: JSON.stringify({ enabled: box.checked }) });
+      } catch (e) {
+        $("#perr").textContent = String(e.message || e);
+      }
       loadPlugins();
     };
-    if (s.reason) {
+    const info = SKILL_INFO[s.module];
+    if (info) {
       const why = document.createElement("div");
       why.className = "why";
+      why.textContent = info;
+      row.appendChild(why);
+    }
+    if (s.reason) {
+      const why = document.createElement("div");
+      why.className = "why warn";
       why.textContent = s.reason;
       row.appendChild(why);
     }
@@ -535,8 +808,12 @@ async function loadPlugins() {
   d.channels.forEach(c => {
     const row = document.createElement("div");
     row.className = "prow";
-    row.innerHTML = `<span class="pname"></span><span>${c.running ? "● live" : "○ off"}</span>`;
-    row.querySelector(".pname").textContent = `${c.name} (${c.role})`;
+    row.innerHTML = `<span class="dot"></span><span class="pname"></span>
+                     <span class="badge"></span><span class="pstate"></span>`;
+    row.querySelector(".pname").textContent = c.name;
+    row.querySelector(".badge").textContent = c.role;
+    row.querySelector(".dot").classList.add(c.running ? "ok" : "off");
+    row.querySelector(".pstate").textContent = c.running ? "live" : "off";
     if (c.reason) {
       const why = document.createElement("div");
       why.className = "why";
@@ -547,24 +824,37 @@ async function loadPlugins() {
   });
 
   $("#psettings").innerHTML = "";
+  const grouped = {};
   Object.entries(d.settings).forEach(([key, value]) => {
+    const group = (SETTING_META[key] || {}).group || "Other";
+    (grouped[group] = grouped[group] || []).push([key, value]);
+  });
+  for (const group of SETTING_GROUPS) {
+    if (!grouped[group]) continue;
+    const h = document.createElement("h4");
+    h.textContent = group;
+    $("#psettings").appendChild(h);
+    for (const [key, value] of grouped[group]) {
+      $("#psettings").appendChild(settingRow(key, value, d.channels));
+    }
+  }
+
+  $("#psecrets").innerHTML = "";
+  Object.entries(d.secrets || {}).forEach(([key, isSet]) => {
     const row = document.createElement("div");
-    row.className = "pset";
-    row.innerHTML = `<label></label><input>`;
-    row.querySelector("label").textContent = key;
-    const input = row.querySelector("input");
-    input.value = value;
-    input.onchange = async () => {
-      $("#perr").textContent = "";
-      try {
-        await api("/api/settings",
-                  { method: "PATCH", body: JSON.stringify({ [key]: input.value }) });
-      } catch (e) {
-        $("#perr").textContent = String(e.message || e);
-      }
-      loadPlugins();
-    };
-    $("#psettings").appendChild(row);
+    row.className = "prow";
+    row.innerHTML = `<span class="dot"></span><span class="skey"></span><span class="pstate"></span>`;
+    row.querySelector(".dot").classList.add(isSet ? "ok" : "off");
+    row.querySelector(".skey").textContent = key;
+    row.querySelector(".pstate").textContent = isSet ? "configured" : "not set";
+    const info = SECRET_INFO[key];
+    if (info) {
+      const why = document.createElement("div");
+      why.className = "why";
+      why.textContent = info;
+      row.appendChild(why);
+    }
+    $("#psecrets").appendChild(row);
   });
 }
 
@@ -582,6 +872,7 @@ $("#signin").onclick = async () => {
 $("#token").onkeydown = e => { if (e.key === "Enter") $("#signin").click(); };
 $("#new").onclick = newConvo;
 $("#send").onclick = send;
+$("#signout").onclick = () => signOut();
 $("#text").onkeydown = e => {
   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
 };
@@ -592,6 +883,10 @@ $("#text").oninput = e => {
 $("#gear").onclick = () => { $("#plugins").hidden = false; loadPlugins(); };
 $("#pclose").onclick = () => { $("#plugins").hidden = true; };
 $("#plugins").onclick = e => { if (e.target.id === "plugins") $("#plugins").hidden = true; };
+$("#ptabs").onclick = e => {
+  const t = e.target.closest(".tab");
+  if (t) showTab(t.dataset.tab);
+};
 
 async function loadModels(fallbackModel) {
   let d;
@@ -665,12 +960,13 @@ async function start() {
   // flashing it at someone it should never appear for.
   $("#gear").hidden = true;
   api("/api/plugins").then(() => { $("#gear").hidden = false; }).catch(() => {});
-  // Fetched once and shared: the model selector's fallback needs .model, and
-  // showEmpty() (below) needs the same response for the greeting and pills.
-  // Two independent calls here previously fetched /api/me twice on every page
-  // load; awaiting the same promise from both places makes one network
-  // request serve both, and each still fails closed independently.
+  // Fetched once and shared: the model selector's fallback needs .model, the
+  // sidebar footer needs .name, and showEmpty() (below) needs the same
+  // response for the greeting and pills. Awaiting the same promise from all
+  // three places makes one network request serve them, and each still fails
+  // closed independently.
   const me = api("/api/me");
+  me.then(m => { $("#whoname").textContent = m.name || "Signed in"; }).catch(() => {});
   me.then(m => loadModels(m.model)).catch(() => loadModels(null));
   const list = await api("/api/conversations");
   if (list.length) await openConvo(list[0].id); else { showEmpty(me); await loadConvos(); }
