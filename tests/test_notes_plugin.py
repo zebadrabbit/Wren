@@ -50,16 +50,17 @@ def test_recall_notes_falls_back_when_guessed_tag_does_not_match():
         asyncio.run(notes_plugin.handle("recall_notes", Ctx(user_id=1, channel=ch, content="tell me something nice", tags=["notes"])))
     assert ch.sent == ["You're awesome."]
 
-def test_recall_notes_plain_listing_sends_one_message_per_note():
-    # A bare "show my notes" (empty content) lists notes directly, one
-    # message per note, instead of routing through the LLM.
+def test_recall_notes_plain_listing_sends_one_combined_message():
+    # A bare "show my notes" (empty content) lists notes directly, as one
+    # combined message (and a card — see the card tests below) instead of
+    # routing through the LLM or sending one message per note.
     notes.save(1, "buy milk", ["grocery"])
     notes.save(1, "how awesome you are", ["self", "motivation"])
     ch = CollectingChannel()
     asyncio.run(notes_plugin.handle("recall_notes", Ctx(user_id=1, channel=ch, content="")))
-    assert len(ch.sent) == 2
-    assert any("buy milk" in t and "(tags: grocery)" in t for t in ch.sent)
-    assert any("how awesome you are" in t and "(tags: self,motivation)" in t for t in ch.sent)
+    assert len(ch.sent) == 1
+    assert "buy milk" in ch.sent[0] and "(tags: grocery)" in ch.sent[0]
+    assert "how awesome you are" in ch.sent[0] and "(tags: self,motivation)" in ch.sent[0]
 
 def test_recall_notes_respects_real_tag_match():
     notes.save(1, "buy milk", ["grocery"])
@@ -96,14 +97,14 @@ def test_recall_ideas_with_items():
     asyncio.run(notes_plugin.handle("recall_ideas", Ctx(user_id=1, channel=ch, content="")))
     assert ch.sent == ["- build a treehouse"]
 
-def test_recall_ideas_multiple_items_sends_one_message_each():
+def test_recall_ideas_multiple_items_sends_one_combined_message():
     notes.save(1, "build a treehouse", ["idea"])
     notes.save(1, "learn to bake bread", ["idea"])
     ch = CollectingChannel()
     asyncio.run(notes_plugin.handle("recall_ideas", Ctx(user_id=1, channel=ch, content="")))
-    assert len(ch.sent) == 2
-    assert "- build a treehouse" in ch.sent
-    assert "- learn to bake bread" in ch.sent
+    assert len(ch.sent) == 1
+    assert "- build a treehouse" in ch.sent[0]
+    assert "- learn to bake bread" in ch.sent[0]
 
 def test_discard_idea_empty_content_guarded():
     ch = CollectingChannel()
@@ -198,3 +199,76 @@ def test_recall_notes_guideline_distinguishes_from_conversation():
     # "context"/"notes") — the guideline now explicitly excludes questions
     # about the live conversation itself, not saved notes.
     assert "conversation" in notes_plugin.PROMPT_GUIDELINES
+
+def test_recall_notes_without_a_question_emits_one_card_and_one_message():
+    notes.save(1, "call the plumber", ["house"])
+    notes.save(1, "school run is 8:15", ["kids"])
+    ch = CollectingChannel()
+    asyncio.run(notes_plugin.handle(
+        "recall_notes", Ctx(user_id=1, channel=ch, content="", tags=[])))
+
+    card = ch.cards[0]
+    assert card["kind"] == "notes"
+    # notes_store.search orders created_at DESC (pre-existing, out of scope
+    # here) so the most-recently-saved note ("school run") leads
+    assert [n["content"] for n in card["data"]["notes"]] == [
+        "school run is 8:15", "call the plumber"]
+    assert card["data"]["notes"][1]["tags"] == ["house"]
+    assert card["intent"] == "recall_notes"
+    # content MUST stay empty: with a question this intent calls the LLM, and a
+    # card re-dispatches its own intent on every render
+    assert card["params"]["content"] == ""
+    # one combined message, not one per note
+    assert len(ch.sent) == 1
+    assert "call the plumber" in ch.sent[0] and "school run is 8:15" in ch.sent[0]
+
+
+def test_a_filtered_notes_card_remembers_its_filter():
+    # params is what the card replays an hour later; drop the tags and a
+    # filtered card silently comes back unfiltered
+    notes.save(1, "call the plumber", ["house"])
+    ch = CollectingChannel()
+    asyncio.run(notes_plugin.handle(
+        "recall_notes", Ctx(user_id=1, channel=ch, content="", tags=["house"])))
+
+    assert ch.cards[0]["params"] == {"content": "", "tags": ["house"]}
+
+
+def test_recall_notes_with_a_question_still_answers_in_prose_and_emits_no_card():
+    # the LLM-answering branch must never become a card: a card re-dispatches
+    # its intent to refresh, which would mean an LLM call per render
+    notes.save(1, "call the plumber", ["house"])
+    ch = CollectingChannel()
+    with patch.object(brain, "recall", return_value="You need to call the plumber."):
+        asyncio.run(notes_plugin.handle(
+            "recall_notes", Ctx(user_id=1, channel=ch, content="what do I need to do?", tags=[])))
+
+    assert ch.cards == []
+    assert ch.sent == ["You need to call the plumber."]
+
+
+def test_recall_ideas_emits_a_card():
+    notes.save(1, "build a treehouse", ["idea"])
+    ch = CollectingChannel()
+    asyncio.run(notes_plugin.handle("recall_ideas", Ctx(user_id=1, channel=ch)))
+
+    card = ch.cards[0]
+    assert card["kind"] == "ideas"
+    assert [i["content"] for i in card["data"]["ideas"]] == ["build a treehouse"]
+    assert card["intent"] == "recall_ideas"
+    assert len(ch.sent) == 1
+
+
+def test_no_notes_and_no_ideas_still_emit_cards():
+    # the card is how the page knows to draw an empty state rather than falling
+    # back to a prose bubble
+    ch = CollectingChannel()
+    asyncio.run(notes_plugin.handle(
+        "recall_notes", Ctx(user_id=1, channel=ch, content="", tags=[])))
+    assert ch.cards[0]["data"]["notes"] == []
+    assert ch.sent == ["No notes found."]
+
+    ch2 = CollectingChannel()
+    asyncio.run(notes_plugin.handle("recall_ideas", Ctx(user_id=1, channel=ch2)))
+    assert ch2.cards[0]["data"]["ideas"] == []
+    assert ch2.sent == ["No ideas saved."]

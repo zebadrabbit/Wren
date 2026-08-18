@@ -53,19 +53,36 @@ async def handle(intent: str, ctx: Ctx) -> None:
             # when the note was saved — fall back to an unfiltered search
             # rather than falsely reporting no notes at all
             matches = notes.search(ctx.user_id, tags=None)
-        if not matches:
-            await ctx.channel.send("No notes found.")
-        elif ctx.content.strip():
-            # a specific question — let the LLM answer using the notes
-            summary = brain.recall(matches, ctx.content)
-            await ctx.channel.send(summary)
+        if ctx.content.strip():
+            # a specific question — let the LLM answer using the notes. NOT a
+            # card: a card re-dispatches this intent to refresh itself, which
+            # would put an LLM call behind every render and every page reload.
+            if not matches:
+                await ctx.channel.send("No notes found.")
+            else:
+                summary = brain.recall(matches, ctx.content)
+                await ctx.channel.send(summary)
         else:
-            # a plain "show me everything" request — list notes directly,
-            # one per message, rather than routing a bare listing through
-            # the LLM (which tends to just recite them back poorly formatted)
-            for n in matches:
-                tag_suffix = f" (tags: {n['tags']})" if n["tags"] else ""
-                await ctx.channel.send(f"[{n['created_at'][:10]}] {n['content']}{tag_suffix}")
+            rows = [{"content": n["content"],
+                     "tags": [t for t in n["tags"].split(",") if t],
+                     "created_at": n["created_at"]}
+                    for n in matches]
+            if rows:
+                text = "\n".join(
+                    f"[{n['created_at'][:10]}] {n['content']}"
+                    + (f" (tags: {n['tags']})" if n["tags"] else "")
+                    for n in matches)
+            else:
+                text = "No notes found."
+            # One message, not one per note: a wall of separate messages is what
+            # the card replaces, and Discord/Telegram get the same relief.
+            await ctx.channel.send_card(
+                "notes", {"notes": rows}, text,
+                intent="recall_notes",
+                # the tags ride along so a filtered card stays filtered when it
+                # re-renders later; content stays empty for the reason above
+                params={"content": "", "tags": list(ctx.tags or [])},
+            )
 
     elif intent == "save_idea":
         if not ctx.content.strip():
@@ -76,11 +93,12 @@ async def handle(intent: str, ctx: Ctx) -> None:
 
     elif intent == "recall_ideas":
         ideas = notes.search(ctx.user_id, tags=["idea"])
-        if not ideas:
-            await ctx.channel.send("No ideas saved.")
-        else:
-            for i in ideas:
-                await ctx.channel.send(f"- {i['content']}")
+        rows = [{"content": i["content"], "created_at": i["created_at"]} for i in ideas]
+        text = "\n".join(f"- {i['content']}" for i in ideas) if ideas else "No ideas saved."
+        await ctx.channel.send_card(
+            "ideas", {"ideas": rows}, text,
+            intent="recall_ideas", params={"content": ""},
+        )
 
     elif intent == "discard_idea":
         if not ctx.content.strip():
