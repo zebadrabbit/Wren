@@ -36,7 +36,10 @@ def pending(owner_id: int) -> list[dict]:
 
 def find_pending(owner_id: int, substring: str) -> list[dict]:
     needle = substring.lower()
-    return [r for r in pending(owner_id) if needle in r["content"].lower()]
+    hits = [r for r in pending(owner_id) if needle in r["content"].lower()]
+    # exact wins, same reason as notes_store.find
+    exact = [r for r in hits if r["content"].strip().lower() == substring.strip().lower()]
+    return exact if len(exact) == 1 else hits
 
 def cancel(reminder_id: int) -> bool:
     with db.conn() as con:

@@ -57,4 +57,10 @@ def delete(note_id: int) -> bool:
 def find(owner_id: int, substring: str, tags: list[str] | None = None) -> list[dict]:
     results = search(owner_id, tags=tags)
     needle = substring.lower()
-    return [r for r in results if needle in r["content"].lower()]
+    hits = [r for r in results if needle in r["content"].lower()]
+    # An exact match wins outright. The phrase usually comes from the model, but
+    # it also comes from a card button sending a row's own text -- and there,
+    # "build a treehouse" must not read as ambiguous just because "build a
+    # treehouse with a rope ladder" also exists. Substring stays the fallback.
+    exact = [r for r in hits if r["content"].strip().lower() == substring.strip().lower()]
+    return exact if len(exact) == 1 else hits

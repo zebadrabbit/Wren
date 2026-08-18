@@ -74,3 +74,26 @@ def test_find_respects_owner_scope():
     notes.save(2, "treehouse for them", ["idea"])
     results = notes.find(1, "treehouse", tags=["idea"])
     assert len(results) == 1
+
+def test_find_prefers_an_exact_match_over_a_longer_substring_match():
+    # A card's discard button sends the row's own text. Without this, clicking
+    # "build a treehouse" while "build a treehouse with a rope ladder" also
+    # exists matches both, and the skill refuses as ambiguous.
+    notes.save(1, "build a treehouse", ["idea"])
+    notes.save(1, "build a treehouse with a rope ladder", ["idea"])
+
+    found = notes.find(1, "build a treehouse", tags=["idea"])
+    assert [n["content"] for n in found] == ["build a treehouse"]
+
+
+def test_find_is_still_a_substring_search_when_nothing_matches_exactly():
+    notes.save(1, "build a treehouse with a rope ladder", ["idea"])
+    found = notes.find(1, "treehouse", tags=["idea"])
+    assert [n["content"] for n in found] == ["build a treehouse with a rope ladder"]
+
+
+def test_find_exact_match_ignores_case():
+    notes.save(1, "Build A Treehouse", ["idea"])
+    notes.save(1, "build a treehouse with a rope ladder", ["idea"])
+    found = notes.find(1, "build a treehouse", tags=["idea"])
+    assert [n["content"] for n in found] == ["Build A Treehouse"]

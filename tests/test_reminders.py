@@ -41,6 +41,19 @@ def test_find_pending_excludes_cancelled():
     reminders.cancel(reminder_id)
     assert reminders.find_pending(1, "oven") == []
 
+def test_find_pending_prefers_an_exact_match():
+    reminders.save(1, "call mum", "2030-01-01T09:00:00+00:00")
+    reminders.save(1, "call mum about the car", "2030-01-01T10:00:00+00:00")
+
+    found = reminders.find_pending(1, "call mum")
+    assert [r["content"] for r in found] == ["call mum"]
+
+
+def test_find_pending_still_substring_matches_when_no_exact_match():
+    reminders.save(1, "call mum about the car", "2030-01-01T10:00:00+00:00")
+    found = reminders.find_pending(1, "the car")
+    assert [r["content"] for r in found] == ["call mum about the car"]
+
 def test_cancel_returns_true_and_marks_cancelled():
     reminder_id = reminders.save(1, "check the oven", "2026-07-12T21:00:00+00:00")
     assert reminders.cancel(reminder_id) is True
