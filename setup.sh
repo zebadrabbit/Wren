@@ -42,7 +42,7 @@ prompt_numeric() {
 }
 
 # 2. core values
-prompt SURFACES "Surfaces to enable, comma-separated (discord, http)" "discord"
+prompt SURFACES "Communication plugins to enable, comma-separated (discord, http, telegram)" "discord"
 
 DISCORD_TOKEN=""
 if [[ ",${SURFACES// /}," == *",discord,"* ]]; then
@@ -152,7 +152,7 @@ if [ -f .env ]; then
 fi
 
 {
-    echo "SURFACES=$SURFACES"
+    echo "COMMUNICATION_PLUGINS=$SURFACES"
     if [ -n "$DISCORD_TOKEN" ]; then
         echo "DISCORD_TOKEN=$DISCORD_TOKEN"
     fi
