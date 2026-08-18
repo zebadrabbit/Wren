@@ -140,8 +140,12 @@ the model sees the same transcript it sees today and knows nothing about cards.
 This repo has no migration precedent — every `init_db` is `CREATE TABLE IF NOT
 EXISTS`. `conversations.init_db()` establishes the first one: check
 `PRAGMA table_info(messages)` for the column, `ALTER TABLE messages ADD COLUMN
-card TEXT` when absent. Idempotent, and safe on the live database, which already
-holds real conversations.
+card TEXT` when absent. Idempotent, so a restart re-runs it harmlessly.
+
+No backup or rollback ceremony around it: this is a single-user install whose
+data is being lived in to feel the product out, not defended. That is a
+deliberate risk posture, not an oversight — if this ever grows a second user,
+revisit it before the next schema change.
 
 ### `POST /api/dispatch`
 
@@ -216,9 +220,12 @@ tags are in the payload, so filtering needs no round trip. Note deletion is out
 of scope — `notes_store.delete` exists but no *intent* exposes it, and inventing
 an endpoint for it would breach the "intent dispatch is the API" decision.
 
-**`ideas`** — same shape as `notes`, plus `discard_idea` and `expand_idea` per
-row. `expand_idea` calls the LLM and is the one card action that is slow; it
-must show a pending state.
+**`ideas`** — same shape as `notes`, plus `discard_idea` per row.
+
+`expand_idea` is deliberately absent. It is the only skill action in the first
+cut that calls the LLM, so putting it on a card would drag in a pending state,
+a timeout, and a partial-failure path for one button. Ask for it in prose
+instead; the card stays a thing where every control returns in a DB round trip.
 
 **`reminders`** — `{"reminders": [{"content": str, "fire_at": str, "local": str}]}`
 
@@ -234,7 +241,6 @@ no timezone maths.
 | Dispatch fails mid-action | Re-render the card from the server's response and surface the skill's own error text. Never leave the row in a half-toggled state. |
 | Intent disabled between render and click | 404 from `/api/dispatch`; the card reports it and stops offering the control. |
 | Old message, `card` column null | Renders exactly as today. Every existing conversation keeps working untouched. |
-| `expand_idea` slow | Pending state on that row only; the rest of the card stays live. |
 | Two tabs open | Both are live views; each re-fetches after its own dispatch. Stale-but-clickable is impossible because the click returns fresh state. |
 
 ## Testing
@@ -269,6 +275,7 @@ Three slices, each independently shippable and independently useful:
 ## Explicitly not doing
 
 - Pins, contacts, web-search results as cards. Same shape, later.
+- `expand_idea` as a card control — see the ideas card above.
 - Note deletion (no intent exists for it).
 - Drag-to-reorder, or any card that writes an order.
 - Optimistic UI. Dispatch is a local DB write; add it only if measurement says
