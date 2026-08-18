@@ -9,7 +9,7 @@ the already-escaped string; these tests are what stop that ordering from being
 
 Skipped when node is absent — it is a dev-time check, not a runtime dependency.
 """
-import os, shutil, subprocess, pathlib, textwrap
+import os, re, shutil, subprocess, pathlib, tempfile, textwrap
 os.environ.setdefault("DISCORD_TOKEN", "test")
 os.environ.setdefault("WREN_OWNER_ID", "1")
 os.environ.setdefault("LLM_PROVIDERS", "lmstudio")
@@ -547,3 +547,68 @@ def test_bubbles_carry_a_copyable_speaker_label():
     assert '"Wren: "' in block and '"You: "' in block, "copied transcripts lose attribution"
     assert 'class="sr"' in block
     assert "display: none" not in src[src.index(".sr {"):src.index(".sr {") + 200]
+
+
+def test_the_undo_window_is_a_named_constant():
+    # a bare 8000 buried in a handler is the kind of number nobody dares change
+    src = PAGE.read_text(encoding="utf-8")
+    assert "const UNDO_MS =" in src
+    assert "setTimeout(() => guarded(() => refresh(r)), UNDO_MS)" in src
+
+
+def test_undo_restores_rather_than_re_adding():
+    # re-adding INSERTs a second row and inflates the "you often get"
+    # suggestions; restore_shopping_item flips the original row back
+    src = PAGE.read_text(encoding="utf-8")
+    block = _shopping_card_source()
+    assert "restore_shopping_item" in block
+    assert "add_shopping_item" not in block.split(".cundo")[1].split("mount.querySelector")[0]
+
+
+def test_the_removed_row_lingers_before_it_goes():
+    # the row is marked, not dropped, so there is something to undo on
+    block = _shopping_card_source()
+    assert 'li.classList.add("cgone")' in block
+    assert 'class="cundo"' in block
+
+
+def test_the_card_is_styled_from_the_palette_not_raw_colours():
+    # the card must follow the theme, including dark mode, which it only does
+    # if every colour is a token
+    src = PAGE.read_text(encoding="utf-8")
+    start = src.index(".card { border:")
+    block = src[start:src.index("/* ── landing", start)]
+    assert "var(--panel)" in block and "var(--muted)" in block
+    assert "#" not in block, "a raw colour literal in the card CSS breaks dark mode"
+
+
+def test_the_page_javascript_actually_parses():
+    """The one test in this file that is not a substring check.
+
+    Every other test here greps chat.html's source, which cannot tell working
+    code from a syntax error -- a broken page still contains all the right
+    substrings. This was not hypothetical: a stray escape once turned the card
+    section's opening lines into a single comment, breaking the whole page with
+    `Uncaught SyntaxError`, and the full suite stayed green. node is already on
+    this box; skip rather than fail where it is not, so the suite stays
+    portable.
+    """
+    node = shutil.which("node") or shutil.which("nodejs")
+    if node is None:
+        pytest.skip("node not installed; cannot parse-check the page JS")
+
+    src = PAGE.read_text(encoding="utf-8")
+    blocks = re.findall(r"<script>(.*?)</script>", src, re.S)
+    assert blocks, "no <script> block found in chat.html"
+
+    for i, js in enumerate(blocks):
+        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as fh:
+            fh.write(js)
+            path = fh.name
+        try:
+            done = subprocess.run([node, "--check", path],
+                                  capture_output=True, text=True)
+        finally:
+            os.unlink(path)
+        assert done.returncode == 0, (
+            f"<script> block {i} does not parse:\n{done.stderr}")
