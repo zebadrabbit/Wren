@@ -722,3 +722,105 @@ def test_dispatch_writes_nothing_to_any_conversation():
 
     _, reloaded = call("get", f"/api/conversations/{convo['id']}", token=TOKEN_A)
     assert reloaded["messages"] == []
+
+
+# ── dispatch fix round 1 ────────────────────────────────────────────────────
+
+def test_dispatch_rejects_malformed_tags():
+    # a non-str element, not just a non-list container -- notes_store does
+    # ",".join(tags), which TypeErrors on either shape below if this were
+    # allowed through
+    status, _ = call("post", "/api/dispatch", token=TOKEN_A,
+                     json={"intent": "recall_shopping", "tags": [1, 2]})
+    assert status == 400
+
+    status, _ = call("post", "/api/dispatch", token=TOKEN_A,
+                     json={"intent": "recall_shopping", "tags": [["a"]]})
+    assert status == 400
+
+
+def test_dispatch_rejects_bad_person_or_when_types():
+    status, _ = call("post", "/api/dispatch", token=TOKEN_A,
+                     json={"intent": "recall_shopping", "person": 1})
+    assert status == 400
+
+    status, _ = call("post", "/api/dispatch", token=TOKEN_A,
+                     json={"intent": "recall_shopping", "when": 1})
+    assert status == 400
+
+
+def test_dispatch_surfaces_a_skill_error_as_json_not_a_500_crash_page():
+    # core.handle_message hides the reason behind "something went wrong" --
+    # it has no better place to put it. This endpoint has one: the caller
+    # gets the skill's own error text back as JSON, not a text/plain crash
+    # page that would ContentTypeError the browser's fetch().
+    async def fake_handle(intent, ctx):
+        raise RuntimeError("boom")
+
+    plugin = MagicMock()
+    plugin.__name__ = "wren.fake_shopping_skill"
+    plugin.handle = fake_handle
+    with patch.dict(registry.INTENT_HANDLERS, {"recall_shopping": plugin}):
+        status, body = call("post", "/api/dispatch", token=TOKEN_A,
+                            json={"intent": "recall_shopping"})
+    assert status == 500
+    assert body["error"] == "boom"
+
+
+def test_dispatch_passes_person_and_when_into_ctx():
+    # set_reminder, send_shopping_list and add_contact all read ctx.person /
+    # ctx.when -- dropping these from Ctx makes them undriveable through here
+    calls = []
+
+    async def fake_handle(intent, ctx):
+        calls.append((ctx.person, ctx.when))
+
+    plugin = MagicMock()
+    plugin.__name__ = "wren.fake_shopping_skill"
+    plugin.handle = fake_handle
+    with patch.dict(registry.INTENT_HANDLERS, {"recall_shopping": plugin}):
+        status, _ = call("post", "/api/dispatch", token=TOKEN_A,
+                         json={"intent": "recall_shopping", "person": "ann",
+                              "when": "tomorrow"})
+    assert status == 200
+    assert calls == [("ann", "tomorrow")]
+
+
+def test_dispatch_card_carries_intent_and_params_for_a_refresh():
+    # a card dispatched via a button must be exactly as refreshable as one
+    # that arrived from chat -- trimming intent/params here would make a
+    # button-driven card unable to re-read itself
+    async def fake_handle(intent, ctx):
+        await ctx.channel.send_card("shopping", {"items": []}, "Shopping list is empty.",
+                                    intent="recall_shopping", params={"content": ""})
+
+    plugin = MagicMock()
+    plugin.__name__ = "wren.fake_shopping_skill"
+    plugin.handle = fake_handle
+    with patch.dict(registry.INTENT_HANDLERS, {"recall_shopping": plugin}):
+        status, body = call("post", "/api/dispatch", token=TOKEN_A,
+                            json={"intent": "recall_shopping"})
+    assert status == 200
+    assert body["cards"] == [{
+        "kind": "shopping",
+        "data": {"items": []},
+        "intent": "recall_shopping",
+        "params": {"content": ""},
+    }]
+
+
+def test_dispatch_returns_files_from_a_send_file_intent():
+    # export_notes calls send_file; without a "files" key that intent
+    # produces no output at all through this door
+    async def fake_handle(intent, ctx):
+        await ctx.channel.send_file(b"hello", "notes.md")
+
+    plugin = MagicMock()
+    plugin.__name__ = "wren.fake_shopping_skill"
+    plugin.handle = fake_handle
+    with patch.dict(registry.INTENT_HANDLERS, {"export_notes": plugin}):
+        status, body = call("post", "/api/dispatch", token=TOKEN_A,
+                            json={"intent": "export_notes"})
+    assert status == 200
+    assert body["files"] == [{"filename": "notes.md",
+                              "data": base64.b64encode(b"hello").decode("ascii")}]

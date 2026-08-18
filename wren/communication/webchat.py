@@ -310,16 +310,40 @@ def register_routes(app: web.Application, authenticate) -> None:
 
         content = body.get("content") or ""
         tags = body.get("tags") or []
-        if not isinstance(content, str) or not isinstance(tags, list):
-            return web.json_response({"error": "bad 'content' or 'tags'"}, status=400)
+        person = body.get("person")
+        when = body.get("when")
+        if (not isinstance(content, str)
+                or not isinstance(tags, list) or not all(isinstance(t, str) for t in tags)
+                or (person is not None and not isinstance(person, str))
+                or (when is not None and not isinstance(when, str))):
+            # tags elements matter, not just the container: notes_store does
+            # ",".join(tags), which TypeErrors on a non-str element -- a 500
+            # from a crafted body, same class of bug _json_object guards
+            # against for the body itself.
+            return web.json_response({"error": "bad 'content', 'tags', 'person' or 'when'"},
+                                     status=400)
 
         channel = CollectingChannel()
-        ctx = Ctx(user_id=user_id, channel=channel, content=content, tags=tags)
-        await plugin.handle(intent, ctx)
+        ctx = Ctx(user_id=user_id, channel=channel, content=content, tags=tags,
+                  person=person, when=when)
+        try:
+            await plugin.handle(intent, ctx)
+        except Exception as e:
+            # Mirrors core.handle_message's except clause in shape (log, then
+            # tell the caller) but not in payload: a chat reply hides the
+            # reason behind "something went wrong, try again" because it has
+            # nowhere better to put it, but a card button needs the reason
+            # back so it can show why the click failed instead of hanging.
+            logging.error(f"Error dispatching {intent} for {user_id}: {e}")
+            return web.json_response({"error": str(e)}, status=500)
 
         return web.json_response({
-            "cards": [{"kind": c["kind"], "data": c["data"]} for c in channel.cards],
+            "cards": channel.cards,
             "replies": channel.sent,
+            "files": [
+                {"filename": name, "data": base64.b64encode(data).decode("ascii")}
+                for data, name in channel.files
+            ],
         })
 
     async def get_me(request):
