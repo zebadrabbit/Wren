@@ -159,20 +159,54 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .msg a { color: var(--accent); }
 .msg ul { padding-left: 20px; margin: 6px 0; }
 .msg .dl { display: inline-block; margin-top: 6px; color: var(--accent); }
-.card { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
-.card header { padding: .5rem .75rem; font-weight: 600; border-bottom: 1px solid var(--line); }
+/* Card surfaces follow the panel idiom: paper ground, hairline border, the
+   soft shadow. Rows borrow .convo's controls -- muted, quiet until hover. */
+.card { border: 1px solid var(--line); border-radius: 14px; background: var(--panel);
+        box-shadow: var(--shadow); overflow: hidden; }
+.card header {
+  padding: 10px 14px; font-size: 13px; font-weight: 600; color: var(--muted);
+  border-bottom: 1px solid var(--line); letter-spacing: .01em;
+}
 .card ul { list-style: none; margin: 0; padding: 0; }
-.card li { display: flex; align-items: center; gap: .5rem; padding: .4rem .75rem; }
+.card li { display: flex; align-items: center; gap: 8px; padding: 8px 14px; }
 .card li + li { border-top: 1px solid var(--line); }
-.card .citem { flex: 1; }
-.card .cx { background: none; border: 0; cursor: pointer; opacity: .6; }
-.card .cx:hover { opacity: 1; }
-.card .cx:disabled { opacity: .3; cursor: default; }
-.card .cempty, .card .csugg { margin: 0; padding: .5rem .75rem; opacity: .7; }
-.card .cstatus { margin: 0; padding: .4rem .75rem; font-size: 13px; opacity: .75;
-                 border-top: 1px solid var(--line); }
-.card .cadd { display: flex; gap: .5rem; padding: .5rem .75rem; border-top: 1px solid var(--line); }
-.card .cadd input { flex: 1; }
+.card li:hover { background: var(--wash); }
+.card .citem { flex: 1; overflow-wrap: anywhere; }
+.card .cx, .card .cundo {
+  border: 0; background: transparent; color: var(--muted); padding: 2px 6px;
+  border-radius: 4px; font-size: 13px; line-height: 1; cursor: pointer;
+}
+/* Deliberately NOT .convo's opacity:0 -- renaming a chat is a rare action you
+   can hunt for, ticking something off a shopping list is the whole point of
+   the card, and a control that only exists on hover does not exist on a
+   phone. Dimmed, not hidden. */
+.card .cx { opacity: .5; }
+.card li:hover .cx, .card .cx:focus-visible { opacity: 1; }
+.card .cx:hover { background: var(--line); color: var(--alert); }
+.card .cx:disabled { opacity: .25; cursor: default; }
+/* A row waiting out its undo window: still in place, visibly on its way out. */
+.card li.cgone { opacity: .55; }
+.card li.cgone .citem { text-decoration: line-through; }
+.card li.cgone .cundo { color: var(--accent); font-weight: 600; }
+.card .cundo:hover { background: var(--wash); }
+.card .cempty, .card .csugg {
+  margin: 0; padding: 10px 14px; color: var(--muted); font-size: 13px;
+}
+.card .cstatus {
+  margin: 0; padding: 8px 14px; font-size: 13px; color: var(--muted);
+  border-top: 1px solid var(--line);
+}
+.card .cadd {
+  display: flex; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--line);
+}
+.card .cadd input {
+  flex: 1; border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px;
+  background: var(--bg); color: var(--text); font: inherit;
+}
+.card .cadd button {
+  border: 0; border-radius: 8px; padding: 6px 12px; font: inherit;
+  background: var(--accent); color: var(--accent-fg);
+}
 /* ── landing ───────────────────────────────────────────────────────────── */
 #landing { text-align: center; margin-top: 14vh; }
 .landmark { width: 28px; height: 28px; display: block; margin: 0 auto 10px; }
@@ -541,6 +575,10 @@ function cardStatus(mount, msg) {
   el.hidden = !msg;
 }
 
+// How long a removed row lingers with its undo button before the card
+// tidies itself. Tune here; nothing else depends on the value.
+const UNDO_MS = 8000;
+
 function shoppingCard(data, mount) {
   const items = data.items || [];
   const rows = items.map(i =>
@@ -578,6 +616,16 @@ function shoppingCard(data, mount) {
     }
   }
 
+  // Run the refresh under the same in-flight flag the handlers use, so a
+  // timer firing mid-dispatch cannot redraw over a newer response.
+  async function guarded(fn) {
+    if (mount._busy) return;
+    mount._busy = true;
+    try { await fn(); }
+    catch (e) { cardStatus(mount, e.message || "Something went wrong."); }
+    finally { mount._busy = false; }
+  }
+
   for (const b of mount.querySelectorAll(".cx")) {
     b.onclick = async () => {
       // F3: serialise dispatches per card -- an in-flight flag on the mount
@@ -587,14 +635,29 @@ function shoppingCard(data, mount) {
       if (mount._busy) return;
       mount._busy = true;
       b.disabled = true;
+      const item = b.dataset.item;          // read before the button is replaced
       try {
-        const r = await dispatch("remove_shopping_item", { content: b.dataset.item });
-        await refresh(r);
+        const r = await dispatch("remove_shopping_item", { content: item });
+        // The removal has ALREADY happened server-side. The row lingers only
+        // as an undo affordance -- deferring the write until the timer
+        // expired would mean closing the tab silently cancelled the removal,
+        // and would leave a second browser showing a row this one has binned.
+        const li = b.closest("li");
+        li.classList.add("cgone");
+        b.outerHTML = '<button class="cundo" title="put it back">\u2190</button>';
+        const timer = setTimeout(() => guarded(() => refresh(r)), UNDO_MS);
+        li.querySelector(".cundo").onclick = () => {
+          clearTimeout(timer);
+          return guarded(async () => {
+            const back = await dispatch("restore_shopping_item", { content: item });
+            await refresh(back);
+          });
+        };
       } catch (e) {
         cardStatus(mount, e.message || "Something went wrong.");
+        b.disabled = false;
       } finally {
         mount._busy = false;
-        b.disabled = false;
       }
     };
   }
