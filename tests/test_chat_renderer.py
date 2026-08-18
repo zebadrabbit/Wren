@@ -522,7 +522,14 @@ def test_card_refresh_guards_against_an_empty_cards_array():
     # source order -- it cannot prove the access is unreachable when the
     # guard is false, only that a bare `renderCard(..., fresh.cards[0]...)`
     # with no preceding check is no longer what the source contains.
-    block = _shopping_card_source()
+    #
+    # The guard now lives in cardShell's refresh(), not shoppingCard's own
+    # source -- shared across all four cards instead of duplicated per card --
+    # so this reads cardShell's body rather than _shopping_card_source().
+    src = PAGE.read_text(encoding="utf-8")
+    start = src.index("function cardShell(")
+    end = src.index("\nfunction ", start + 1)
+    block = src[start:end]
     guard_at = block.index("fresh.cards && fresh.cards.length")
     access_at = block.index("fresh.cards[0]")
     assert guard_at < access_at, "cards[0] is reached before the emptiness guard"
@@ -622,12 +629,20 @@ def test_every_card_kind_has_a_renderer():
 
 
 def test_the_card_scaffolding_is_shared_not_copied():
-    # four cards needing the same busy flag, status line and refresh is three
-    # copies waiting to drift apart
+    # Four cards need the same serialised dispatch, status line and refresh.
+    # The property that matters is that they share ONE definition -- counting
+    # occurrences of a particular line measured the file's text, not its
+    # structure, and could not distinguish sharing from moving.
     src = PAGE.read_text(encoding="utf-8")
-    assert "function cardShell(" in src
-    assert src.count("mount._busy = true") <= 2, (
-        "busy handling looks copied per card rather than shared in cardShell")
+
+    def body(name):
+        start = src.index(f"function {name}(")
+        nxt = src.find("\nfunction ", start + 1)
+        return src[start:nxt if nxt != -1 else len(src)]
+
+    assert src.count("function cardShell(") == 1, "the scaffolding is defined more than once"
+    for fn in ("shoppingCard", "ideasCard", "remindersCard"):
+        assert "cardShell(" in body(fn), f"{fn} does not use the shared scaffolding"
 
 
 def test_the_notes_card_filters_tags_without_a_round_trip():
