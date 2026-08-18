@@ -233,6 +233,42 @@ Cancel dispatches `cancel_reminder` with a phrase identifying the row. Times are
 formatted server-side by the skill's existing `_format_local`, so the card does
 no timezone maths.
 
+## Large collections: summarise in prose, show everything in a card
+
+Decided 2026-08-17, after a whole-branch review measured a 40-note recall at
+3589 characters — past Discord's 2000-character ceiling, and past what anyone
+wants to read on a phone regardless of ceilings.
+
+Message chunking (each plugin splitting at its own platform's limit) makes a
+dump *deliverable*. It does not make it *readable*. So the collection size is
+handled once, in the skill, as a content judgment:
+
+- **Card surfaces get every row.** A card is scrollable and the notes card
+  filters by tag client-side with no round trip, so "everything" is exactly
+  right there. The card never summarises and never needs a second request to
+  show the rest.
+- **Text surfaces get a summary once a collection passes ~15 items** — a tag
+  breakdown and an invitation to narrow ("47 notes: house 12, work 20, kids 9,
+  untagged 6. Which?"). Narrowing already works: "show my work notes" sets
+  `tags` and takes the normal filtered path.
+
+**Why this is not a skill knowing about transports.** The skill is not reacting
+to 2000 or 4096; it is judging that prose is linear and unfilterable, so past
+some size a summary is simply the better answer. Platform limits stay in the
+plugins, where each communication plugin handles messages per its own platform.
+The two mechanisms are complementary: this one is the fix, chunking is the net
+underneath it.
+
+**Threshold: item count, ~15.** Chosen over a character budget because a count
+is predictable, explicable in a comment, and something a user can reason about;
+a byte budget makes ten long notes behave differently from thirty short ones for
+reasons invisible from the outside.
+
+**Scope: notes and ideas only.** The shopping list is self-limiting and
+`recall_reminders` lists only pending ones. Notes and ideas are the sole
+unbounded collections — `export_notes` exists precisely because the corpus is
+expected to grow.
+
 ## Failure modes
 
 | | |
