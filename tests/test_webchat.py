@@ -749,13 +749,15 @@ def test_dispatch_rejects_bad_person_or_when_types():
     assert status == 400
 
 
-def test_dispatch_surfaces_a_skill_error_as_json_not_a_500_crash_page():
-    # core.handle_message hides the reason behind "something went wrong" --
-    # it has no better place to put it. This endpoint has one: the caller
-    # gets the skill's own error text back as JSON, not a text/plain crash
-    # page that would ContentTypeError the browser's fetch().
+def test_dispatch_reports_a_skill_error_as_json_without_leaking_the_exception_text():
+    # a raised exception is not the skill's own error text (that arrives via
+    # channel.send() into `replies` with a 200) -- it's an unanticipated
+    # crash, and library exception strings are not safe to echo verbatim
+    # (brain._complete re-raises the provider client's exception, which can
+    # carry a base_url or a hosted provider's response body). The message
+    # below stands in for that: something that must never reach the wire.
     async def fake_handle(intent, ctx):
-        raise RuntimeError("boom")
+        raise RuntimeError("token=sk-fake-abc123 at http://internal.example/v1")
 
     plugin = MagicMock()
     plugin.__name__ = "wren.fake_shopping_skill"
@@ -764,7 +766,9 @@ def test_dispatch_surfaces_a_skill_error_as_json_not_a_500_crash_page():
         status, body = call("post", "/api/dispatch", token=TOKEN_A,
                             json={"intent": "recall_shopping"})
     assert status == 500
-    assert body["error"] == "boom"
+    assert "sk-fake-abc123" not in body["error"]
+    assert "internal.example" not in body["error"]
+    assert body["error"] == "Something went wrong, try again."
 
 
 def test_dispatch_passes_person_and_when_into_ctx():

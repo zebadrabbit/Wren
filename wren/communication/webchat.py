@@ -329,13 +329,20 @@ def register_routes(app: web.Application, authenticate) -> None:
         try:
             await plugin.handle(intent, ctx)
         except Exception as e:
-            # Mirrors core.handle_message's except clause in shape (log, then
-            # tell the caller) but not in payload: a chat reply hides the
-            # reason behind "something went wrong, try again" because it has
-            # nowhere better to put it, but a card button needs the reason
-            # back so it can show why the click failed instead of hanging.
+            # Mirrors core.handle_message's except clause in shape: log the
+            # real exception server-side, tell the caller only that it
+            # failed. NOT str(e) -- an exception is not the skill's own error
+            # text (that arrives via channel.send() into `replies` with a
+            # 200, e.g. web_skill's "Search is unavailable right now."); it
+            # is a crash the skill did not anticipate, and library exception
+            # text is not safe to echo verbatim. brain._complete re-raises
+            # the provider client's exception on an LLM outage, and that can
+            # carry the configured base_url or a hosted provider's response
+            # body -- the same class of leak telegram_plugin.py already had
+            # to scrub a bot token out of once.
             logging.error(f"Error dispatching {intent} for {user_id}: {e}")
-            return web.json_response({"error": str(e)}, status=500)
+            return web.json_response({"error": "Something went wrong, try again."},
+                                     status=500)
 
         return web.json_response({
             "cards": channel.cards,
