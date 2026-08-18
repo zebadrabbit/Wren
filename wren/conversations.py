@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 
 from . import db
@@ -25,6 +26,14 @@ def init_db() -> None:
                 created_at      TEXT NOT NULL
             )
         """)
+        # The repo's first migration. Everything else here is CREATE TABLE IF
+        # NOT EXISTS, which cannot add a column to a table that already exists —
+        # and this one does exist, with real conversations in it. Additive and
+        # nullable, so every row written before today reads back as card=None.
+        cols = {row[1] for row in con.execute("PRAGMA table_info(messages)")}
+        if "card" not in cols:
+            con.execute("ALTER TABLE messages ADD COLUMN card TEXT")
+
         con.execute("CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id, id)")
         con.execute("CREATE INDEX IF NOT EXISTS idx_conv_owner ON conversations(owner_id, updated_at DESC)")
 
@@ -114,13 +123,16 @@ def touch(conversation_id: int, owner_id: int) -> None:
         )
 
 
-def add_message(conversation_id: int, role: str, content: str) -> int:
+def add_message(conversation_id: int, role: str, content: str,
+                card: dict | None = None) -> int:
     if role not in ("user", "assistant"):
         raise ValueError(f"role must be 'user' or 'assistant', got {role!r}")
     with db.conn() as con:
         cur = con.execute(
-            "INSERT INTO messages (conversation_id, role, content, created_at) VALUES (?,?,?,?)",
-            (conversation_id, role, content, _now()),
+            "INSERT INTO messages (conversation_id, role, content, created_at, card) "
+            "VALUES (?,?,?,?,?)",
+            (conversation_id, role, content, _now(),
+             json.dumps(card) if card is not None else None),
         )
         return cur.lastrowid
 
@@ -133,7 +145,7 @@ def messages(conversation_id: int, before_id: int | None = None, limit: int | No
     model already receives that text separately — without this it would see it
     twice.
     """
-    sql = "SELECT id, role, content, created_at FROM messages WHERE conversation_id=?"
+    sql = "SELECT id, role, content, created_at, card FROM messages WHERE conversation_id=?"
     params: list = [conversation_id]
     if before_id is not None:
         sql += " AND id < ?"
@@ -150,6 +162,10 @@ def messages(conversation_id: int, before_id: int | None = None, limit: int | No
     if limit is not None:
         rows = list(reversed(rows))
     return [
-        {"id": r[0], "role": r[1], "content": r[2], "created_at": r[3]}
+        {"id": r[0], "role": r[1], "content": r[2], "created_at": r[3],
+         # stored as JSON text; callers want the object. A row written before
+         # this column existed is NULL, which must read back as None and not
+         # as the string "null".
+         "card": json.loads(r[4]) if r[4] else None}
         for r in rows
     ]

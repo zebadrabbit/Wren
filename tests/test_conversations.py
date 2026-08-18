@@ -6,6 +6,7 @@ os.environ.setdefault("LMSTUDIO_BASE_URL", "http://test")
 os.environ.setdefault("LMSTUDIO_MODEL", "test-model")
 
 import itertools
+import json
 
 from wren import conversations
 from wren import db
@@ -386,3 +387,50 @@ def test_touch_by_another_owner_does_not_reorder_the_owners_list(clock):
     conversations.touch(alice_old, BOB)
 
     assert [r["id"] for r in conversations.list_for(ALICE)] == [alice_new, alice_old]
+
+
+def test_add_message_stores_and_returns_a_card():
+    convo = conversations.create(1)
+    conversations.add_message(convo, "assistant", "milk, eggs",
+                              card={"kind": "shopping", "intent": "recall_shopping",
+                                    "params": {"content": ""}})
+    row = conversations.messages(convo)[0]
+    assert row["content"] == "milk, eggs"
+    assert row["card"] == {"kind": "shopping", "intent": "recall_shopping",
+                           "params": {"content": ""}}
+
+
+def test_a_message_without_a_card_reads_back_as_none():
+    # every message written before this column existed takes this path
+    convo = conversations.create(1)
+    conversations.add_message(convo, "assistant", "hello")
+    assert conversations.messages(convo)[0]["card"] is None
+
+
+def test_init_db_adds_the_card_column_to_a_table_that_predates_it(tmp_path, monkeypatch):
+    monkeypatch.setenv("WREN_DB", str(tmp_path / "old.db"))
+    with db.conn() as con:
+        con.execute("""
+            CREATE TABLE messages (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                conversation_id INTEGER NOT NULL,
+                role            TEXT NOT NULL,
+                content         TEXT NOT NULL,
+                created_at      TEXT NOT NULL
+            )
+        """)
+        con.execute("INSERT INTO messages (conversation_id, role, content, created_at) "
+                    "VALUES (1, 'user', 'existing row', '2026-01-01T00:00:00+00:00')")
+
+    conversations.init_db()
+
+    with db.conn() as con:
+        cols = {r[1] for r in con.execute("PRAGMA table_info(messages)")}
+        kept = con.execute("SELECT content FROM messages").fetchone()
+    assert "card" in cols
+    assert kept[0] == "existing row"      # the migration must not drop anything
+
+
+def test_init_db_is_idempotent():
+    conversations.init_db()
+    conversations.init_db()               # must not raise "duplicate column name"
