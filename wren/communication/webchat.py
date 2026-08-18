@@ -1,5 +1,6 @@
 import base64
 import importlib
+import json
 import logging
 import pathlib
 import pkgutil
@@ -29,6 +30,7 @@ class WebChannel:
         self._before_id = before_id
         self.sent: list[str] = []
         self.files: list[tuple[bytes, str]] = []
+        self.cards: list[dict] = []
 
     async def send(self, text: str) -> None:
         self.sent.append(text)
@@ -37,6 +39,26 @@ class WebChannel:
     async def send_file(self, data: bytes, filename: str) -> None:
         # returned inline, not stored — matches what the machine API does
         self.files.append((data, filename))
+
+    async def send_card(self, kind: str, data: dict, text: str,
+                        *, intent: str = "", params: dict | None = None) -> None:
+        """`data` goes to the page for this render; `intent`+`params` are what
+        get stored, because that is what re-renders the card an hour from now.
+
+        intent/params are keyword-only and defaulted so this still satisfies the
+        Channel protocol, which knows nothing about them -- a surface that draws
+        cards needs them, and one that prints prose does not.
+        """
+        ref = {"kind": kind, "intent": intent, "params": params or {}}
+        # `text` rides along in the response but is NOT in `ref`, so it is not
+        # stored twice -- the messages row already holds it in `content`. The
+        # page needs it to draw the bubble a card sits in.
+        self.cards.append({**ref, "data": data, "text": text})
+        # Mirrors send()'s bookkeeping half so `replies` still carries the
+        # prose (a card-blind reader of the response sees a normal reply) --
+        # but not send()'s add_message call, which would double the row.
+        self.sent.append(text)
+        conversations.add_message(self._conversation_id, "assistant", text, card=ref)
 
     async def history(self, limit: int = HISTORY_LIMIT) -> list[dict] | None:
         rows = conversations.messages(
@@ -197,7 +219,8 @@ def register_routes(app: web.Application, authenticate) -> None:
         user_id = _auth(request)
         convo = _conversation_or_404(_id_from(request), user_id)
         convo["messages"] = [
-            {"role": m["role"], "content": m["content"], "created_at": m["created_at"]}
+            {"role": m["role"], "content": m["content"], "created_at": m["created_at"],
+             "card": m["card"]}
             for m in conversations.messages(convo["id"])
         ]
         return web.json_response(convo)
@@ -252,6 +275,7 @@ def register_routes(app: web.Application, authenticate) -> None:
                 {"filename": name, "data": base64.b64encode(data).decode("ascii")}
                 for data, name in channel.files
             ],
+            "cards": channel.cards,
         })
 
     async def get_me(request):

@@ -6,6 +6,7 @@ os.environ.setdefault("LMSTUDIO_BASE_URL", "http://test")
 os.environ.setdefault("LMSTUDIO_MODEL", "test-model")
 
 import base64
+from unittest.mock import patch
 from aiohttp.test_utils import TestClient, TestServer
 
 from wren import config
@@ -584,3 +585,64 @@ def test_established_conversation_renamed_to_new_chat_is_not_retitled(monkeypatc
     call("patch", f"/api/conversations/{cid}", token=TOKEN_A, json={"title": "New chat"})
     call("post", f"/api/conversations/{cid}/message", token=TOKEN_A, json={"text": "second"})
     assert call("get", f"/api/conversations/{cid}", token=TOKEN_A)[1]["title"] == "New chat"
+
+
+# ── cards ───────────────────────────────────────────────────────────────────
+
+def test_a_card_comes_back_in_the_message_response():
+    async def fake_handle(user_id, text, channel):
+        await channel.send_card(
+            "shopping", {"items": [{"text": "milk", "added_by": "ann"}]},
+            "milk", intent="recall_shopping", params={"content": ""})
+
+    _, convo = call("post", "/api/conversations", token=TOKEN_A)
+    with patch.object(core, "handle_message", new=fake_handle):
+        status, body = call("post", f"/api/conversations/{convo['id']}/message",
+                            token=TOKEN_A, json={"text": "what's on shopping"})
+    assert status == 200
+    assert body["replies"] == ["milk"]
+    assert body["cards"] == [{
+        "kind": "shopping",
+        "data": {"items": [{"text": "milk", "added_by": "ann"}]},
+        "intent": "recall_shopping",
+        "params": {"content": ""},
+        "text": "milk",
+    }]
+
+
+def test_a_card_survives_a_reload_but_its_rows_do_not():
+    # what is persisted is how to re-fetch, never the rows -- that is what makes
+    # a card live when you scroll back to it an hour later
+    async def fake_handle(user_id, text, channel):
+        await channel.send_card("shopping", {"items": [{"text": "milk"}]}, "milk",
+                                intent="recall_shopping", params={"content": ""})
+
+    _, convo = call("post", "/api/conversations", token=TOKEN_A)
+    with patch.object(core, "handle_message", new=fake_handle):
+        call("post", f"/api/conversations/{convo['id']}/message",
+             token=TOKEN_A, json={"text": "what's on shopping"})
+
+    _, reloaded = call("get", f"/api/conversations/{convo['id']}", token=TOKEN_A)
+    assistant = [m for m in reloaded["messages"] if m["role"] == "assistant"][0]
+    assert assistant["content"] == "milk"
+    assert assistant["card"] == {"kind": "shopping", "intent": "recall_shopping",
+                                 "params": {"content": ""}}
+    assert "data" not in assistant["card"]        # rows are never stored
+
+
+def test_the_model_does_not_see_cards():
+    # history() feeds brain.detect_intent; a card must be invisible there
+    async def fake_handle(user_id, text, channel):
+        await channel.send_card("shopping", {"items": [{"text": "milk"}]}, "milk",
+                                intent="recall_shopping", params={"content": ""})
+
+    _, convo = call("post", "/api/conversations", token=TOKEN_A)
+    with patch.object(core, "handle_message", new=fake_handle):
+        call("post", f"/api/conversations/{convo['id']}/message",
+             token=TOKEN_A, json={"text": "what's on shopping"})
+
+    channel = webchat.WebChannel(convo["id"], USER_A)
+    # asyncio.run, not get_event_loop().run_until_complete — the latter raises
+    # "no current event loop" on 3.12 outside a running loop
+    history = asyncio.run(channel.history())
+    assert all(set(m) == {"role", "content"} for m in history)
