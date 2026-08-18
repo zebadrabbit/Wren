@@ -72,11 +72,22 @@ def test_recall_reminders_lists_one_combined_message():
     # Changed from one-message-per-reminder: recall_reminders now emits a
     # single card, and CollectingChannel's send_card sends its combined
     # prose fallback as one message rather than one per row.
-    reminders.save(1, "check the oven", _future_iso(60))
-    reminders.save(1, "call mom", _future_iso(120))
+    oven_when = _future_iso(60)
+    mom_when = _future_iso(120)
+    reminders.save(1, "check the oven", oven_when)
+    reminders.save(1, "call mom", mom_when)
     ch = CollectingChannel()
     asyncio.run(reminder_plugin.handle("recall_reminders", Ctx(user_id=1, channel=ch, content="")))
     assert len(ch.sent) == 1
+    # Notes and ideas both assert their combined prose's content; reminders
+    # hadn't, despite this string now being the entire Discord/Telegram
+    # experience for recall_reminders. Times come from _format_local rather
+    # than a literal, so this doesn't fail on a host in another timezone.
+    combined = ch.sent[0]
+    assert "check the oven" in combined
+    assert "call mom" in combined
+    assert reminder_plugin._format_local(oven_when) in combined
+    assert reminder_plugin._format_local(mom_when) in combined
 
 
 def test_recall_reminders_emits_a_card_with_local_times():

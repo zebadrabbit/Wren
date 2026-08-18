@@ -20,6 +20,7 @@ import aiohttp
 from .. import config
 from .. import core
 from .. import router
+from . import chunking
 
 ROLE = "chat"          # "chat" | "input" | "output"
 PLUGIN_NAME = "Telegram"
@@ -105,24 +106,11 @@ async def _api(method: str, *, data=None):
 def _chunks(text: str) -> list[str]:
     """`text` split into pieces Telegram will accept, longest-first.
 
-    Cuts on the last line break that fits so a note dump breaks between lines
-    rather than mid-word, and falls back to a hard cut when one line is longer
-    than the whole ceiling. The break itself is dropped — it is the seam, and
-    keeping it would open the next message with a blank line.
+    The algorithm (why it cuts where it does) lives in chunking.chunks, shared
+    with every other plugin that has a message-length ceiling; only the
+    ceiling itself — Telegram's — is this module's.
     """
-    parts = []
-    while len(text) > _MAX_MESSAGE_CHARS:
-        # from 1, not 0: a leading newline would cut an empty first message,
-        # which is its own 400 ("text must be non-empty").
-        cut = text.rfind("\n", 1, _MAX_MESSAGE_CHARS + 1)
-        if cut < 1:
-            parts.append(text[:_MAX_MESSAGE_CHARS])
-            text = text[_MAX_MESSAGE_CHARS:]
-        else:
-            parts.append(text[:cut])
-            text = text[cut + 1:]
-    parts.append(text)
-    return parts
+    return chunking.chunks(text, _MAX_MESSAGE_CHARS)
 
 
 async def _send_text(chat_id: int, text: str) -> None:
