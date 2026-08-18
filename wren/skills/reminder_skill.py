@@ -60,11 +60,17 @@ async def handle(intent: str, ctx: Ctx) -> None:
 
     elif intent == "recall_reminders":
         items = reminders.pending(ctx.user_id)
-        if not items:
-            await ctx.channel.send("No reminders set.")
-        else:
-            for r in items:
-                await ctx.channel.send(f"[{_format_local(r['fire_at'])}] {r['content']}")
+        rows = [{"content": r["content"], "fire_at": r["fire_at"],
+                 # formatted here, not in the page: the skill already owns the
+                 # timezone and the card should never have to
+                 "local": _format_local(r["fire_at"])}
+                for r in items]
+        text = "\n".join(f"[{_format_local(r['fire_at'])}] {r['content']}"
+                         for r in items) if items else "No reminders set."
+        await ctx.channel.send_card(
+            "reminders", {"reminders": rows}, text,
+            intent="recall_reminders", params={"content": ""},
+        )
 
     elif intent == "cancel_reminder":
         if not ctx.content.strip():

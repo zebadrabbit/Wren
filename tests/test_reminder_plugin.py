@@ -68,12 +68,38 @@ def test_recall_reminders_empty():
     asyncio.run(reminder_plugin.handle("recall_reminders", Ctx(user_id=1, channel=ch, content="")))
     assert ch.sent == ["No reminders set."]
 
-def test_recall_reminders_lists_one_message_each():
+def test_recall_reminders_lists_one_combined_message():
+    # Changed from one-message-per-reminder: recall_reminders now emits a
+    # single card, and CollectingChannel's send_card sends its combined
+    # prose fallback as one message rather than one per row.
     reminders.save(1, "check the oven", _future_iso(60))
     reminders.save(1, "call mom", _future_iso(120))
     ch = CollectingChannel()
     asyncio.run(reminder_plugin.handle("recall_reminders", Ctx(user_id=1, channel=ch, content="")))
-    assert len(ch.sent) == 2
+    assert len(ch.sent) == 1
+
+
+def test_recall_reminders_emits_a_card_with_local_times():
+    reminders.save(1, "call mum", "2030-01-01T09:00:00+00:00")
+    ch = CollectingChannel()
+    asyncio.run(reminder_plugin.handle("recall_reminders", Ctx(user_id=1, channel=ch)))
+
+    card = ch.cards[0]
+    assert card["kind"] == "reminders"
+    row = card["data"]["reminders"][0]
+    assert row["content"] == "call mum"
+    assert row["fire_at"] == "2030-01-01T09:00:00+00:00"
+    # formatted server-side, so the card never does timezone maths
+    assert row["local"] == reminder_plugin._format_local("2030-01-01T09:00:00+00:00")
+    assert card["intent"] == "recall_reminders"
+    assert len(ch.sent) == 1
+
+
+def test_no_reminders_still_emits_a_card():
+    ch = CollectingChannel()
+    asyncio.run(reminder_plugin.handle("recall_reminders", Ctx(user_id=1, channel=ch)))
+    assert ch.cards[0]["data"]["reminders"] == []
+    assert ch.sent == ["No reminders set."]
 
 def test_cancel_reminder_empty_content_guarded():
     ch = CollectingChannel()
