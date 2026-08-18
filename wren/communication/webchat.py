@@ -10,6 +10,7 @@ from aiohttp import web
 from .. import config
 from .. import conversations
 from .. import core
+from ..channel import CollectingChannel, Ctx
 
 HISTORY_LIMIT = 20
 
@@ -278,6 +279,49 @@ def register_routes(app: web.Application, authenticate) -> None:
             "cards": channel.cards,
         })
 
+    async def dispatch(request):
+        """Run one intent directly, skipping the classifier.
+
+        This is the card API: buttons, refresh and space panes all arrive here.
+        Deliberately NOT a shortcut around authorization -- every intent
+        reachable here is already reachable by typing a sentence, and dispatch
+        goes through the skill's own handle(), so a skill's internal checks
+        (contacts_skill's owner gate, for one) still run untouched.
+
+        Nothing is written to any conversation: clicking a card control must not
+        manufacture a fake user turn. The cost is that the model does not learn
+        about button-driven changes conversationally; it re-reads the store on
+        the next question, so this is only visible if you immediately ask what
+        you just clicked.
+        """
+        user_id = _auth(request)
+        from .. import registry
+
+        body = await _json_object(request)
+        intent = body.get("intent")
+        if not isinstance(intent, str) or not intent:
+            return web.json_response({"error": "missing 'intent'"}, status=400)
+
+        plugin = registry.INTENT_HANDLERS.get(intent)
+        if plugin is None or not registry.is_enabled(plugin):
+            # 404 for both: "no such intent" and "that skill is off" are the
+            # same answer from the caller's side -- it is not available.
+            return web.json_response({"error": "unknown intent"}, status=404)
+
+        content = body.get("content") or ""
+        tags = body.get("tags") or []
+        if not isinstance(content, str) or not isinstance(tags, list):
+            return web.json_response({"error": "bad 'content' or 'tags'"}, status=400)
+
+        channel = CollectingChannel()
+        ctx = Ctx(user_id=user_id, channel=channel, content=content, tags=tags)
+        await plugin.handle(intent, ctx)
+
+        return web.json_response({
+            "cards": [{"kind": c["kind"], "data": c["data"]} for c in channel.cards],
+            "replies": channel.sent,
+        })
+
     async def get_me(request):
         # Any authenticated whitelisted user, NOT owner-only: /api/plugins is,
         # so a household member loading the page would get a 403 and no
@@ -385,6 +429,7 @@ def register_routes(app: web.Application, authenticate) -> None:
     app.router.add_patch("/api/conversations/{id}", rename_conversation)
     app.router.add_delete("/api/conversations/{id}", delete_conversation)
     app.router.add_post("/api/conversations/{id}/message", post_message)
+    app.router.add_post("/api/dispatch", dispatch)
     app.router.add_get("/api/me", get_me)
     app.router.add_get("/api/models", get_models)
     app.router.add_get("/api/plugins", get_plugins)

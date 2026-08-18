@@ -6,12 +6,13 @@ os.environ.setdefault("LMSTUDIO_BASE_URL", "http://test")
 os.environ.setdefault("LMSTUDIO_MODEL", "test-model")
 
 import base64
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from aiohttp.test_utils import TestClient, TestServer
 
 from wren import config
 from wren import conversations
 from wren import core
+from wren import registry
 from wren.communication import http_plugin as http_surface
 from wren.communication import webchat
 
@@ -646,3 +647,78 @@ def test_the_model_does_not_see_cards():
     # "no current event loop" on 3.12 outside a running loop
     history = asyncio.run(channel.history())
     assert all(set(m) == {"role", "content"} for m in history)
+
+
+# ── dispatch ────────────────────────────────────────────────────────────────
+
+def test_dispatch_runs_an_intent_without_the_llm():
+    from wren import brain
+    calls = []
+
+    async def fake_handle(intent, ctx):
+        calls.append((intent, ctx.content))
+        await ctx.channel.send_card("shopping", {"items": []}, "Shopping list is empty.")
+
+    plugin = MagicMock()
+    # __name__ is required here (not just .handle): dispatch's is_enabled()
+    # check keys off __name__ via registry.skill_key(), same as any real
+    # plugin module -- a bare MagicMock has no __name__ of its own.
+    plugin.__name__ = "wren.fake_shopping_skill"
+    plugin.handle = fake_handle
+    with patch.dict(registry.INTENT_HANDLERS, {"recall_shopping": plugin}), \
+         patch.object(brain, "detect_intent", side_effect=AssertionError("no LLM")):
+        status, body = call("post", "/api/dispatch", token=TOKEN_A,
+                            json={"intent": "recall_shopping"})
+
+    assert status == 200
+    assert calls == [("recall_shopping", "")]
+    assert body["cards"][0]["kind"] == "shopping"
+    assert body["replies"] == ["Shopping list is empty."]
+
+
+def test_dispatch_requires_a_token():
+    status, _ = call("post", "/api/dispatch", json={"intent": "recall_shopping"})
+    assert status == 401
+
+
+def test_dispatch_rejects_a_missing_intent():
+    status, _ = call("post", "/api/dispatch", token=TOKEN_A, json={})
+    assert status == 400
+
+
+def test_dispatch_404s_an_unknown_intent():
+    status, _ = call("post", "/api/dispatch", token=TOKEN_A,
+                     json={"intent": "no_such_intent"})
+    assert status == 404
+
+
+def test_dispatch_404s_an_intent_whose_skill_is_disabled():
+    # a skill switched off in the plugins panel must not be reachable through
+    # this door either -- the same check core.handle_message makes
+    plugin = MagicMock()
+    plugin.handle = AsyncMock()
+    with patch.dict(registry.INTENT_HANDLERS, {"recall_shopping": plugin}), \
+         patch.object(registry, "is_enabled", return_value=False):
+        status, _ = call("post", "/api/dispatch", token=TOKEN_A,
+                         json={"intent": "recall_shopping"})
+    assert status == 404
+    plugin.handle.assert_not_awaited()
+
+
+def test_dispatch_writes_nothing_to_any_conversation():
+    # clicking a button must not manufacture a fake user message
+    async def fake_handle(intent, ctx):
+        await ctx.channel.send("Removed milk.")
+
+    _, convo = call("post", "/api/conversations", token=TOKEN_A)
+    plugin = MagicMock()
+    # same __name__ requirement as above -- is_enabled() is on the path even
+    # though this test is not exercising it directly.
+    plugin.__name__ = "wren.fake_shopping_skill"
+    plugin.handle = fake_handle
+    with patch.dict(registry.INTENT_HANDLERS, {"remove_shopping_item": plugin}):
+        call("post", "/api/dispatch", token=TOKEN_A,
+             json={"intent": "remove_shopping_item", "content": "milk"})
+
+    _, reloaded = call("get", f"/api/conversations/{convo['id']}", token=TOKEN_A)
+    assert reloaded["messages"] == []
