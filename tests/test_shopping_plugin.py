@@ -80,3 +80,32 @@ def test_send_shopping_list_delivery_failure():
     with patch.object(router, "notify_name", new=AsyncMock(return_value=False)):
         asyncio.run(shopping_plugin.handle("send_shopping_list", Ctx(user_id=1, channel=ch, content="", person="husband")))
     assert ch.sent == ["Couldn't reach husband — they may be unreachable right now."]
+
+def test_recall_shopping_emits_a_card_alongside_the_prose():
+    shopping.add("milk", "ann")
+    shopping.add("eggs", "ann")
+    ch = CollectingChannel()
+    asyncio.run(shopping_plugin.handle(
+        "recall_shopping", Ctx(user_id=1, channel=ch, content="")))
+
+    card = ch.cards[0]
+    assert card["kind"] == "shopping"
+    assert [i["text"] for i in card["data"]["items"]] == ["milk", "eggs"]
+    assert all(i["added_by"] == "ann" for i in card["data"]["items"])
+    # the refresh wiring: without these the stored card cannot re-read itself
+    assert card["intent"] == "recall_shopping"
+    assert card["params"] == {"content": ""}
+    # the prose is untouched -- Discord and Telegram still get exactly this
+    assert "milk, eggs" in ch.sent[0]
+
+def test_an_empty_shopping_list_still_emits_a_card():
+    # the card is how the page knows to draw an empty list with an add box,
+    # rather than falling back to a prose bubble
+    ch = CollectingChannel()
+    asyncio.run(shopping_plugin.handle(
+        "recall_shopping", Ctx(user_id=1, channel=ch, content="")))
+
+    card = ch.cards[0]
+    assert card["kind"] == "shopping"
+    assert card["data"]["items"] == []
+    assert ch.sent == ["Shopping list is empty."]

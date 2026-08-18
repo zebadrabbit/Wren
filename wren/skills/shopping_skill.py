@@ -37,10 +37,22 @@ async def handle(intent: str, ctx: Ctx) -> None:
             lines.append(", ".join(i["original_text"] for i in active))
         if suggestions:
             lines.append("You often get: " + ", ".join(suggestions) + ".")
-        if lines:
-            await ctx.channel.send("\n".join(lines))
-        else:
-            await ctx.channel.send("Shopping list is empty.")
+        text = "\n".join(lines) if lines else "Shopping list is empty."
+        # One send, not two: a card IS the message. The prose is the fallback
+        # every surface that cannot draw one receives instead.
+        await ctx.channel.send_card(
+            "shopping",
+            {
+                "items": [{"text": i["original_text"], "added_by": i["added_by"]}
+                          for i in active],
+                "suggestions": suggestions,
+            },
+            text,
+            # how this card re-reads itself later. Without these the stored card
+            # has no intent and is dead the moment the page reloads.
+            intent="recall_shopping",
+            params={"content": ""},
+        )
 
     elif intent == "send_shopping_list":
         target_name = (ctx.person or "").lower()
