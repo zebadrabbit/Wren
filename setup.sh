@@ -49,7 +49,7 @@ if [[ ",${SURFACES// /}," == *",discord,"* ]]; then
     prompt DISCORD_TOKEN "Discord bot token"
 fi
 
-prompt_numeric OWNER_ID "Owner user ID (your Discord user ID on a Discord install)"
+prompt_numeric WREN_OWNER_ID "Your Wren user id (reuse your Discord/Telegram user id; never change it later)"
 
 WREN_TOKENS=""
 if [[ ",${SURFACES// /}," == *",http,"* ]]; then
@@ -58,7 +58,7 @@ if [[ ",${SURFACES// /}," == *",http,"* ]]; then
     else
         _http_token=$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')
     fi
-    WREN_TOKENS="$_http_token:$OWNER_ID"
+    WREN_TOKENS="$_http_token:$WREN_OWNER_ID"
     echo "Generated HTTP bearer token: $_http_token"
     echo "  (the desktop voice client needs this as WREN_TOKEN)"
 fi
@@ -156,7 +156,7 @@ fi
     if [ -n "$DISCORD_TOKEN" ]; then
         echo "DISCORD_TOKEN=$DISCORD_TOKEN"
     fi
-    echo "OWNER_ID=$OWNER_ID"
+    echo "WREN_OWNER_ID=$WREN_OWNER_ID"
     if [ -n "$WREN_TOKENS" ]; then
         echo "WREN_TOKENS=$WREN_TOKENS"
         echo "# Set WREN_HTTP_HOST=0.0.0.0 to accept clients from other LAN machines."

@@ -8,7 +8,7 @@ import pytest
 # then narrows this to a fresh file per test.
 #
 # This is deliberately the ONLY env var conftest sets: test modules configure
-# LLM_PROVIDERS/OWNER_ID/etc. themselves with setdefault, and some of them
+# LLM_PROVIDERS/WREN_OWNER_ID/etc. themselves with setdefault, and some of them
 # (test_providers.py) need values that differ from the rest of the suite.
 os.environ["WREN_DB"] = os.path.join(tempfile.gettempdir(), "wren-tests-import-guard.db")
 

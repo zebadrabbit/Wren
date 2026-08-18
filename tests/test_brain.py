@@ -1,6 +1,6 @@
 import os, json, pytest
 os.environ.setdefault("DISCORD_TOKEN", "test")
-os.environ.setdefault("OWNER_ID", "1")
+os.environ.setdefault("WREN_OWNER_ID", "1")
 os.environ.setdefault("LLM_PROVIDERS", "lmstudio,ollama")
 os.environ.setdefault("LMSTUDIO_BASE_URL", "http://test-primary")
 os.environ.setdefault("LMSTUDIO_MODEL", "test-model-1")
@@ -423,3 +423,33 @@ def test_chat_guideline_distinguishes_conversation_meta_questions_from_recall():
         brain.detect_intent(1, "do you remember what I said")
     system_content = captured["messages"][0]["content"]
     assert "memory" in system_content or "remember" in system_content
+
+
+def test_pleasantries_are_named_as_chat_in_the_prompt():
+    """A guard on prompt wording, because the behaviour it protects can only be
+    measured against a live model.
+
+    "Wren" appears in the help, status and list_plugins guidelines and nowhere
+    else, so a bare pleasantry that names Wren has no positive example to land
+    on and a small model pulls it to one of those: qwen2.5:7b classified "thank
+    you wren" as `status` three times out of three, and "thanks" as `help`.
+    Naming pleasantries in the chat guideline fixed all nine phrases tested
+    with no change to the nine real intents. Telegram feels this worst — its
+    `history` is None by protocol, and history is what otherwise supplies the
+    missing context.
+    """
+    captured = {}
+
+    def fake_create(**kwargs):
+        captured["messages"] = kwargs["messages"]
+        return _mock_completion(json.dumps({"intent": "chat", "content": "hi", "tags": [], "person": None}))
+
+    client = MagicMock()
+    client.chat.completions.create.side_effect = fake_create
+    with patch.object(brain, "_get_client", return_value=client):
+        brain.detect_intent(1, "thank you wren")
+
+    guidelines = captured["messages"][0]["content"]
+    chat_line = guidelines.split("- chat:")[1].split("\n- ")[0]
+    assert "pleasantry" in chat_line
+    assert "thank you wren" in chat_line

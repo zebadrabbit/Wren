@@ -1,6 +1,6 @@
 import os, pytest
 os.environ.setdefault("DISCORD_TOKEN", "test")
-os.environ.setdefault("OWNER_ID", "1")
+os.environ.setdefault("WREN_OWNER_ID", "1")
 
 from wren.skills import notes_store as notes
 

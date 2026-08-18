@@ -11,7 +11,7 @@ Skipped when node is absent — it is a dev-time check, not a runtime dependency
 """
 import os, shutil, subprocess, pathlib, textwrap
 os.environ.setdefault("DISCORD_TOKEN", "test")
-os.environ.setdefault("OWNER_ID", "1")
+os.environ.setdefault("WREN_OWNER_ID", "1")
 os.environ.setdefault("LLM_PROVIDERS", "lmstudio")
 os.environ.setdefault("LMSTUDIO_BASE_URL", "http://test")
 os.environ.setdefault("LMSTUDIO_MODEL", "test-model")

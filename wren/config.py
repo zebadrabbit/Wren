@@ -32,7 +32,7 @@ TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 # keys every note, reminder and pin off ONE id per person. Setting this makes
 # Telegram a second door into the same Wren instead of a second, empty one —
 # telegram_plugin translates in both directions. Leave it unset on a
-# Telegram-only install, where OWNER_ID is already the Telegram id.
+# Telegram-only install, where WREN_OWNER_ID is already the Telegram id.
 TELEGRAM_OWNER_ID = int(os.environ.get("TELEGRAM_OWNER_ID") or 0)
 
 COMMUNICATION_PLUGINS = [s.strip() for s in os.environ.get("COMMUNICATION_PLUGINS", "discord").split(",") if s.strip()]
@@ -103,11 +103,11 @@ def reload_llm_chain() -> None:
 
 def _build_whitelist(owner_raw: str) -> dict[str, int]:
     if not owner_raw.isdigit():
-        raise RuntimeError("OWNER_ID must be a numeric Discord user ID.")
+        raise RuntimeError("WREN_OWNER_ID must be a numeric user id.")
     return {"owner": int(owner_raw)}
 
 
-_owner_raw = _require("OWNER_ID")
+_owner_raw = _require("WREN_OWNER_ID")
 
 WHITELIST: dict[str, int] = _build_whitelist(_owner_raw)
 

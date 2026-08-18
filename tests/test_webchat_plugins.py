@@ -1,6 +1,6 @@
 import os, asyncio, pytest
 os.environ.setdefault("DISCORD_TOKEN", "test")
-os.environ.setdefault("OWNER_ID", "1")
+os.environ.setdefault("WREN_OWNER_ID", "1")
 os.environ.setdefault("LLM_PROVIDERS", "lmstudio")
 os.environ.setdefault("LMSTUDIO_BASE_URL", "http://test")
 os.environ.setdefault("LMSTUDIO_MODEL", "test-model")
@@ -13,7 +13,7 @@ from wren import settings
 from wren.communication import http_plugin as http_surface
 from wren.communication import webchat
 
-TOKEN_OWNER, USER_OWNER = "tok-a", 1          # matches OWNER_ID above
+TOKEN_OWNER, USER_OWNER = "tok-a", 1          # matches WREN_OWNER_ID above
 TOKEN_OTHER, USER_OTHER = "tok-b", 2
 
 
@@ -84,9 +84,18 @@ def test_patch_plugin_response_has_no_running_field():
         registry.set_enabled(notes_skill, True)
 
 
-def test_channels_include_one_that_is_not_enabled():
-    # The case the panel exists to show: Telegram is present in the package but
-    # absent from COMMUNICATION_PLUGINS.
+def test_channels_include_one_that_is_not_enabled(monkeypatch):
+    # The case the panel exists to show: a channel present in the package but
+    # absent from COMMUNICATION_PLUGINS, with the reason it cannot run.
+    #
+    # Both inputs are patched rather than read from the environment. config
+    # loads the real .env (dotenv searches parent directories), so this used to
+    # assert a fact about THIS host -- and it broke the day telegram was
+    # actually enabled here, which is a property of the install and not of the
+    # code under test.
+    monkeypatch.setattr(config, "COMMUNICATION_PLUGINS", ["discord", "http"])
+    monkeypatch.setattr(config, "TELEGRAM_TOKEN", "")
+
     rows = webchat._channel_rows()
     telegram = next(r for r in rows if r["module"] == "telegram_plugin")
     assert telegram["running"] is False

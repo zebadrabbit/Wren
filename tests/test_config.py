@@ -1,6 +1,6 @@
 import os
 os.environ.setdefault("DISCORD_TOKEN", "test")
-os.environ.setdefault("OWNER_ID", "1")
+os.environ.setdefault("WREN_OWNER_ID", "1")
 os.environ.setdefault("LLM_PROVIDERS", "lmstudio")
 os.environ.setdefault("LMSTUDIO_BASE_URL", "http://test")
 os.environ.setdefault("LMSTUDIO_MODEL", "test-model")
@@ -184,7 +184,7 @@ def test_discord_token_is_optional(tmp_path):
         "WREN_DB": str(tmp_path / "wren.db"),
         "COMMUNICATION_PLUGINS": "http",
         "WREN_TOKENS": "tok:1",
-        "OWNER_ID": "1",
+        "WREN_OWNER_ID": "1",
         "LLM_PROVIDERS": "lmstudio",
         "LMSTUDIO_BASE_URL": "http://test",
         "LMSTUDIO_MODEL": "test-model",

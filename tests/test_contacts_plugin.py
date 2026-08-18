@@ -1,6 +1,6 @@
 import os, asyncio, pytest
 os.environ.setdefault("DISCORD_TOKEN", "test")
-os.environ.setdefault("OWNER_ID", "1")
+os.environ.setdefault("WREN_OWNER_ID", "1")
 os.environ.setdefault("LLM_PROVIDERS", "lmstudio")
 os.environ.setdefault("LMSTUDIO_BASE_URL", "http://test")
 os.environ.setdefault("LMSTUDIO_MODEL", "test-model")
@@ -19,7 +19,7 @@ def _assert_flourished(sent: str, prefix: str):
     assert sent.startswith(prefix + " ")
     assert sent.rsplit(" ", 1)[1] in EMOTES
 
-# user_id=1 is OWNER_ID; user_id=2 is a non-owner whitelisted contact
+# user_id=1 is WREN_OWNER_ID; user_id=2 is a non-owner whitelisted contact
 def test_non_owner_cannot_add_contact():
     ch = CollectingChannel()
     asyncio.run(contacts_plugin.handle("add_contact", Ctx(user_id=2, channel=ch, content="222222222222222222", person="hubby")))

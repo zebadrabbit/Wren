@@ -74,6 +74,14 @@ were renamed and the old names no longer work:
 |---|---|
 | `SURFACES` | `COMMUNICATION_PLUGINS` |
 | `NOTIFY_SURFACE` | `NOTIFY_VIA` |
+| `OWNER_ID` | `WREN_OWNER_ID` (renamed later, 2026-08-17) |
+
+`WREN_OWNER_ID` is not a Discord setting and never was — it is the id every
+note, reminder and pin is filed under, and `config.WHITELIST["owner"]` is how
+code reads it (there is still no `config.WREN_OWNER_ID` attribute). A second
+chat plugin maps its own id onto it rather than replacing it; see
+`telegram_plugin._wren_user_id`. The `docs/superpowers/` plans and specs still
+say `OWNER_ID` throughout — they are historical, translate as you read.
 
 Module path renames (for grep/context when reading old plans/specs):
 

@@ -30,8 +30,10 @@ for what that does and does not buy you.
 1. `python3 -m venv venv && source venv/bin/activate`
 2. `pip install -r requirements.txt`
 3. `cp .env.example .env` and fill in:
-   - `OWNER_ID` — required. Your Wren user id; everything you save is filed
-     under it. On a Discord install, use your Discord user ID.
+   - `WREN_OWNER_ID` — required, and not a setting of any one chat plugin.
+     Everything you save is filed under it, so changing it later orphans the
+     lot. Reuse the user id of whichever chat plugin you set up first; to add a
+     second plugin, map its id onto this one rather than changing it.
    - `COMMUNICATION_PLUGINS` — comma-separated, default `discord`. See
      [Communication plugins](#communication-plugins).
    - `DISCORD_TOKEN` — required *only* if `COMMUNICATION_PLUGINS` includes `discord`.
@@ -84,7 +86,7 @@ Discord calls you, and Wren keys the whitelist and every note, reminder and pin
 off one id per person. `TELEGRAM_OWNER_ID` is what translates the two, so
 adding Telegram to an install that already has Discord gives you a second door
 into the same Wren rather than a second, empty one. Unset it only on a
-Telegram-first install, where `OWNER_ID` is already the Telegram id. Anyone
+Telegram-first install, where `WREN_OWNER_ID` is already the Telegram id. Anyone
 else is a plain contact ("add 123456789 as phone").
 
 Long-polls `getUpdates` over `aiohttp`; there is no Telegram client library in
