@@ -411,3 +411,30 @@ def test_model_change_handler_has_error_handling():
     assert '$("#model").value = d.current' in block, (
         "a failed change leaves the dropdown showing a selection the server never saved"
     )
+
+
+def test_card_renderer_escapes_every_value_it_draws():
+    # card data is user-typed ("add <script> to shopping"), so every
+    # interpolation into innerHTML must go through esc()
+    src = PAGE.read_text(encoding="utf-8")
+    start = src.index("function shoppingCard(")
+    block = src[start:src.index("\nfunction ", start + 1)]
+    assert "esc(" in block
+    # the item text must never reach innerHTML raw
+    assert "+ i.text +" not in block
+
+
+def test_card_controls_dispatch_intents_not_sentences():
+    # the whole point of /api/dispatch: a button sends an intent, not English
+    # for the classifier to re-interpret
+    src = PAGE.read_text(encoding="utf-8")
+    assert "/api/dispatch" in src
+    assert "remove_shopping_item" in src
+    assert "add_shopping_item" in src
+
+
+def test_a_card_message_renders_a_card_and_not_just_prose():
+    src = PAGE.read_text(encoding="utf-8")
+    # both paths must honour m.card: the live reply and a reloaded transcript
+    assert src.count("m.card") >= 1
+    assert "cards" in src

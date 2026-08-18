@@ -162,6 +162,18 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .msg a { color: var(--accent); }
 .msg ul { padding-left: 20px; margin: 6px 0; }
 .msg .dl { display: inline-block; margin-top: 6px; color: var(--accent); }
+.card { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.card header { padding: .5rem .75rem; font-weight: 600; border-bottom: 1px solid var(--line); }
+.card ul { list-style: none; margin: 0; padding: 0; }
+.card li { display: flex; align-items: center; gap: .5rem; padding: .4rem .75rem; }
+.card li + li { border-top: 1px solid var(--line); }
+.card .citem { flex: 1; }
+.card .cx { background: none; border: 0; cursor: pointer; opacity: .6; }
+.card .cx:hover { opacity: 1; }
+.card .cx:disabled { opacity: .3; cursor: default; }
+.card .cempty, .card .csugg { margin: 0; padding: .5rem .75rem; opacity: .7; }
+.card .cadd { display: flex; gap: .5rem; padding: .5rem .75rem; border-top: 1px solid var(--line); }
+.card .cadd input { flex: 1; }
 /* ── landing ───────────────────────────────────────────────────────────── */
 #landing { text-align: center; margin-top: 14vh; }
 .landmark { width: 28px; height: 28px; display: block; margin: 0 auto 10px; }
@@ -364,6 +376,78 @@ function fileLink(f) {
          esc(f.filename) + "</a>";
 }
 
+/* ── cards ─────────────────────────────────────────────────────────────── */
+// A card is live: it holds no rows of its own, it re-fetches through
+// /api/dispatch. That is why every control ends by re-rendering from the
+// server's response rather than mutating the DOM it already drew.
+async function dispatch(intent, content) {
+  return api("/api/dispatch", {
+    method: "POST",
+    body: JSON.stringify({ intent, content: content || "" }),
+  });
+}
+
+function shoppingCard(data, mount) {
+  const items = data.items || [];
+  const rows = items.map(i =>
+    '<li><span class="citem">' + esc(i.text) + '</span>' +
+    '<button class="cx" data-item="' + esc(i.text) + '" title="remove">✕</button></li>'
+  ).join("");
+  const sugg = (data.suggestions || []).length
+    ? '<p class="csugg">You often get: ' +
+      data.suggestions.map(esc).join(", ") + "</p>"
+    : "";
+  mount.innerHTML =
+    '<div class="card shopping">' +
+      '<header>Shopping · ' + items.length + "</header>" +
+      (items.length ? "<ul>" + rows + "</ul>"
+                    : '<p class="cempty">Nothing on the list.</p>') +
+      sugg +
+      '<form class="cadd"><input placeholder="add item…" aria-label="add item">' +
+      "<button>+</button></form>" +
+    "</div>";
+
+  for (const b of mount.querySelectorAll(".cx")) {
+    b.onclick = async () => {
+      b.disabled = true;
+      await dispatch("remove_shopping_item", b.dataset.item);
+      // remove_shopping_item answers with prose, not a card, so ask for the
+      // list -- same reason the add handler below does this
+      const fresh = await dispatch("recall_shopping", "");
+      renderCard({ kind: "shopping", data: fresh.cards[0].data }, mount);
+    };
+  }
+  mount.querySelector(".cadd").onsubmit = async e => {
+    e.preventDefault();
+    const input = e.target.querySelector("input");
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = "";
+    const r = await dispatch("add_shopping_item", text);
+    // add_shopping_item answers with prose, not a card, so ask for the list
+    const fresh = await dispatch("recall_shopping", "");
+    renderCard({ kind: "shopping", data: fresh.cards[0].data }, mount);
+  };
+}
+
+const CARDS = { shopping: shoppingCard };
+
+function renderCard(card, mount) {
+  const draw = CARDS[card.kind];
+  if (!draw) return false;      // unknown kind: leave the prose bubble alone
+  draw(card.data || {}, mount);
+  return true;
+}
+
+// A stored card carries no rows, so re-fetch before drawing. Failure falls back
+// to the prose that is already in the bubble.
+async function mountStoredCard(card, mount) {
+  try {
+    const r = await dispatch(card.intent, (card.params || {}).content || "");
+    if (r.cards && r.cards.length) renderCard(r.cards[0], mount);
+  } catch (e) { /* prose stays */ }
+}
+
 async function loadConvos() {
   const list = await api("/api/conversations");
   const box = $("#convos");
@@ -464,7 +548,8 @@ async function openConvo(id) {
   $("#inner").innerHTML = "";
   if (!convo.messages.length) showEmpty();
   for (const m of convo.messages) {
-    bubble(m.role, m.role === "user" ? esc(m.content) : md(m.content));
+    const b = bubble(m.role, m.role === "user" ? esc(m.content) : md(m.content));
+    if (m.card) mountStoredCard(m.card, b.querySelector(".body"));
   }
   loadConvos();
   $("#text").focus();
@@ -489,7 +574,15 @@ async function send() {
     const data = await api("/api/conversations/" + active + "/message",
                            { method: "POST", body: JSON.stringify({ text }) });
     thinking.remove();
-    for (const r of data.replies) bubble("assistant", md(r));
+    if ((data.cards || []).length) {
+      // one bubble per card; its prose is the fallback if the kind is unknown
+      for (const c of data.cards) {
+        const b = bubble("assistant", md(c.text || ""));
+        renderCard(c, b.querySelector(".body"));
+      }
+    } else {
+      for (const r of data.replies) bubble("assistant", md(r));
+    }
     for (const f of data.files || []) bubble("assistant", fileLink(f));
     if (!data.replies.length && !(data.files || []).length) bubble("assistant", "<em>(no reply)</em>");
     loadConvos();
