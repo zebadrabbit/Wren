@@ -179,3 +179,65 @@ drains the whole unconfirmed backlog, answering each with an inline LLM call.
   `registry.py`'s `PLUGINS` list. New channel → new file in
   `wren/communication/`, one entry in `COMMUNICATION_PLUGINS`. Neither
   should ever require touching the other.
+
+## Backlog after the skill-cards work (2026-08-17)
+
+Slices 1 and 2 are merged and live: the browser chat answers shopping, notes,
+ideas and reminders with interactive cards, backed by `Channel.send_card`, a
+`messages.card` column, and `POST /api/dispatch` (one intent, no LLM). Discord
+and Telegram get prose, each plugin chunking at its own platform's limit.
+
+Ordered roughly by value, not by size.
+
+**Inbound images and files.** The clearest gap between how notes actually get
+used and what Wren accepts: a screenshot or a photo cannot enter through any
+door. `telegram_plugin._incoming` skips every message without a `text` field,
+which is exactly how photos, stickers and voice notes arrive; Discord
+attachments are ignored the same way. Needs blob storage, an inbound-file
+capability on the `Channel` protocol (the mirror of the `send_file` that
+already exists for exports), and per-surface handling. A real feature, not an
+afternoon — and it unlocks a use that exists today rather than improving one
+that already works.
+
+**Summarise large collections in prose.** Already specified in
+`docs/superpowers/specs/2026-08-17-skill-cards-and-spaces-design.md`: past ~15
+items, text surfaces get a tag breakdown and an invitation to narrow, while the
+card keeps showing everything (it is scrollable and already filters by tag).
+Chunking made a 40-note dump deliverable; this makes it readable.
+
+**Slice 3: spaces.** The sidebar SPACES section from the design — open a skill's
+card full-pane without a conversation. All the machinery exists; this is a
+second mount point for renderers that already work.
+
+**First-run path.** Now that this is meant to be self-hostable by other people,
+bugs that only bite fresh installs matter most, and they are invisible from a
+machine whose `.env` was hand-edited months ago. `setup.sh` was writing the v1
+key `SURFACES` until 1f32b0d — that class, plus a check that Wren tells you when
+it is pointed at a model too small to classify intent reliably.
+
+**Parked findings from the slice reviews.**
+- `discord_utils.py` and `discord_plugin.py` each define `_MAX_MESSAGE_CHARS =
+  2000`. Unforced: defining it in `discord_utils` and referencing it from
+  `discord_plugin` is non-circular. Two hand-synced literals, no test imports
+  either, so drift fails silently.
+- `notes_store.find` / `reminders_store.find_pending` apply exact-match-wins to
+  every caller, including the free-text path where `PROMPT_GUIDELINES` asks the
+  model for SHORT phrases. `discard_idea` is an irreversible DELETE where
+  `cancel_reminder` is a soft flip, so the destructive caller is the one that
+  lost its "be more specific" prompt. A narrower fix exists: exact-first only
+  when the phrase came from a card button.
+- One recall row now carries a whole collection and rides in
+  `brain.detect_intent`'s 20-turn history window at full size.
+- `chat.html` renders cards *instead of* replies, so a turn producing a card
+  plus unrelated prose would drop the prose. Not reachable today; the trap
+  widens with every new card.
+- No `/api/dispatch` test uses a real skill — every one patches
+  `INTENT_HANDLERS` with a mock, so skill → dispatch → renderer is two
+  half-tests that meet.
+- `notify_id` can half-deliver a chunked Discord reminder on a mid-send
+  failure. Matches the tradeoff `telegram.notify()` documents in a `ponytail:`
+  comment; Discord's has no equivalent note at the point of risk.
+
+**Keep-style notes grid.** Cosmetic, an afternoon: tiles instead of a list.
+Worth doing because it reads better daily, not because it wins a comparison
+against the dozen mature self-hosted notes apps.
