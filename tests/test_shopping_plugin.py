@@ -80,3 +80,23 @@ def test_send_shopping_list_delivery_failure():
     with patch.object(router, "notify_name", new=AsyncMock(return_value=False)):
         asyncio.run(shopping_plugin.handle("send_shopping_list", Ctx(user_id=1, channel=ch, content="", person="husband")))
     assert ch.sent == ["Couldn't reach husband — they may be unreachable right now."]
+
+
+def test_clear_shopping_empties_the_list():
+    shopping.add("milk", "owner")
+    shopping.add("eggs", "owner")
+    ch = CollectingChannel()
+    asyncio.run(shopping_plugin.handle("clear_shopping", Ctx(user_id=1, channel=ch, content="shopping list")))
+    _assert_flourished(ch.sent[-1], "Cleared the list — 2 items off.")
+    assert shopping.active_items() == []
+
+def test_clear_shopping_singular_wording():
+    shopping.add("milk", "owner")
+    ch = CollectingChannel()
+    asyncio.run(shopping_plugin.handle("clear_shopping", Ctx(user_id=1, channel=ch, content="shopping list")))
+    _assert_flourished(ch.sent[-1], "Cleared the list — 1 item off.")
+
+def test_clear_shopping_when_already_empty():
+    ch = CollectingChannel()
+    asyncio.run(shopping_plugin.handle("clear_shopping", Ctx(user_id=1, channel=ch, content="shopping list")))
+    assert ch.sent == ["Shopping list is already empty."]

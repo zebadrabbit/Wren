@@ -65,3 +65,21 @@ def test_common_items_counts_removed_items():
         shopping.remove("butter")
     common = shopping.common_items(threshold=3)
     assert any(c["item"] == "butter" and c["count"] == 3 for c in common)
+
+
+def test_clear_removes_every_active_item():
+    shopping.add("milk", "owner")
+    shopping.add("eggs", "owner")
+    assert shopping.clear() == 2
+    assert shopping.active_items() == []
+
+def test_clear_on_empty_list_returns_zero():
+    assert shopping.clear() == 0
+
+def test_clear_keeps_rows_for_common_items():
+    # The cleared items must still count toward "you often get" -- clear() is a
+    # status flip precisely so the suggestion history survives it.
+    for _ in range(3):
+        shopping.add("milk", "owner")
+        shopping.clear()
+    assert [c["item"] for c in shopping.common_items()] == ["milk"]
