@@ -248,8 +248,12 @@ def test_me_returns_the_owner_name_setting():
         config.clear_override("OWNER_NAME")
 
 
-def test_me_omits_the_name_when_owner_name_is_unset():
+def test_me_omits_the_name_when_owner_name_is_unset(monkeypatch):
     # Better no name than greeting somebody as "owner".
+    # Pinned rather than inherited: load_dotenv() reads the repo's real .env,
+    # so on a host where OWNER_NAME is genuinely set this test would fail for
+    # a reason that has nothing to do with the code under test.
+    monkeypatch.setattr(config, "OWNER_NAME", "")
     status, body = call("get", "/api/me", token=TOKEN_OWNER)
     assert status == 200
     assert body["name"] is None
