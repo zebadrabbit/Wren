@@ -109,3 +109,22 @@ def test_an_empty_shopping_list_still_emits_a_card():
     assert card["kind"] == "shopping"
     assert card["data"]["items"] == []
     assert ch.sent == ["Shopping list is empty."]
+
+def test_clear_shopping_empties_the_list():
+    shopping.add("milk", "owner")
+    shopping.add("eggs", "owner")
+    ch = CollectingChannel()
+    asyncio.run(shopping_plugin.handle("clear_shopping", Ctx(user_id=1, channel=ch, content="shopping list")))
+    _assert_flourished(ch.sent[-1], "Cleared the list — 2 items off.")
+    assert shopping.active_items() == []
+
+def test_clear_shopping_singular_wording():
+    shopping.add("milk", "owner")
+    ch = CollectingChannel()
+    asyncio.run(shopping_plugin.handle("clear_shopping", Ctx(user_id=1, channel=ch, content="shopping list")))
+    _assert_flourished(ch.sent[-1], "Cleared the list — 1 item off.")
+
+def test_clear_shopping_when_already_empty():
+    ch = CollectingChannel()
+    asyncio.run(shopping_plugin.handle("clear_shopping", Ctx(user_id=1, channel=ch, content="shopping list")))
+    assert ch.sent == ["Shopping list is already empty."]

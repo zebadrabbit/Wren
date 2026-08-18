@@ -42,6 +42,17 @@ def remove(item_text: str) -> bool:
         )
         return cur.rowcount > 0
 
+def clear() -> int:
+    """Mark every active item removed; returns how many there were.
+
+    A status flip, not a DELETE, for the same reason remove() is: the rows stay
+    as history, so common_items() still knows what gets bought regularly (and a
+    mistaken clear is recoverable with one UPDATE).
+    """
+    with db.conn() as con:
+        cur = con.execute("UPDATE shopping_items SET status='removed' WHERE status='active'")
+        return cur.rowcount
+
 def active_items() -> list[dict]:
     with db.conn() as con:
         con.row_factory = sqlite3.Row

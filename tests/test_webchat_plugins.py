@@ -62,6 +62,20 @@ def test_settings_payload_contains_no_credential():
     assert "DISCORD_TOKEN" not in body["settings"]
 
 
+def test_secret_rows_are_presence_booleans_never_values():
+    # The Secrets tab shows configured / not-set, nothing more. If a value
+    # ever appears here it is on the wire to every owner page load.
+    _, body = call("get", "/api/plugins", token=TOKEN_OWNER)
+    assert set(body["secrets"]) == set(config.SECRET_KEYS)
+    assert all(isinstance(v, bool) for v in body["secrets"].values())
+
+
+def test_secret_keys_and_settable_never_overlap():
+    # SETTABLE values are returned verbatim by this endpoint; a key in both
+    # lists would leak a credential the moment someone adds it.
+    assert not set(config.SECRET_KEYS) & set(config.SETTABLE)
+
+
 def test_skill_rows_have_no_running_field():
     # Finding 5: `running` only means something for channels (started from
     # COMMUNICATION_PLUGINS at boot, restart-required to change). Skill rows

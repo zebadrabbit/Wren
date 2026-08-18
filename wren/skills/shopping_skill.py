@@ -4,11 +4,12 @@ from .. import router
 from .. import flourish
 from ..channel import Ctx
 
-INTENTS = ["add_shopping_item", "remove_shopping_item", "recall_shopping", "send_shopping_list"]
+INTENTS = ["add_shopping_item", "remove_shopping_item", "clear_shopping", "recall_shopping", "send_shopping_list"]
 PLUGIN_NAME = "Shopping List"
 
 PROMPT_GUIDELINES = """- add_shopping_item: user wants to add an item to the shared shopping list
-- remove_shopping_item: user got/bought/already has an item and wants it off the shopping list
+- remove_shopping_item: user got/bought/already has a SPECIFIC named item and wants that one item off the shopping list
+- clear_shopping: user wants the WHOLE shopping list emptied ("clear the shopping list", "empty my shopping list", "wipe the list", "start a fresh list") — the list itself is the target, not an item on it
 - recall_shopping: user wants to see the current shopping list
 - send_shopping_list: user wants to send the whole shopping list to someone"""
 
@@ -26,6 +27,13 @@ async def handle(intent: str, ctx: Ctx) -> None:
             await ctx.channel.send(flourish.flourish(f"Got it, removed {ctx.content}."))
         else:
             await ctx.channel.send(f"{ctx.content} wasn't on the list.")
+
+    elif intent == "clear_shopping":
+        count = shopping.clear()
+        if count:
+            await ctx.channel.send(flourish.flourish(f"Cleared the list — {count} item{'s' if count != 1 else ''} off."))
+        else:
+            await ctx.channel.send("Shopping list is already empty.")
 
     elif intent == "recall_shopping":
         active = shopping.active_items()

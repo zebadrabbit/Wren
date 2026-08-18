@@ -317,6 +317,24 @@ SETTABLE = {
 }
 
 
+# Credentials the plugins panel may report ONLY as set / not-set. Values are
+# managed on the host with manage.sh (which keeps its own copy of this list --
+# keep the two in sync) and never cross the HTTP surface. Deliberately
+# disjoint from SETTABLE: nothing here may ever gain a SETTABLE entry.
+SECRET_KEYS = (
+    "WREN_TOKENS", "DISCORD_TOKEN", "TELEGRAM_TOKEN", "IMAP_PASSWORD",
+    "GITHUB_TOKEN", "OPENAI_API_KEY", "ANTHROPIC_API_KEY",
+    "OPENROUTER_API_KEY", "FIRECRAWL_API_KEY",
+)
+
+
+def secret_status() -> dict[str, bool]:
+    """Presence only, from os.environ rather than module attributes: the
+    provider keys (OPENAI_API_KEY etc.) never become attributes at all --
+    providers.py reads the environment directly."""
+    return {key: bool(os.environ.get(key)) for key in SECRET_KEYS}
+
+
 def serialize_setting(key: str) -> str:
     """The inverse of SETTABLE[key].coerce -- the string form that, fed
     straight back into set_override(key, ...), reproduces config.<key>

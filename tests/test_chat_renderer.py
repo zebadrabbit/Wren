@@ -537,3 +537,13 @@ def test_card_handlers_serialise_on_an_in_flight_flag():
         "expected the busy flag to be checked and reset in both the remove "
         "and add handlers"
     )
+def test_bubbles_carry_a_copyable_speaker_label():
+    # Substring check on bubble()'s source, not a rendered DOM: it proves the
+    # page still emits the labels and still hides them with a technique that
+    # survives copy/paste (display:none would not), which is the whole point.
+    src = PAGE.read_text(encoding="utf-8")
+    start = src.index("function bubble(role, html)")
+    block = src[start:src.index("}", src.index("d.innerHTML", start))]
+    assert '"Wren: "' in block and '"You: "' in block, "copied transcripts lose attribution"
+    assert 'class="sr"' in block
+    assert "display: none" not in src[src.index(".sr {"):src.index(".sr {") + 200]
