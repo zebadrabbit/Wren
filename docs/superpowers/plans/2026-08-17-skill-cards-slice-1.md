@@ -224,7 +224,7 @@ Expected: PASS
 - [ ] **Step 7: Run the whole suite**
 
 Run: `source venv/bin/activate && python -m pytest -q`
-Expected: PASS, count is 687 + the 4 new tests = 691.
+Expected: PASS, count is 675 + the 4 new tests = 679.
 
 - [ ] **Step 8: Commit**
 
