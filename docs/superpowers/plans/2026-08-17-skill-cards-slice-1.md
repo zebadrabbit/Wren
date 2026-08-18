@@ -81,10 +81,12 @@ renders a card yet — this task's deliverable is that a skill *could* call
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: `async Channel.send_card(kind: str, data: dict, text: str) -> None`,
+- Produces: `async Channel.send_card(kind: str, data: dict, text: str, *,
+  intent: str = "", params: dict | None = None) -> None`,
   implemented by every channel in the codebase. `CollectingChannel.cards` is a
-  `list[tuple[str, dict]]` of `(kind, data)` in call order; `CollectingChannel`
-  also appends `text` to `.sent`, so tests written against `.sent` keep working.
+  `list[dict]`, each `{"kind", "data", "intent", "params"}`, in call order;
+  `CollectingChannel` also appends `text` to `.sent`, so tests written against
+  `.sent` keep working.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -98,7 +100,8 @@ def test_send_card_records_the_card_and_the_prose():
         await ch.send_card("shopping", {"items": [{"text": "milk"}]}, "milk")
 
     asyncio.run(go())
-    assert ch.cards == [("shopping", {"items": [{"text": "milk"}]})]
+    assert ch.cards == [{"kind": "shopping", "data": {"items": [{"text": "milk"}]},
+                         "intent": "", "params": {}}]
     # also in .sent, so every existing skill test that asserts on prose keeps
     # working when a skill starts emitting a card alongside it
     assert ch.sent == ["milk"]
@@ -148,7 +151,8 @@ Expected: FAIL — `AttributeError: 'CollectingChannel' object has no attribute 
 In `wren/channel.py`, inside `class Channel(Protocol)`, after `send_file`:
 
 ```python
-    async def send_card(self, kind: str, data: dict, text: str) -> None:
+    async def send_card(self, kind: str, data: dict, text: str,
+                        *, intent: str = "", params: dict | None = None) -> None:
         """Structured data a surface may draw as an interactive card.
 
         `text` is the prose the skill would otherwise have sent, verbatim.
@@ -156,6 +160,12 @@ In `wren/channel.py`, inside `class Channel(Protocol)`, after `send_file`:
         a card is never a regression on Discord or Telegram. `data` is the rows
         to draw; it is NOT persisted anywhere — see the design doc on why cards
         are live.
+
+        `intent` and `params` are how the card refreshes itself: they are what a
+        surface stores so it can re-run this same read later. Only the skill
+        knows them, which is why they are arguments and not something the web
+        surface could infer from `kind`. Keyword-only with defaults, so a
+        surface that only prints prose never has to think about them.
         """
         ...
 ```
@@ -165,16 +175,22 @@ In `wren/channel.py`, inside `class Channel(Protocol)`, after `send_file`:
 In `wren/channel.py`, in `CollectingChannel.__init__`, alongside `self.sent`:
 
 ```python
-        self.cards: list[tuple[str, dict]] = []
+        self.cards: list[dict] = []
 ```
 
 and the method, after `send_file`:
 
 ```python
-    async def send_card(self, kind: str, data: dict, text: str) -> None:
+    async def send_card(self, kind: str, data: dict, text: str,
+                        *, intent: str = "", params: dict | None = None) -> None:
+        # A dict, not a tuple, so intent/params are visible to a skill test.
+        # They are the part a skill is most likely to get wrong -- a card with
+        # the wrong intent looks perfect until the page reloads and cannot
+        # refresh it.
+        self.cards.append({"kind": kind, "data": data,
+                           "intent": intent, "params": params or {}})
         # both, deliberately: a test may assert on the structure, and every
         # existing test that asserts on prose keeps passing unchanged
-        self.cards.append((kind, data))
         await self.send(text)
 ```
 
@@ -183,7 +199,8 @@ and the method, after `send_file`:
 In `wren/communication/discord_plugin.py`, in `DiscordChannel`, after `send_file`:
 
 ```python
-    async def send_card(self, kind: str, data: dict, text: str) -> None:
+    async def send_card(self, kind: str, data: dict, text: str,
+                        *, intent: str = "", params: dict | None = None) -> None:
         # Discord could draw an embed, but a card is interactive and an embed is
         # not; prose is the honest degradation rather than a half-card.
         await self.send(text)
@@ -192,7 +209,8 @@ In `wren/communication/discord_plugin.py`, in `DiscordChannel`, after `send_file
 In `wren/communication/telegram_plugin.py`, in `TelegramChannel`, after `send_file`:
 
 ```python
-    async def send_card(self, kind: str, data: dict, text: str) -> None:
+    async def send_card(self, kind: str, data: dict, text: str,
+                        *, intent: str = "", params: dict | None = None) -> None:
         # Inline keyboards would mean a callback route and a per-surface
         # interaction model. Prose is what send_card's signature exists for.
         await self.send(text)
@@ -456,7 +474,9 @@ def test_the_model_does_not_see_cards():
              token=TOKEN_A, json={"text": "what's on shopping"})
 
     channel = webchat.WebChannel(convo["id"], USER_A)
-    history = asyncio.get_event_loop().run_until_complete(channel.history())
+    # asyncio.run, not get_event_loop().run_until_complete — the latter raises
+    # "no current event loop" on 3.12 outside a running loop
+    history = asyncio.run(channel.history())
     assert all(set(m) == {"role", "content"} for m in history)
 ```
 
@@ -678,7 +698,7 @@ functions there):
         await plugin.handle(intent, ctx)
 
         return web.json_response({
-            "cards": [{"kind": k, "data": d} for k, d in channel.cards],
+            "cards": [{"kind": c["kind"], "data": c["data"]} for c in channel.cards],
             "replies": channel.sent,
         })
 ```
@@ -750,10 +770,13 @@ def test_recall_shopping_emits_a_card_alongside_the_prose():
     asyncio.run(shopping_plugin.handle(
         "recall_shopping", Ctx(user_id=1, channel=ch, content="")))
 
-    kind, data = ch.cards[0]
-    assert kind == "shopping"
-    assert [i["text"] for i in data["items"]] == ["milk", "eggs"]
-    assert all(i["added_by"] == "ann" for i in data["items"])
+    card = ch.cards[0]
+    assert card["kind"] == "shopping"
+    assert [i["text"] for i in card["data"]["items"]] == ["milk", "eggs"]
+    assert all(i["added_by"] == "ann" for i in card["data"]["items"])
+    # the refresh wiring: without these the stored card cannot re-read itself
+    assert card["intent"] == "recall_shopping"
+    assert card["params"] == {"content": ""}
     # the prose is untouched -- Discord and Telegram still get exactly this
     assert "milk, eggs" in ch.sent[0]
 
@@ -765,9 +788,9 @@ def test_an_empty_shopping_list_still_emits_a_card():
     asyncio.run(shopping_plugin.handle(
         "recall_shopping", Ctx(user_id=1, channel=ch, content="")))
 
-    kind, data = ch.cards[0]
-    assert kind == "shopping"
-    assert data["items"] == []
+    card = ch.cards[0]
+    assert card["kind"] == "shopping"
+    assert card["data"]["items"] == []
     assert ch.sent == ["Shopping list is empty."]
 ```
 
@@ -803,6 +826,10 @@ existing prose construction is kept verbatim; only the send changes.
                 "suggestions": suggestions,
             },
             text,
+            # how this card re-reads itself later. Without these the stored card
+            # has no intent and is dead the moment the page reloads.
+            intent="recall_shopping",
+            params={"content": ""},
         )
 ```
 
