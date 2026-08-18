@@ -48,10 +48,21 @@ include these.
   os.environ.setdefault("LMSTUDIO_MODEL", "test-model")
   ```
   `tests/test_channel.py` is the exception — it imports no config and needs none.
-- **Run the whole suite before each commit**, not just the new test. Baseline at
-  the time of writing: `687 passed`.
-- **The working tree is production.** `wren.service` runs this checkout in place.
-  Anything broken on disk is live at the next restart.
+- **Run the whole suite before each commit**, not just the new test. Baseline on
+  this branch: `675 passed`. (`main`'s working tree shows 687 — it carries a
+  dozen uncommitted tests belonging to unrelated in-flight work. 675 is the
+  number that matters here.)
+- **Run pytest with `/home/winter/work/Wren/venv/bin/python -m pytest -q`.** This
+  worktree has no venv of its own; the main checkout's is the one to use.
+- **You are in a git worktree at `.claude/worktrees/skill-cards-slice-1`, on
+  branch `skill-cards-slice-1`.** Commit here. Never `cd` to
+  `/home/winter/work/Wren` and never run `git -C` against it — that checkout is
+  what `wren.service` runs, and it holds unrelated uncommitted work.
+- **`load_dotenv()` reaches out of this worktree** and reads the main checkout's
+  real `.env`, because dotenv searches parent directories. So a test that
+  asserts on any config value not pinned by the module's env preamble is
+  asserting a fact about this host. Pin it with `monkeypatch.setattr(config,
+  ...)` rather than trusting the environment.
 
 ---
 
