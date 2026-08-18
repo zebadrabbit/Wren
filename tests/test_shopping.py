@@ -3,6 +3,7 @@ os.environ.setdefault("DISCORD_TOKEN", "test")
 os.environ.setdefault("WREN_OWNER_ID", "1")
 
 from wren.skills import shopping_store as shopping
+from wren import db
 
 @pytest.fixture(autouse=True)
 def tmp_db(tmp_path, monkeypatch):
@@ -83,3 +84,49 @@ def test_clear_keeps_rows_for_common_items():
         shopping.add("milk", "owner")
         shopping.clear()
     assert [c["item"] for c in shopping.common_items()] == ["milk"]
+
+
+def test_restore_puts_the_most_recently_removed_item_back():
+    shopping.add("milk", "owner")
+    shopping.remove("milk")
+    assert shopping.restore("milk") is True
+    assert [i["original_text"] for i in shopping.active_items()] == ["milk"]
+
+
+def test_restore_reports_false_when_there_is_nothing_to_put_back():
+    assert shopping.restore("milk") is False
+    shopping.add("milk", "owner")
+    assert shopping.restore("milk") is False      # it is active, not removed
+
+
+def test_restore_reuses_the_row_instead_of_inserting_a_second_one():
+    # The reason restore() exists rather than calling add() again: add() only
+    # matches active rows, so on a removed item it INSERTs. That extra row
+    # would count toward common_items and quietly make a removed-then-restored
+    # item look more frequently bought than it is.
+    shopping.add("milk", "owner")
+    shopping.remove("milk")
+    shopping.restore("milk")
+
+    with db.conn() as con:
+        rows = con.execute("SELECT count(*) FROM shopping_items WHERE item='milk'").fetchone()[0]
+    assert rows == 1
+
+
+def test_restore_preserves_who_added_it():
+    shopping.add("milk", "ann")
+    shopping.remove("milk")
+    shopping.restore("milk")
+    assert shopping.active_items()[0]["added_by"] == "ann"
+
+
+def test_a_remove_then_restore_does_not_inflate_the_suggestions():
+    # common_items() drives "You often get: ...". Undo must not be a purchase.
+    for _ in range(3):
+        shopping.add("milk", "owner")
+        shopping.remove("milk")
+    before = [c["count"] for c in shopping.common_items(threshold=1) if c["item"] == "milk"][0]
+    shopping.restore("milk")
+    shopping.remove("milk")
+    after = [c["count"] for c in shopping.common_items(threshold=1) if c["item"] == "milk"][0]
+    assert after == before

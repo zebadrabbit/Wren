@@ -42,6 +42,25 @@ def remove(item_text: str) -> bool:
         )
         return cur.rowcount > 0
 
+def restore(item_text: str) -> bool:
+    """Undo a remove: flip the most recently removed row back to active.
+
+    Deliberately not add() again. add() only matches rows with status='active',
+    so on a removed item it INSERTs a second row -- which inflates
+    common_items(), making an item you removed and put back look more
+    frequently bought than it is, and loses the original added_by/added_at.
+    Flipping the status back is the actual inverse of remove().
+    """
+    normalized = item_text.strip().lower()
+    with db.conn() as con:
+        cur = con.execute(
+            "UPDATE shopping_items SET status='active' WHERE id = ("
+            "  SELECT id FROM shopping_items WHERE item=? AND status='removed'"
+            "  ORDER BY id DESC LIMIT 1)",
+            (normalized,),
+        )
+        return cur.rowcount > 0
+
 def clear() -> int:
     """Mark every active item removed; returns how many there were.
 

@@ -4,11 +4,13 @@ from .. import router
 from .. import flourish
 from ..channel import Ctx
 
-INTENTS = ["add_shopping_item", "remove_shopping_item", "clear_shopping", "recall_shopping", "send_shopping_list"]
+INTENTS = ["add_shopping_item", "remove_shopping_item", "restore_shopping_item",
+           "clear_shopping", "recall_shopping", "send_shopping_list"]
 PLUGIN_NAME = "Shopping List"
 
 PROMPT_GUIDELINES = """- add_shopping_item: user wants to add an item to the shared shopping list
 - remove_shopping_item: user got/bought/already has a SPECIFIC named item and wants that one item off the shopping list
+- restore_shopping_item: user wants an item they just removed put BACK on the list ("undo", "put the milk back", "I still need the eggs after all")
 - clear_shopping: user wants the WHOLE shopping list emptied ("clear the shopping list", "empty my shopping list", "wipe the list", "start a fresh list") — the list itself is the target, not an item on it
 - recall_shopping: user wants to see the current shopping list
 - send_shopping_list: user wants to send the whole shopping list to someone"""
@@ -27,6 +29,14 @@ async def handle(intent: str, ctx: Ctx) -> None:
             await ctx.channel.send(flourish.flourish(f"Got it, removed {ctx.content}."))
         else:
             await ctx.channel.send(f"{ctx.content} wasn't on the list.")
+
+    elif intent == "restore_shopping_item":
+        # the card's undo button dispatches this, and so does "put the milk
+        # back" typed anywhere -- Discord and Telegram included
+        if shopping.restore(ctx.content):
+            await ctx.channel.send(flourish.flourish(f"Put {ctx.content} back."))
+        else:
+            await ctx.channel.send(f"{ctx.content} wasn't there to put back.")
 
     elif intent == "clear_shopping":
         count = shopping.clear()

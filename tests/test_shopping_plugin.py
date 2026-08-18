@@ -128,3 +128,27 @@ def test_clear_shopping_when_already_empty():
     ch = CollectingChannel()
     asyncio.run(shopping_plugin.handle("clear_shopping", Ctx(user_id=1, channel=ch, content="shopping list")))
     assert ch.sent == ["Shopping list is already empty."]
+
+
+def test_restore_shopping_item_puts_it_back():
+    shopping.add("milk", "owner")
+    shopping.remove("milk")
+    ch = CollectingChannel()
+    asyncio.run(shopping_plugin.handle(
+        "restore_shopping_item", Ctx(user_id=1, channel=ch, content="milk")))
+    _assert_flourished(ch.sent[-1], "Put milk back.")
+    assert [i["original_text"] for i in shopping.active_items()] == ["milk"]
+
+
+def test_restore_shopping_item_when_there_is_nothing_to_restore():
+    ch = CollectingChannel()
+    asyncio.run(shopping_plugin.handle(
+        "restore_shopping_item", Ctx(user_id=1, channel=ch, content="milk")))
+    assert ch.sent == ["milk wasn't there to put back."]
+
+
+def test_restore_is_offered_to_the_model():
+    # the card's undo button is not the only caller -- "put the milk back"
+    # typed on any surface routes here too, which needs the intent registered
+    assert "restore_shopping_item" in shopping_plugin.INTENTS
+    assert "restore_shopping_item" in shopping_plugin.PROMPT_GUIDELINES
