@@ -127,3 +127,21 @@ def test_ctx_tags_default_is_fresh_for_later_instances():
     first = Ctx(user_id=1, channel=CollectingChannel())
     first.tags.append("grocery")
     assert Ctx(user_id=3, channel=CollectingChannel()).tags == []
+
+
+def test_send_card_records_the_card_and_the_prose():
+    ch = CollectingChannel()
+
+    async def go():
+        await ch.send_card("shopping", {"items": [{"text": "milk"}]}, "milk")
+
+    asyncio.run(go())
+    assert ch.cards == [{"kind": "shopping", "data": {"items": [{"text": "milk"}]},
+                         "intent": "", "params": {}}]
+    # also in .sent, so every existing skill test that asserts on prose keeps
+    # working when a skill starts emitting a card alongside it
+    assert ch.sent == ["milk"]
+
+
+def test_cards_start_empty():
+    assert CollectingChannel().cards == []

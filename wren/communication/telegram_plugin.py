@@ -176,6 +176,12 @@ class TelegramChannel:
                        content_type="application/octet-stream")
         await _api("sendDocument", data=form)
 
+    async def send_card(self, kind: str, data: dict, text: str,
+                        *, intent: str = "", params: dict | None = None) -> None:
+        # Inline keyboards would mean a callback route and a per-surface
+        # interaction model. Prose is what send_card's signature exists for.
+        await self.send(text)
+
     async def history(self, limit: int = 10) -> list[dict] | None:
         # ponytail: None, same as CollectingChannel — but here it is a protocol
         # limit, not a shortcut. A bot cannot read a chat's backlog: getUpdates

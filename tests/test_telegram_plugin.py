@@ -515,3 +515,13 @@ def test_nothing_is_remapped_when_telegram_owner_id_is_unset(monkeypatch):
         asyncio.run(telegram_plugin._poll_once(None))
 
     assert handle.await_args.args[0] == config.WHITELIST["owner"]
+
+
+def test_telegram_send_card_falls_back_to_the_prose():
+    api = AsyncMock(return_value={})
+    with patch.object(telegram_plugin, "_api", new=api):
+        asyncio.run(telegram_plugin.TelegramChannel(42).send_card(
+            "shopping", {"items": []}, "Shopping list is empty."))
+
+    assert api.await_args.args[0] == "sendMessage"
+    assert api.await_args.kwargs["data"] == {"chat_id": 42, "text": "Shopping list is empty."}

@@ -17,6 +17,24 @@ class Channel(Protocol):
         reactions; surfaces with no such concept no-op."""
         ...
 
+    async def send_card(self, kind: str, data: dict, text: str,
+                        *, intent: str = "", params: dict | None = None) -> None:
+        """Structured data a surface may draw as an interactive card.
+
+        `text` is the prose the skill would otherwise have sent, verbatim.
+        Surfaces that cannot draw a card send exactly that, so a skill adopting
+        a card is never a regression on Discord or Telegram. `data` is the rows
+        to draw; it is NOT persisted anywhere — see the design doc on why cards
+        are live.
+
+        `intent` and `params` are how the card refreshes itself: they are what a
+        surface stores so it can re-run this same read later. Only the skill
+        knows them, which is why they are arguments and not something the web
+        surface could infer from `kind`. Keyword-only with defaults, so a
+        surface that only prints prose never has to think about them.
+        """
+        ...
+
 
 @dataclass
 class Ctx:
@@ -40,6 +58,7 @@ class CollectingChannel:
         self.sent: list[str] = []
         self.files: list[tuple[bytes, str]] = []
         self.acks: list[str] = []
+        self.cards: list[dict] = []
 
     async def send(self, text: str) -> None:
         self.sent.append(text)
@@ -54,3 +73,15 @@ class CollectingChannel:
 
     async def ack(self, state: str) -> None:
         self.acks.append(state)
+
+    async def send_card(self, kind: str, data: dict, text: str,
+                        *, intent: str = "", params: dict | None = None) -> None:
+        # A dict, not a tuple, so intent/params are visible to a skill test.
+        # They are the part a skill is most likely to get wrong -- a card with
+        # the wrong intent looks perfect until the page reloads and cannot
+        # refresh it.
+        self.cards.append({"kind": kind, "data": data,
+                           "intent": intent, "params": params or {}})
+        # both, deliberately: a test may assert on the structure, and every
+        # existing test that asserts on prose keeps passing unchanged
+        await self.send(text)

@@ -118,3 +118,16 @@ def test_history_to_messages_skips_empty_content():
     real = _fake_message(1, "hello")
     result = discord_utils.history_to_messages([real, blank], bot_user_id=99)
     assert result == [{"role": "user", "content": "hello"}]
+
+def test_discord_send_card_falls_back_to_the_prose():
+    # The degradation IS the contract: a skill emitting a card must never be a
+    # regression on a surface that cannot draw one.
+    from wren.communication.discord_plugin import DiscordChannel
+
+    message = MagicMock()
+    message.channel.send = AsyncMock()
+    channel = DiscordChannel(message, MagicMock())
+
+    asyncio.run(channel.send_card("shopping", {"items": []}, "Shopping list is empty."))
+
+    message.channel.send.assert_awaited_once_with("Shopping list is empty.")

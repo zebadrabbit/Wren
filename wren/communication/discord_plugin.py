@@ -31,6 +31,12 @@ class DiscordChannel:
     async def send_file(self, data: bytes, filename: str) -> None:
         await self._message.channel.send(file=discord.File(io.BytesIO(data), filename=filename))
 
+    async def send_card(self, kind: str, data: dict, text: str,
+                        *, intent: str = "", params: dict | None = None) -> None:
+        # Discord could draw an embed, but a card is interactive and an embed is
+        # not; prose is the honest degradation rather than a half-card.
+        await self.send(text)
+
     async def history(self, limit: int = 10) -> list[dict] | None:
         try:
             raw = [m async for m in self._message.channel.history(limit=limit, before=self._message)]
