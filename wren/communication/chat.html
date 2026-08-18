@@ -172,6 +172,8 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .card .cx:hover { opacity: 1; }
 .card .cx:disabled { opacity: .3; cursor: default; }
 .card .cempty, .card .csugg { margin: 0; padding: .5rem .75rem; opacity: .7; }
+.card .cstatus { margin: 0; padding: .4rem .75rem; font-size: 13px; opacity: .75;
+                 border-top: 1px solid var(--line); }
 .card .cadd { display: flex; gap: .5rem; padding: .5rem .75rem; border-top: 1px solid var(--line); }
 .card .cadd input { flex: 1; }
 /* ── landing ───────────────────────────────────────────────────────────── */
@@ -380,11 +382,27 @@ function fileLink(f) {
 // A card is live: it holds no rows of its own, it re-fetches through
 // /api/dispatch. That is why every control ends by re-rendering from the
 // server's response rather than mutating the DOM it already drew.
-async function dispatch(intent, content) {
+//
+// `params` is the whole Ctx-shaped object (content, tags, ...), not just a
+// bare string -- a filtered card (e.g. notes filtered to a tag) must be able
+// to re-dispatch with that filter intact, so this must not narrow it down to
+// "content" the way a single string argument would force it to.
+async function dispatch(intent, params) {
   return api("/api/dispatch", {
     method: "POST",
-    body: JSON.stringify({ intent, content: content || "" }),
+    body: JSON.stringify({ intent, ...(params || {}) }),
   });
+}
+
+// One line of feedback inside the card itself -- never alert(). Used both for
+// the skill's own reply text ("milk wasn't on the list.") and for a caught
+// error's message, so a no-op click is never silently indistinguishable from
+// a real one.
+function cardStatus(mount, msg) {
+  const el = mount.querySelector(".cstatus");
+  if (!el) return;
+  el.textContent = msg || "";
+  el.hidden = !msg;
 }
 
 function shoppingCard(data, mount) {
@@ -403,30 +421,64 @@ function shoppingCard(data, mount) {
       (items.length ? "<ul>" + rows + "</ul>"
                     : '<p class="cempty">Nothing on the list.</p>') +
       sugg +
+      '<p class="cstatus" hidden></p>' +
       '<form class="cadd"><input placeholder="add item…" aria-label="add item">' +
       "<button>+</button></form>" +
     "</div>";
 
+  // Refresh after a mutation, sharing one path so both handlers redraw and
+  // report the same way. `r` is the mutation's own response (its `replies`
+  // carry the skill's own text, e.g. "milk wasn't on the list.", even on a
+  // 200) -- that text must reach the card, or a no-op looks like a success.
+  async function refresh(r) {
+    const fresh = await dispatch("recall_shopping", {});
+    if (fresh.cards && fresh.cards.length) {
+      renderCard({ kind: "shopping", data: fresh.cards[0].data }, mount);
+      cardStatus(mount, (r.replies || []).join(" "));
+    } else {
+      // guard against an empty cards[] (e.g. a malformed response) rather
+      // than crash on fresh.cards[0]
+      cardStatus(mount, (r.replies || []).join(" ") || "Could not refresh the list.");
+    }
+  }
+
   for (const b of mount.querySelectorAll(".cx")) {
     b.onclick = async () => {
+      // F3: serialise dispatches per card -- an in-flight flag on the mount
+      // node itself, so a second click while this one is outstanding is
+      // simply ignored rather than racing it and possibly redrawing a
+      // response that is already stale.
+      if (mount._busy) return;
+      mount._busy = true;
       b.disabled = true;
-      await dispatch("remove_shopping_item", b.dataset.item);
-      // remove_shopping_item answers with prose, not a card, so ask for the
-      // list -- same reason the add handler below does this
-      const fresh = await dispatch("recall_shopping", "");
-      renderCard({ kind: "shopping", data: fresh.cards[0].data }, mount);
+      try {
+        const r = await dispatch("remove_shopping_item", { content: b.dataset.item });
+        await refresh(r);
+      } catch (e) {
+        cardStatus(mount, e.message || "Something went wrong.");
+      } finally {
+        mount._busy = false;
+        b.disabled = false;
+      }
     };
   }
   mount.querySelector(".cadd").onsubmit = async e => {
     e.preventDefault();
+    if (mount._busy) return;             // F3, as above
     const input = e.target.querySelector("input");
     const text = input.value.trim();
     if (!text) return;
+    mount._busy = true;
     input.value = "";
-    const r = await dispatch("add_shopping_item", text);
-    // add_shopping_item answers with prose, not a card, so ask for the list
-    const fresh = await dispatch("recall_shopping", "");
-    renderCard({ kind: "shopping", data: fresh.cards[0].data }, mount);
+    try {
+      const r = await dispatch("add_shopping_item", { content: text });
+      await refresh(r);
+    } catch (err) {
+      input.value = text;                // a failed add must not destroy what was typed
+      cardStatus(mount, err.message || "Something went wrong.");
+    } finally {
+      mount._busy = false;
+    }
   };
 }
 
@@ -443,7 +495,7 @@ function renderCard(card, mount) {
 // to the prose that is already in the bubble.
 async function mountStoredCard(card, mount) {
   try {
-    const r = await dispatch(card.intent, (card.params || {}).content || "");
+    const r = await dispatch(card.intent, card.params || {});
     if (r.cards && r.cards.length) renderCard(r.cards[0], mount);
   } catch (e) { /* prose stays */ }
 }

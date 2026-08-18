@@ -137,7 +137,7 @@ def test_send_card_records_the_card_and_the_prose():
 
     asyncio.run(go())
     assert ch.cards == [{"kind": "shopping", "data": {"items": [{"text": "milk"}]},
-                         "intent": "", "params": {}}]
+                         "intent": "", "params": {}, "text": "milk"}]
     # also in .sent, so every existing skill test that asserts on prose keeps
     # working when a skill starts emitting a card alongside it
     assert ch.sent == ["milk"]

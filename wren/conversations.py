@@ -1,4 +1,5 @@
 import json
+import sqlite3
 from datetime import datetime, timezone
 
 from . import db
@@ -23,16 +24,31 @@ def init_db() -> None:
                 conversation_id INTEGER NOT NULL,
                 role            TEXT NOT NULL,
                 content         TEXT NOT NULL,
-                created_at      TEXT NOT NULL
+                created_at      TEXT NOT NULL,
+                card            TEXT
             )
         """)
-        # The repo's first migration. Everything else here is CREATE TABLE IF
-        # NOT EXISTS, which cannot add a column to a table that already exists —
-        # and this one does exist, with real conversations in it. Additive and
-        # nullable, so every row written before today reads back as card=None.
+        # The repo's first migration. A fresh install gets `card` straight from
+        # the CREATE TABLE above; this block is what brings an *existing*
+        # database — one with real conversations already in it, from before
+        # this column existed — up to the same shape. Additive and nullable,
+        # so every row written before today reads back as card=None.
         cols = {row[1] for row in con.execute("PRAGMA table_info(messages)")}
         if "card" not in cols:
-            con.execute("ALTER TABLE messages ADD COLUMN card TEXT")
+            # Two overlapping `init_db()` calls (systemd restarting Wren while
+            # someone runs `python3 -m wren.run` by hand) can both run the
+            # PRAGMA above before either has added the column, both see it
+            # missing, and both attempt the ALTER. sqlite runs DDL in
+            # autocommit, so the loser's ALTER TABLE raises instead of
+            # blocking or silently no-op'ing. That failure is harmless — the
+            # column ends up added either way — so swallow exactly the
+            # "duplicate column" error and re-raise anything else, which is
+            # a real problem the PRAGMA guard above was not meant to hide.
+            try:
+                con.execute("ALTER TABLE messages ADD COLUMN card TEXT")
+            except sqlite3.OperationalError as e:
+                if "duplicate column name" not in str(e):
+                    raise
 
         con.execute("CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id, id)")
         con.execute("CREATE INDEX IF NOT EXISTS idx_conv_owner ON conversations(owner_id, updated_at DESC)")

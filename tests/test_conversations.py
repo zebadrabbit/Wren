@@ -6,7 +6,6 @@ os.environ.setdefault("LMSTUDIO_BASE_URL", "http://test")
 os.environ.setdefault("LMSTUDIO_MODEL", "test-model")
 
 import itertools
-import json
 
 from wren import conversations
 from wren import db

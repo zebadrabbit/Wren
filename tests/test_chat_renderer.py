@@ -438,3 +438,102 @@ def test_a_card_message_renders_a_card_and_not_just_prose():
     # both paths must honour m.card: the live reply and a reloaded transcript
     assert src.count("m.card") >= 1
     assert "cards" in src
+
+
+# ── card fixes: params, failure paths, serialisation (final review wave) ────
+#
+# All substring checks, like their neighbours above -- none of these execute
+# the page. They can prove the *shape* the fix requires is present in the
+# source (a try wraps the awaits, params is spread rather than narrowed, the
+# busy flag is checked and set); none of them can prove a catch block
+# actually runs at runtime, that a button truly re-enables in a browser, or
+# that two real overlapping clicks are actually serialised. That needs a
+# browser or a JS test runner, neither of which this repo has.
+
+def test_dispatch_forwards_the_whole_params_object_not_just_content():
+    # F1: dispatch() used to send only {intent, content}, and every call site
+    # narrowed its params down to a bare content string before calling it.
+    # That silently drops any other Ctx field (tags, person, when) a future
+    # card needs for a filtered re-dispatch.
+    src = PAGE.read_text(encoding="utf-8")
+    start = src.index("async function dispatch(")
+    end = src.index("\n}", start)
+    block = src[start:end]
+    assert "async function dispatch(intent, params)" in block
+    assert "...(params || {})" in block
+    assert "content: content" not in block, "dispatch still narrows params to content"
+
+
+def test_mount_stored_card_passes_the_whole_params_object():
+    # F1: this call site used to be
+    # dispatch(card.intent, (card.params || {}).content || ""), which is the
+    # concrete case the design doc calls out -- a tag-filtered notes card
+    # would lose its filter the moment it re-renders from a stored message.
+    src = PAGE.read_text(encoding="utf-8")
+    start = src.index("async function mountStoredCard")
+    end = src.index("\n}", start)
+    block = src[start:end]
+    assert "dispatch(card.intent, card.params || {})" in block
+    assert ".content" not in block, "mountStoredCard still narrows params down to .content"
+
+
+def _shopping_card_source() -> str:
+    src = PAGE.read_text(encoding="utf-8")
+    start = src.index("function shoppingCard(")
+    end = src.index("\nfunction ", start + 1)
+    return src[start:end]
+
+
+def test_card_remove_handler_has_a_full_failure_path():
+    # F2 + F3: a try/catch/finally around both dispatches, the button
+    # re-enabled in finally (not just on the happy path), the skill's own
+    # message surfaced via cardStatus, and the in-flight guard from F3.
+    block = _shopping_card_source()
+    cx_start = block.index('mount.querySelectorAll(".cx")')
+    cx_end = block.index('mount.querySelector(".cadd")')
+    cx_block = block[cx_start:cx_end]
+    assert "try {" in cx_block
+    assert "catch" in cx_block
+    assert "finally" in cx_block
+    assert "b.disabled = false" in cx_block, "the ✕ button is never re-enabled on failure"
+    assert "cardStatus(mount" in cx_block, "neither success nor failure is surfaced in the card"
+    assert "if (mount._busy) return;" in cx_block, "no guard against a second click mid-dispatch"
+    assert "mount._busy = true" in cx_block and "mount._busy = false" in cx_block
+
+
+def test_card_add_handler_restores_typed_text_on_failure():
+    # F2: input.value used to be cleared before the await and never restored,
+    # so a failed add silently destroyed what the user typed.
+    block = _shopping_card_source()
+    add_start = block.index('mount.querySelector(".cadd")')
+    add_block = block[add_start:]
+    assert "try {" in add_block
+    assert "catch" in add_block
+    assert "finally" in add_block
+    assert "input.value = text" in add_block, "a failed add does not restore the typed text"
+    assert "cardStatus(mount" in add_block
+    assert "if (mount._busy) return;" in add_block
+
+
+def test_card_refresh_guards_against_an_empty_cards_array():
+    # F2: `fresh.cards[0].data` used to be accessed unconditionally, which
+    # throws (into an unhandled rejection) the moment the server returns no
+    # card at all. This proves the guard text precedes the cards[0] access in
+    # source order -- it cannot prove the access is unreachable when the
+    # guard is false, only that a bare `renderCard(..., fresh.cards[0]...)`
+    # with no preceding check is no longer what the source contains.
+    block = _shopping_card_source()
+    guard_at = block.index("fresh.cards && fresh.cards.length")
+    access_at = block.index("fresh.cards[0]")
+    assert guard_at < access_at, "cards[0] is reached before the emptiness guard"
+
+
+def test_card_handlers_serialise_on_an_in_flight_flag():
+    # F3: two quick clicks must not both be in flight at once. The busy flag
+    # lives on the mount node (not on a button), so it serialises across BOTH
+    # controls sharing one card -- a remove mid-flight also blocks a submit.
+    block = _shopping_card_source()
+    assert block.count("mount._busy") >= 4, (
+        "expected the busy flag to be checked and reset in both the remove "
+        "and add handlers"
+    )

@@ -81,7 +81,7 @@ class CollectingChannel:
         # the wrong intent looks perfect until the page reloads and cannot
         # refresh it.
         self.cards.append({"kind": kind, "data": data,
-                           "intent": intent, "params": params or {}})
+                           "intent": intent, "params": params or {}, "text": text})
         # both, deliberately: a test may assert on the structure, and every
         # existing test that asserts on prose keeps passing unchanged
         await self.send(text)

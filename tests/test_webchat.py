@@ -805,11 +805,14 @@ def test_dispatch_card_carries_intent_and_params_for_a_refresh():
         status, body = call("post", "/api/dispatch", token=TOKEN_A,
                             json={"intent": "recall_shopping"})
     assert status == 200
+    # /api/dispatch reuses CollectingChannel, same as /message's WebChannel
+    # path -- so the two endpoints' cards are the same shape, "text" included.
     assert body["cards"] == [{
         "kind": "shopping",
         "data": {"items": []},
         "intent": "recall_shopping",
         "params": {"content": ""},
+        "text": "Shopping list is empty.",
     }]
 
 
