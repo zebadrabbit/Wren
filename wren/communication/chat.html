@@ -75,7 +75,7 @@ button { font: inherit; color: inherit; cursor: pointer; background: transparent
 #login .err { color: var(--alert); font-size: 13px; min-height: 18px; margin-top: 8px; }
 
 /* ── layout ────────────────────────────────────────────────────────────── */
-#app { display: none; width: 100%; height: 100%; }
+#app { display: none; width: 100%; height: 100%; position: relative; }
 #app.on { display: flex; }
 aside {
   width: 260px; flex: none; background: var(--well);
@@ -127,6 +127,37 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
   display: flex; align-items: center; gap: 10px; padding: 10px 20px;
   border-bottom: 1px solid var(--line); min-height: 48px;
 }
+/* The toggle follows the sidebar: at the far end of its header while the
+   sidebar is on screen (expanded or peeked), and at the window's top-left --
+   where the topbar now starts -- once it is gone. position:fixed works there
+   because the collapsed sidebar is positioned but never transformed, so it
+   never becomes a containing block and never drags the button away with it. */
+#rail {
+  margin-left: auto; flex: none; display: flex;
+  padding: 4px; border-radius: 6px; color: var(--muted);
+}
+#rail:hover { background: var(--wash); color: var(--accent); }
+#rail svg {
+  width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+#app.railed:not(.peek) #rail { position: fixed; top: 12px; left: 12px; z-index: 7; }
+/* ...and the title steps aside for it, exactly as it does for the sidebar. */
+#app.railed:not(.peek) #topbar { padding-left: 46px; }
+/* Collapsed, the sidebar overlays the chat rather than sitting in the flex
+   row -- a hover-triggered peek must not reflow the conversation under the
+   pointer. `left` rather than `transform` for the same containing-block
+   reason as above. */
+#app.railed aside {
+  position: absolute; top: 0; left: -260px; height: 100%; z-index: 6;
+  transition: left .18s ease; box-shadow: var(--shadow-lg);
+}
+#app.railed.peek aside { left: 0; }
+/* The rollout trigger: a strip of window edge that only exists while
+   collapsed. Under #rail's z-index, so the button still takes its own clicks. */
+#edge { display: none; }
+#app.railed #edge { display: block; position: fixed; left: 0; top: 0;
+                    width: 14px; height: 100%; z-index: 5; }
 #ctitle {
   flex: 1; font-weight: 600; font-size: 15px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -218,9 +249,10 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
                  border-color: var(--accent); }
 .card li[hidden] { display: none; }
 /* ── landing ───────────────────────────────────────────────────────────── */
-#landing { text-align: center; margin-top: 14vh; }
-.landmark { width: 28px; height: 28px; display: block; margin: 0 auto 10px; }
-#greet { font-size: 22px; font-weight: 500; margin: 0 0 4px; }
+#landing { text-align: center; margin-top: 12vh; }
+.landmark { width: 56px; height: 56px; display: block; margin: 0 auto 18px; }
+/* clamp so the greeting still fits a phone without a second media query */
+#greet { font-size: clamp(24px, 3.4vw, 32px); font-weight: 500; margin: 0 0 4px; }
 #pills { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 18px; }
 .pill {
   border: 1px solid var(--line); background: var(--panel); border-radius: 999px;
@@ -354,7 +386,10 @@ main footer { padding: 10px 20px 18px; }
 }
 .perr { color: var(--alert); font-size: 13px; padding: 0 18px 12px; min-height: 18px; }
 
-@media (max-width: 640px) { aside { width: 200px; } }
+@media (max-width: 640px) {
+  aside { width: 200px; }
+  #app.railed aside { left: -200px; }
+}
 </style>
 </head>
 <body>
@@ -403,6 +438,7 @@ main footer { padding: 10px 20px 18px; }
 </div>
 
 <div id="app">
+  <div id="edge" aria-hidden="true"></div>
   <aside>
     <header>
       <!-- Inlined from Brand/brand/mark-simple.svg (one-colour silhouette --
@@ -412,6 +448,13 @@ main footer { padding: 10px 20px 18px; }
            Decorative: the word "Wren" sits right next to it. -->
       <svg class="sidemark" aria-hidden="true"><use href="#wren-mark"/></svg>
       <b>Wren</b>
+      <button id="rail" type="button" title="Hide sidebar"
+              aria-label="Show or hide the sidebar" aria-expanded="true">
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <rect x="1.5" y="2.75" width="13" height="10.5" rx="2.5"/>
+          <path d="M6 2.75v10.5"/>
+        </svg>
+      </button>
     </header>
     <button id="new">+ New chat</button>
     <div id="convos"></div>
@@ -838,6 +881,12 @@ const STARTERS = {
   pins_skill:     "pin: ",
   web_skill:      "look up ",
 };
+// Pills whose skill can just *answer*: dispatch the read intent and draw the
+// card, instead of typing a sentence at the model to get back what one call
+// already knows. Nothing is written to the conversation -- same contract as a
+// card button. Add a skill here when its pill should show rather than compose.
+const PILL_READS = { shopping_skill: "recall_shopping" };
+
 // contacts_skill is deliberately absent: it is owner-only administration, not
 // something to invite a household member into. A module with no starter here
 // simply renders no pill, which is also what a disabled skill does.
@@ -883,13 +932,25 @@ async function showEmpty(mePromise) {
     const b = document.createElement("button");
     b.className = "pill";
     b.textContent = m.replace("_skill", "").replace(/^./, c => c.toUpperCase());
-    b.onclick = () => {
+    b.onclick = PILL_READS[m] ? () => showList(PILL_READS[m]) : () => {
       $("#text").value = STARTERS[m];
       $("#text").focus();
       $("#text").setSelectionRange($("#text").value.length, $("#text").value.length);
     };
     $("#pills").appendChild(b);
   });
+}
+
+async function showList(intent) {
+  const gone = $("#landing"); if (gone) gone.remove();
+  try {
+    const r = await dispatch(intent, {});
+    const card = (r.cards || [])[0];
+    const b = bubble("assistant", md((card && card.text) || (r.replies || []).join("\n")));
+    if (card) renderCard(card, b.querySelector(".body"));
+  } catch (e) {
+    bubble("assistant", "<em>" + esc(e.message || "Something went wrong.") + "</em>");
+  }
 }
 
 async function openConvo(id) {
@@ -1170,6 +1231,22 @@ $("#signin").onclick = async () => {
   } catch { $("#loginerr").textContent = "That token was rejected."; }
 };
 $("#token").onkeydown = e => { if (e.key === "Enter") $("#signin").click(); };
+function setRail(railed) {
+  $("#app").classList.toggle("railed", railed);
+  $("#app").classList.remove("peek");
+  $("#rail").title = railed ? "Show sidebar" : "Hide sidebar";
+  $("#rail").setAttribute("aria-expanded", railed ? "false" : "true");
+}
+$("#rail").onclick = () => {
+  const railed = !$("#app").classList.contains("railed");
+  setRail(railed);
+  localStorage.setItem("wren_rail", railed ? "1" : "");
+};
+// Peek is deliberately not persisted and not a toggle: the pointer reaching
+// the window edge rolls the sidebar out, leaving it puts it back. Collapsed
+// stays collapsed either way.
+$("#edge").onmouseenter = () => $("#app").classList.add("peek");
+$("aside").onmouseleave = () => $("#app").classList.remove("peek");
 $("#new").onclick = newConvo;
 $("#send").onclick = send;
 $("#signout").onclick = () => signOut();
@@ -1255,6 +1332,7 @@ async function loadModels(fallbackModel) {
 async function start() {
   $("#login").style.display = "none";
   $("#app").classList.add("on");
+  if (localStorage.getItem("wren_rail")) setRail(true);
   // The endpoint 403s for non-owners -- use that to decide whether the gear
   // is even shown, and fail closed (hidden) on any error rather than risk
   // flashing it at someone it should never appear for.
