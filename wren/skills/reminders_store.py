@@ -12,16 +12,28 @@ def init_db() -> None:
                 content    TEXT NOT NULL,
                 fire_at    TEXT NOT NULL,
                 status     TEXT NOT NULL,
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                via        TEXT
             )
         """)
+        # Same additive migration conversations.py uses for messages.card, and
+        # for the same reason: rows written before this column existed must
+        # read back as via=None, i.e. "deliver wherever NOTIFY_VIA says".
+        cols = {row[1] for row in con.execute("PRAGMA table_info(reminders)")}
+        if "via" not in cols:
+            try:
+                con.execute("ALTER TABLE reminders ADD COLUMN via TEXT")
+            except sqlite3.OperationalError as e:
+                if "duplicate column name" not in str(e):
+                    raise
 
-def save(owner_id: int, content: str, fire_at: str) -> int:
+def save(owner_id: int, content: str, fire_at: str, via: str | None = None) -> int:
     ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
     with db.conn() as con:
         cur = con.execute(
-            "INSERT INTO reminders (owner_id, content, fire_at, status, created_at) VALUES (?,?,?,?,?)",
-            (str(owner_id), content, fire_at, "pending", ts),
+            "INSERT INTO reminders (owner_id, content, fire_at, status, created_at, via)"
+            " VALUES (?,?,?,?,?,?)",
+            (str(owner_id), content, fire_at, "pending", ts, via),
         )
         return cur.lastrowid
 
@@ -48,6 +60,14 @@ def cancel(reminder_id: int) -> bool:
             (reminder_id,),
         )
         return cur.rowcount > 0
+
+def cancel_all(owner_id: int) -> int:
+    with db.conn() as con:
+        cur = con.execute(
+            "UPDATE reminders SET status='cancelled' WHERE owner_id=? AND status='pending'",
+            (str(owner_id),),
+        )
+        return cur.rowcount
 
 def due(now_iso: str) -> list[dict]:
     with db.conn() as con:

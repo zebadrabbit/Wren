@@ -186,3 +186,29 @@ def test_notify_name_returns_false_when_surface_not_registered(monkeypatch):
     monkeypatch.setattr(config, "NOTIFY_VIA", "discord")
     monkeypatch.setattr(config, "whitelist", lambda: {"hubby": 222})
     assert asyncio.run(router.notify_name("hubby", "hi")) is False
+
+
+def test_notify_via_overrides_the_default_surface(monkeypatch):
+    default, other = FakeSurface(), FakeSurface()
+    router.register("telegram", default)
+    router.register("discord", other)
+    monkeypatch.setattr(config, "NOTIFY_VIA", "telegram")
+
+    assert asyncio.run(router.notify(7, "mythics", via="discord")) is True
+    assert other.calls == [(7, "mythics")]
+    assert default.calls == []
+
+
+def test_notify_without_via_still_uses_the_default_surface(monkeypatch):
+    default = FakeSurface()
+    router.register("telegram", default)
+    monkeypatch.setattr(config, "NOTIFY_VIA", "telegram")
+
+    assert asyncio.run(router.notify(7, "hello")) is True
+    assert default.calls == [(7, "hello")]
+
+
+def test_notify_via_an_unregistered_surface_is_a_permanent_failure(monkeypatch):
+    router.register("telegram", FakeSurface())
+    monkeypatch.setattr(config, "NOTIFY_VIA", "telegram")
+    assert asyncio.run(router.notify(7, "hello", via="discord")) is False

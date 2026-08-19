@@ -24,9 +24,11 @@ def reset() -> None:
     _surfaces.clear()
 
 
-async def notify(user_id: int, text: str) -> bool:
+async def notify(user_id: int, text: str, via: str | None = None) -> bool:
     """Deliver an unprompted message (reminder, watcher alert) to a user on
-    whichever surface this install is configured to use.
+    whichever surface this install is configured to use, or the one `via`
+    names when the caller has a reason to override that (a reminder the user
+    asked for on Discord while everything else goes to Telegram).
 
     Contract, and it matters: `False` means a PERMANENT failure — this user
     cannot be reached and retrying will not help (their DMs are closed, they
@@ -39,10 +41,11 @@ async def notify(user_id: int, text: str) -> bool:
     error here silently destroys the message instead of retrying it on the
     next poll. Do not add a blanket `except Exception` back to this function.
     """
-    surface = _surfaces.get(config.NOTIFY_VIA)
+    name = via or config.NOTIFY_VIA
+    surface = _surfaces.get(name)
     if surface is None:
         logging.warning(
-            f"Cannot notify {user_id}: surface '{config.NOTIFY_VIA}' "
+            f"Cannot notify {user_id}: surface '{name}' "
             f"is not registered (have: {registered() or 'none'})"
         )
         return False

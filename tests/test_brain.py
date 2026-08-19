@@ -453,3 +453,24 @@ def test_pleasantries_are_named_as_chat_in_the_prompt():
     chat_line = guidelines.split("- chat:")[1].split("\n- ")[0]
     assert "pleasantry" in chat_line
     assert "thank you wren" in chat_line
+
+
+def test_detect_intent_asks_the_provider_for_json():
+    # without this a small model answers the *user* in prose instead of
+    # classifying, and the request is silently dropped as "chat"
+    payload = json.dumps({"intent": "set_reminder", "content": "x", "tags": [], "when": None})
+    client = _client_returning(payload)
+    with patch.object(brain, "_get_client", return_value=client):
+        brain.detect_intent(1, "remind me in 3 minutes")
+    assert client.chat.completions.create.call_args.kwargs["response_format"] == {"type": "json_object"}
+
+
+def test_detect_intent_retries_without_json_mode_if_provider_rejects_it():
+    payload = json.dumps({"intent": "chat", "content": "hi", "tags": []})
+    client = MagicMock()
+    client.chat.completions.create.side_effect = [TypeError("unexpected response_format"),
+                                                  _mock_completion(payload)]
+    with patch.object(brain, "_get_client", return_value=client):
+        result = brain.detect_intent(1, "hi")
+    assert result["intent"] == "chat"
+    assert "response_format" not in client.chat.completions.create.call_args.kwargs

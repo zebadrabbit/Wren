@@ -62,28 +62,41 @@ def _get_client(provider: dict) -> OpenAI:
         _clients[provider["name"]] = OpenAI(base_url=provider["base_url"], api_key=provider["api_key"])
     return _clients[provider["name"]]
 
-def _complete(messages: list[dict], temperature: float, max_tokens: int = 400) -> str:
+def _complete(messages: list[dict], temperature: float, max_tokens: int = 400,
+              json_mode: bool = False) -> str:
+    """json_mode is the intent classifier's guard rail, and it is load-bearing.
+
+    Without it a small model reads the prose in `history` as "assistant turns
+    look like this" and answers the user in prose instead of emitting JSON —
+    it role-plays the reply it thinks Wren would give. detect_intent can only
+    read that as `chat`, so the request is silently dropped. Every provider
+    here is OpenAI-shaped, but not all of them accept response_format, hence
+    the plain retry before falling through to the next provider.
+    """
     global _last_provider
     last_exc: Exception | None = None
+    attempts = [{"response_format": {"type": "json_object"}}, {}] if json_mode else [{}]
     for provider in config.LLM_CHAIN:
-        try:
-            client = _get_client(provider)
-            resp = client.chat.completions.create(
-                model=provider["model"],
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-            )
-            usage = getattr(resp, "usage", None)
-            if usage is not None:
-                _token_usage["prompt"] += usage.prompt_tokens or 0
-                _token_usage["completion"] += usage.completion_tokens or 0
-                _token_usage["total"] += usage.total_tokens or 0
-            _last_provider = provider
-            return resp.choices[0].message.content.strip()
-        except Exception as e:
-            logging.warning(f"LLM provider '{provider['name']}' failed: {e}")
-            last_exc = e
+        for extra in attempts:
+            try:
+                client = _get_client(provider)
+                resp = client.chat.completions.create(
+                    model=provider["model"],
+                    messages=messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    **extra,
+                )
+                usage = getattr(resp, "usage", None)
+                if usage is not None:
+                    _token_usage["prompt"] += usage.prompt_tokens or 0
+                    _token_usage["completion"] += usage.completion_tokens or 0
+                    _token_usage["total"] += usage.total_tokens or 0
+                _last_provider = provider
+                return resp.choices[0].message.content.strip()
+            except Exception as e:
+                logging.warning(f"LLM provider '{provider['name']}' failed: {e}")
+                last_exc = e
     raise last_exc
 
 def status() -> dict:
@@ -102,14 +115,19 @@ def detect_intent(user_id: int, text: str, history: list[dict] | None = None) ->
     if history:
         messages.extend(history)
     messages.append({"role": "user", "content": text})
+    raw = ""
     try:
-        raw = _complete(messages, temperature=0.1, max_tokens=200)
+        raw = _complete(messages, temperature=0.1, max_tokens=200, json_mode=True)
         if raw.startswith("```"):
             raw = raw.split("```")[1]
             if raw.startswith("json"):
                 raw = raw[4:]
         return json.loads(raw)
-    except Exception:
+    except Exception as e:
+        # Loud, because downstream this is indistinguishable from a real "chat":
+        # the user gets a conversational answer and no error anywhere, so a
+        # dropped reminder leaves no trace at all. Cost a reminder on 2026-08-18.
+        logging.warning(f"intent detection failed, falling back to chat: {e} (raw: {raw[:200]!r})")
         return {"intent": "chat", "content": text, "tags": [], "person": None}
 
 def recall(notes: list[dict], query: str) -> str:

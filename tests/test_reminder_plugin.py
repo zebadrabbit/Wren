@@ -112,11 +112,6 @@ def test_no_reminders_still_emits_a_card():
     assert ch.cards[0]["data"]["reminders"] == []
     assert ch.sent == ["No reminders set."]
 
-def test_cancel_reminder_empty_content_guarded():
-    ch = CollectingChannel()
-    asyncio.run(reminder_plugin.handle("cancel_reminder", Ctx(user_id=1, channel=ch, content="")))
-    assert ch.sent == ["Which reminder do you want to cancel?"]
-
 def test_cancel_reminder_no_match():
     ch = CollectingChannel()
     asyncio.run(reminder_plugin.handle("cancel_reminder", Ctx(user_id=1, channel=ch, content="oven")))
@@ -221,7 +216,7 @@ def test_transient_delivery_failure_does_not_consume_the_reminder(monkeypatch):
     the next poll, not be marked fired and lost forever."""
     reminders.save(1, "take the bins out", "2020-01-01T00:00:00+00:00")
 
-    async def exploding_notify(user_id, text):
+    async def exploding_notify(user_id, text, via=None):
         raise RuntimeError("Discord 503")
 
     monkeypatch.setattr(reminder_plugin.router, "notify", exploding_notify)
@@ -247,7 +242,7 @@ def test_permanent_delivery_failure_does_consume_the_reminder(monkeypatch):
     """False means permanent (DMs closed). Retrying forever would just spin."""
     reminders.save(1, "call the dentist", "2020-01-01T00:00:00+00:00")
 
-    async def refusing_notify(user_id, text):
+    async def refusing_notify(user_id, text, via=None):
         return False
 
     monkeypatch.setattr(reminder_plugin.router, "notify", refusing_notify)
@@ -295,3 +290,189 @@ def test_disabling_the_skill_does_not_stop_reminders_already_set():
         registry.set_enabled(reminder_skill, True)
 
     assert mock_notify.await_count == 1
+
+
+def test_relative_phrase_beats_the_models_arithmetic():
+    # the 2026-08-18 bug: model returned a time two hours past the phrase
+    ch = CollectingChannel()
+    bogus = (datetime.now(timezone.utc) + timedelta(hours=2, seconds=30)).isoformat(timespec="seconds")
+    asyncio.run(reminder_plugin.handle("set_reminder", Ctx(
+        user_id=1, channel=ch, content="this is a 30 second test",
+        text="remind me in 30 seconds that this is a 30 second test", when=bogus)))
+    fire_at = datetime.fromisoformat(reminders.pending(1)[0]["fire_at"])
+    assert abs((fire_at - datetime.now(timezone.utc)).total_seconds() - 30) < 5
+
+
+def test_absolute_when_still_comes_from_the_model():
+    ch = CollectingChannel()
+    when = (datetime.now(timezone.utc) + timedelta(hours=3)).isoformat(timespec="seconds")
+    asyncio.run(reminder_plugin.handle("set_reminder", Ctx(
+        user_id=1, channel=ch, content="dinner", text="remind me at 6pm about dinner", when=when)))
+    assert reminders.pending(1)[0]["fire_at"] == when
+
+
+def test_when_with_trailing_timezone_abbreviation_parses():
+    ch = CollectingChannel()
+    naive = (datetime.now(ZoneInfo(config.TIMEZONE)) + timedelta(hours=1)).replace(microsecond=0)
+    asyncio.run(reminder_plugin.handle("set_reminder", Ctx(
+        user_id=1, channel=ch, content="check the oven",
+        text="remind me at 6pm to check the oven", when=f"{naive.isoformat()} UTC")))
+    assert len(reminders.pending(1)) == 1
+
+
+def test_cancel_all_via_the_phrase():
+    reminders.save(1, "one", _future_iso()); reminders.save(1, "two", _future_iso(300))
+    ch = CollectingChannel()
+    asyncio.run(reminder_plugin.handle("cancel_reminder", Ctx(
+        user_id=1, channel=ch, content="all", text="cancel all reminders")))
+    _assert_flourished(ch.sent[0], "Cancelled 2 reminders.")
+    assert reminders.pending(1) == []
+
+
+def test_cancel_all_from_raw_text_when_the_model_extracted_nothing():
+    reminders.save(1, "one", _future_iso())
+    ch = CollectingChannel()
+    asyncio.run(reminder_plugin.handle("cancel_reminder", Ctx(
+        user_id=1, channel=ch, content="", text="clear all my reminders please")))
+    _assert_flourished(ch.sent[0], "Cancelled 1 reminder.")
+    assert reminders.pending(1) == []
+
+
+def test_cancel_all_with_nothing_pending():
+    ch = CollectingChannel()
+    asyncio.run(reminder_plugin.handle("cancel_reminder", Ctx(
+        user_id=1, channel=ch, content="all", text="cancel all reminders")))
+    assert ch.sent == ["No reminders to cancel."]
+
+
+def test_all_hands_is_not_a_bulk_cancel():
+    reminders.save(1, "prep for the all-hands", _future_iso())
+    ch = CollectingChannel()
+    asyncio.run(reminder_plugin.handle("cancel_reminder", Ctx(
+        user_id=1, channel=ch, content="all-hands",
+        text="cancel my reminder about the all-hands")))
+    assert reminders.pending(1) == []          # matched that one by phrase, not by "all"
+    assert "Cancelled" in ch.sent[0]
+
+
+def test_empty_phrase_lists_the_options():
+    reminders.save(1, "take out the bins", _future_iso())
+    ch = CollectingChannel()
+    asyncio.run(reminder_plugin.handle("cancel_reminder", Ctx(user_id=1, channel=ch, content="")))
+    assert ch.sent == ["Which one? You have:\n- take out the bins"]
+
+
+def test_empty_phrase_with_nothing_pending():
+    ch = CollectingChannel()
+    asyncio.run(reminder_plugin.handle("cancel_reminder", Ctx(user_id=1, channel=ch, content="")))
+    assert ch.sent == ["No reminders to cancel."]
+
+
+def test_cancel_all_is_scoped_to_the_owner():
+    reminders.save(1, "mine", _future_iso()); reminders.save(2, "theirs", _future_iso())
+    ch = CollectingChannel()
+    asyncio.run(reminder_plugin.handle("cancel_reminder", Ctx(
+        user_id=1, channel=ch, content="all", text="cancel all reminders")))
+    assert len(reminders.pending(2)) == 1
+
+
+class _Reachable:
+    CAN_NOTIFY = True
+    async def notify(self, user_id, text):
+        return True
+
+
+class _SendOnly:
+    CAN_NOTIFY = False
+    async def notify(self, user_id, text):
+        return False
+
+
+@pytest.fixture
+def surfaces(monkeypatch):
+    router.reset()
+    router.register("telegram", _Reachable())
+    router.register("discord", _Reachable())
+    router.register("http", _SendOnly())
+    monkeypatch.setattr(config, "COMMUNICATION_PLUGINS", ["telegram", "discord", "http"])
+    yield
+    router.reset()
+
+
+def test_reminder_is_routed_to_a_named_surface(surfaces):
+    ch = CollectingChannel()
+    asyncio.run(reminder_plugin.handle("set_reminder", Ctx(
+        user_id=1, channel=ch, content="join the boys for mythics",
+        text="wren can you remind me on discord to join the boys for mythics in 30 mins?",
+        when=_future_iso())))
+    assert reminders.pending(1)[0]["via"] == "discord"
+    assert "discord" in ch.sent[0]
+
+
+def test_reminder_with_no_named_surface_uses_the_default(surfaces):
+    ch = CollectingChannel()
+    asyncio.run(reminder_plugin.handle("set_reminder", Ctx(
+        user_id=1, channel=ch, content="check the oven",
+        text="remind me in 30 minutes to check the oven", when=_future_iso())))
+    assert reminders.pending(1)[0]["via"] is None
+    assert "via" not in ch.sent[0]
+
+
+def test_a_day_name_is_not_a_surface(surfaces):
+    ch = CollectingChannel()
+    asyncio.run(reminder_plugin.handle("set_reminder", Ctx(
+        user_id=1, channel=ch, content="call the dentist",
+        text="remind me on tuesday to call the dentist", when=_future_iso())))
+    assert reminders.pending(1)[0]["via"] is None
+
+
+def test_a_send_only_surface_is_refused(surfaces):
+    ch = CollectingChannel()
+    asyncio.run(reminder_plugin.handle("set_reminder", Ctx(
+        user_id=1, channel=ch, content="check the oven",
+        text="remind me on http to check the oven", when=_future_iso())))
+    assert ch.sent == ["I can't send reminders on http."]
+    assert reminders.pending(1) == []
+
+
+def test_a_configured_but_unstarted_surface_is_refused(monkeypatch):
+    router.reset()
+    monkeypatch.setattr(config, "COMMUNICATION_PLUGINS", ["telegram", "discord"])
+    ch = CollectingChannel()
+    asyncio.run(reminder_plugin.handle("set_reminder", Ctx(
+        user_id=1, channel=ch, content="join mythics",
+        text="remind me on discord to join mythics", when=_future_iso())))
+    assert ch.sent == ["I can't send reminders on discord."]
+    assert reminders.pending(1) == []
+
+
+def test_firing_uses_the_stored_route(surfaces):
+    reminders.save(1, "join mythics", _past_iso(10), via="discord")
+
+    async def run_one_iteration():
+        with patch.object(router, "notify", new=AsyncMock(return_value=True)) as mock_notify, \
+             patch("wren.skills.reminder_skill.asyncio.sleep", new=AsyncMock(side_effect=asyncio.CancelledError)):
+            try:
+                await reminder_plugin.start()
+            except asyncio.CancelledError:
+                pass
+        return mock_notify
+
+    mock_notify = asyncio.run(run_one_iteration())
+    assert mock_notify.call_args.kwargs["via"] == "discord"
+
+
+@pytest.mark.parametrize("phrase,seconds", [
+    ("remind me in 30 mins to stretch", 1800),
+    ("remind me in 5 min to stretch", 300),
+    ("remind me in 2 hrs to stretch", 7200),
+    ("remind me in 45 secs to stretch", 45),
+    ("remind me in 1 hr to stretch", 3600),
+])
+def test_abbreviated_units_are_parsed_here_not_by_the_model(phrase, seconds):
+    ch = CollectingChannel()
+    bogus = (datetime.now(timezone.utc) + timedelta(days=3)).isoformat(timespec="seconds")
+    asyncio.run(reminder_plugin.handle("set_reminder", Ctx(
+        user_id=1, channel=ch, content="stretch", text=phrase, when=bogus)))
+    fire_at = datetime.fromisoformat(reminders.pending(1)[0]["fire_at"])
+    assert abs((fire_at - datetime.now(timezone.utc)).total_seconds() - seconds) < 5

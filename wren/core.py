@@ -118,6 +118,7 @@ async def handle_message(user_id: int, text: str, channel: Channel) -> None:
             user_id=user_id,
             channel=channel,
             content=result.get("content", text),
+            text=text,
             tags=result.get("tags", []),
             person=result.get("person"),
             when=result.get("when"),

@@ -44,6 +44,8 @@ class Ctx:
     user_id: int
     channel: Channel
     content: str = ""
+    # the user's words, unmodified — `content` is the model's extraction of them
+    text: str = ""
     tags: list[str] = field(default_factory=list)
     person: str | None = None
     when: str | None = None

@@ -85,3 +85,36 @@ def test_mark_fired_removes_from_due():
     reminder_id = reminders.save(1, "check the oven", "2026-07-12T20:00:00+00:00")
     reminders.mark_fired(reminder_id)
     assert reminders.due("2026-07-12T21:00:00+00:00") == []
+
+
+def test_save_records_the_route():
+    reminders.save(1, "join mythics", "2026-07-12T21:00:00+00:00", via="discord")
+    assert reminders.pending(1)[0]["via"] == "discord"
+
+
+def test_save_without_a_route_defaults_to_none():
+    reminders.save(1, "check the oven", "2026-07-12T21:00:00+00:00")
+    assert reminders.pending(1)[0]["via"] is None
+
+
+def test_init_db_adds_via_to_a_pre_existing_table(tmp_path, monkeypatch):
+    # a database written before this column existed must keep its rows
+    monkeypatch.setenv("WREN_DB", str(tmp_path / "old.db"))
+    from wren import db
+    with db.conn() as con:
+        con.execute("""
+            CREATE TABLE reminders (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                owner_id   TEXT NOT NULL,
+                content    TEXT NOT NULL,
+                fire_at    TEXT NOT NULL,
+                status     TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+        """)
+        con.execute("INSERT INTO reminders (owner_id, content, fire_at, status, created_at)"
+                    " VALUES ('1','old one','2026-07-12T21:00:00+00:00','pending','2026-07-12T20:00:00+00:00')")
+    reminders.init_db()
+    rows = reminders.pending(1)
+    assert [r["content"] for r in rows] == ["old one"]
+    assert rows[0]["via"] is None
