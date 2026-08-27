@@ -12,6 +12,9 @@ from ..channel import Ctx
 INTENTS = ["recall_memories", "forget_memory"]
 PLUGIN_NAME = "Memory"
 
+PROMPT_GUIDELINES = """- recall_memories: user asks what Wren knows, remembers or has picked up about them (e.g. "what do you know about me")
+- forget_memory: user wants Wren to forget something it remembered about them; content is a short phrase identifying which one, not the full text"""
+
 CATEGORIES = ("preference", "person", "project", "fact")
 
 # Module constants, not settings: every knob in config.SETTABLE is one more
@@ -177,6 +180,33 @@ def for_prompt(user_id: int, text: str) -> list[str]:
                     key=lambda pair: pair[0], reverse=True)
     picked = [r for score, r in scored[:config.MEMORY_TOP_K] if score >= _INJECT_FLOOR]
     return [r["fact"] for r in core + picked]
+
+async def handle(intent: str, ctx: Ctx) -> None:
+    if intent == "recall_memories":
+        rows = memories.all_for(ctx.user_id)
+        if not rows:
+            await ctx.channel.send("I haven't remembered anything about you yet.")
+            return
+        await ctx.channel.send("\n".join(
+            f"- [{r['category']}] {r['fact']}"
+            + (f" (×{r['mention_count']})" if r["mention_count"] > 1 else "")
+            for r in rows))
+
+    elif intent == "forget_memory":
+        if not ctx.content.strip():
+            await ctx.channel.send("Which one should I forget?")
+            return
+        needle = ctx.content.strip().lower()
+        matches = [r for r in memories.all_for(ctx.user_id) if needle in r["fact"].lower()]
+        if not matches:
+            await ctx.channel.send("Nothing remembered matching that.")
+        elif len(matches) > 1:
+            # same shape as cancel_reminder: never guess which one to delete
+            listing = "\n".join(f"- {m['fact']}" for m in matches)
+            await ctx.channel.send(f"Found more than one match, be more specific.\n{listing}")
+        else:
+            memories.forget(matches[0]["id"])
+            await ctx.channel.send(flourish.flourish(f"Forgotten: {matches[0]['fact']}."))
 
 async def start() -> None:
     # Sleeps first: the queue is empty at boot, and a sweep racing the

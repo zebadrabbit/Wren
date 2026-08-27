@@ -383,3 +383,14 @@ def test_a_refused_set_override_does_not_persist_the_rejected_value(monkeypatch)
         assert config.LLM_CHAIN == chain_before_attempt
     finally:
         config.LLM_CHAIN = original_chain
+
+
+def test_memory_settings_are_settable():
+    assert "MEMORY_SWEEP_SECONDS" in config.SETTABLE
+    assert "MEMORY_DEDUP_THRESHOLD" in config.SETTABLE
+    assert "MEMORY_TOP_K" in config.SETTABLE
+
+
+def test_dedup_threshold_rejects_a_value_outside_zero_to_one():
+    with pytest.raises(ValueError):
+        config.SETTABLE["MEMORY_DEDUP_THRESHOLD"].coerce("1.5")

@@ -214,6 +214,20 @@ def _coerce_poll_seconds(raw: str) -> int:
     return value
 
 
+def _coerce_threshold(raw: str) -> float:
+    value = float(raw)
+    if not 0.0 < value <= 1.0:
+        raise ValueError("similarity threshold must be greater than 0 and at most 1")
+    return value
+
+
+def _coerce_top_k(raw: str) -> int:
+    value = int(raw)
+    if value < 1:
+        raise ValueError("top-k must be at least 1")
+    return value
+
+
 def _coerce_notify_via(raw: str) -> str:
     from . import router          # local: router imports config, so not at module level
 
@@ -296,6 +310,10 @@ SETTABLE = {
     "GITHUB_WATCH":          Setting(_parse_github_watch, serialize=_serialize_github_watch),
     "EMAIL_WATCH":           Setting(_parse_email_watch, serialize=_serialize_email_watch),
     "NOTIFY_VIA":            Setting(_coerce_notify_via, boot_coerce=str.strip),
+
+    "MEMORY_SWEEP_SECONDS":   Setting(_coerce_poll_seconds),
+    "MEMORY_DEDUP_THRESHOLD": Setting(_coerce_threshold),
+    "MEMORY_TOP_K":           Setting(_coerce_top_k),
 
     # Model NAMES are not credentials, so they belong in the allowlist; the
     # matching *_API_KEY values are and never will. Listed literally rather

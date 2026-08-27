@@ -1,3 +1,4 @@
+import asyncio
 import os, pytest
 from unittest.mock import patch
 os.environ.setdefault("DISCORD_TOKEN", "test")
@@ -7,6 +8,7 @@ os.environ.setdefault("LMSTUDIO_BASE_URL", "http://test")
 os.environ.setdefault("LMSTUDIO_MODEL", "test-model")
 os.environ.setdefault("TIMEZONE", "UTC")
 
+from wren.channel import Ctx, CollectingChannel
 from wren.skills import memory_skill as memory_plugin
 from wren.skills import memory_store as memory
 from wren import config
@@ -176,3 +178,44 @@ def test_for_prompt_caps_at_top_k(monkeypatch):
 def test_for_prompt_drops_irrelevant_memories():
     memory.save(1, "fact", "drives a diesel van")
     assert memory_plugin.for_prompt(1, "what is the capital of Peru") == []
+
+
+# --- handle (recall_memories / forget_memory) -------------------------
+
+def test_recall_lists_what_is_remembered():
+    memory.save(1, "preference", "dislikes cilantro")
+    ch = CollectingChannel()
+    asyncio.run(memory_plugin.handle("recall_memories", Ctx(user_id=1, channel=ch)))
+    assert "dislikes cilantro" in ch.sent[0]
+
+def test_recall_says_so_when_there_is_nothing():
+    ch = CollectingChannel()
+    asyncio.run(memory_plugin.handle("recall_memories", Ctx(user_id=1, channel=ch)))
+    assert ch.sent == ["I haven't remembered anything about you yet."]
+
+def test_forget_removes_the_match():
+    memory.save(1, "preference", "dislikes cilantro")
+    ch = CollectingChannel()
+    asyncio.run(memory_plugin.handle("forget_memory",
+                                     Ctx(user_id=1, channel=ch, content="cilantro")))
+    assert memory.all_for(1) == []
+
+def test_forget_asks_which_one_when_several_match():
+    memory.save(1, "person", "sister Kate lives in Denver")
+    memory.save(1, "person", "Kate drives a van")
+    ch = CollectingChannel()
+    asyncio.run(memory_plugin.handle("forget_memory",
+                                     Ctx(user_id=1, channel=ch, content="Kate")))
+    assert "more than one" in ch.sent[0]
+    assert len(memory.all_for(1)) == 2
+
+def test_forget_reports_a_miss():
+    ch = CollectingChannel()
+    asyncio.run(memory_plugin.handle("forget_memory",
+                                     Ctx(user_id=1, channel=ch, content="nothing like this")))
+    assert ch.sent == ["Nothing remembered matching that."]
+
+def test_forget_without_content_asks():
+    ch = CollectingChannel()
+    asyncio.run(memory_plugin.handle("forget_memory", Ctx(user_id=1, channel=ch, content="")))
+    assert ch.sent == ["Which one should I forget?"]

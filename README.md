@@ -378,6 +378,12 @@ alternatives with the same profile.
   the last restart (resets on restart, not persisted)
 - "list plugins" — every skill and watcher, and whether each is configured
 
+**Memory**
+- "what do you know about me" — lists facts Wren has picked up while talking
+  with you
+- "forget that I dislike cilantro" — matches by phrase, asks you to be more
+  specific if it matches more than one
+
 ## Web lookup (optional)
 
 Enable web search and page reading by setting `SEARXNG_URL` (and optionally
@@ -392,6 +398,26 @@ just reports "Search is unavailable right now." Firecrawl works out of the box.
   searches the web and summarizes the results with links
 - "read me the first one" / "read https://…" — fetches a page in full and
   summarizes it
+
+## Memory
+
+Wren picks up short facts about you as you talk — preferences, people,
+projects, that kind of thing — and stores them per owner so it can bring
+them up again later without being asked.
+
+Extraction is a separate background pass, not something that happens on
+your turn: a fast regex gate queues a turn that looks worth remembering,
+and a periodic sweep (`MEMORY_SWEEP_SECONDS`, default 300) is what actually
+calls the model to pull facts out of it. Nothing about answering you waits
+on that call.
+
+You can always list what's remembered ("what do you know about me") and
+delete anything you don't want kept ("forget that I dislike cilantro").
+There's no separate edit — forget it and say it again.
+
+Switching Memory off in the web chat's plugins panel stops both halves: the
+background sweep stops extracting new facts, and nothing already stored is
+injected into future replies.
 
 ## Gmail-arrival watcher (optional)
 
