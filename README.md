@@ -419,6 +419,11 @@ Switching Memory off in the web chat's plugins panel stops both halves: the
 background sweep stops extracting new facts, and nothing already stored is
 injected into future replies.
 
+At INFO the service log records a short snippet of each queued turn and
+every extracted fact (this is the tuning corpus); raise the log level to
+suppress it — households with more than one person should know before
+switching Memory on.
+
 ## Gmail-arrival watcher (optional)
 
 Add `gmail` to `COMMUNICATION_PLUGINS`, set

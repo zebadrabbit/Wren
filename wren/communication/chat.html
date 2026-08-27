@@ -1068,8 +1068,14 @@ const SETTING_META = {
   OPENAI_MODEL:          { group: "Models", label: "OpenAI model", help: MODEL_HELP },
   CLAUDE_MODEL:          { group: "Models", label: "Claude model", help: MODEL_HELP },
   OPENROUTER_MODEL:      { group: "Models", label: "OpenRouter model", help: MODEL_HELP },
+  MEMORY_SWEEP_SECONDS:  { group: "Memory", label: "Memory sweep (seconds)",
+                           help: "How often queued turns are read for facts. Minimum 5.", num: true },
+  MEMORY_DEDUP_THRESHOLD: { group: "Memory", label: "Dedup threshold (0–1)",
+                           help: "How alike two facts must be to count as one. Lower merges more.", num: true },
+  MEMORY_TOP_K:          { group: "Memory", label: "Facts per reply",
+                           help: "How many relevant memories go in front of the model per turn.", num: true },
 };
-const SETTING_GROUPS = ["General", "Watchers", "Web lookup", "Models", "Other"];
+const SETTING_GROUPS = ["General", "Watchers", "Web lookup", "Models", "Memory", "Other"];
 
 function showTab(name) {
   document.querySelectorAll("#ptabs .tab").forEach(t =>

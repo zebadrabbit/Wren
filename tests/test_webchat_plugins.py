@@ -462,3 +462,13 @@ def test_models_endpoint_degrades_on_a_client_response_error(monkeypatch):
     assert status == 200
     assert body["models"] == []
     assert body["reason"]
+
+
+def test_memory_settings_are_labelled_in_the_plugins_panel():
+    # Without a SETTING_META entry, MEMORY_* falls through settingRow() to
+    # { group: "Other", label: key } -- an unlabelled raw env-var name. These
+    # three need their own group and human labels like every other setting.
+    src = webchat._PAGE.read_text(encoding="utf-8")
+    assert '"Memory"' in src
+    for key in ("MEMORY_SWEEP_SECONDS", "MEMORY_DEDUP_THRESHOLD", "MEMORY_TOP_K"):
+        assert f"{key}:" in src

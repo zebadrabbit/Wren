@@ -12,7 +12,7 @@ from ..channel import Ctx
 INTENTS = ["recall_memories", "forget_memory"]
 PLUGIN_NAME = "Memory"
 
-PROMPT_GUIDELINES = """- recall_memories: user asks what Wren knows, remembers or has picked up about them (e.g. "what do you know about me")
+PROMPT_GUIDELINES = """- recall_memories: user asks what Wren knows about THEM as a person — their preferences, people, projects (e.g. "what do you know about me"); NOT questions about this conversation — "do you remember what I said" stays chat
 - forget_memory: user wants Wren to forget something it remembered about them; content is a short phrase identifying which one, not the full text"""
 
 CATEGORIES = ("preference", "person", "project", "fact")
@@ -22,6 +22,10 @@ CATEGORIES = ("preference", "person", "project", "fact")
 # Promote these only if tuning proves they need it.
 _MIN_TOKENS = 12
 _CORE_MENTIONS = 3
+# A 7B model's context is small, and unlike the top-k rest of the list, the
+# core profile has no relevance floor of its own -- it only ever grows, so
+# it needs its own cap or it eventually eats the whole prompt.
+_CORE_CAP = 5
 _INJECT_FLOOR = 0.1
 
 _FIRST_PERSON = re.compile(r"\b(i|i'm|im|i've|my|mine|me|we|we're|our|us)\b", re.I)
@@ -91,7 +95,13 @@ _STOP = {"a", "an", "the", "i", "im", "i'm", "is", "are", "was", "were", "to", "
          "you", "your", "has", "have", "had", "be", "at"}
 
 def _tokens(text: str) -> set[str]:
-    return {w for w in re.findall(r"[a-z0-9']+", (text or "").lower()) if w not in _STOP}
+    # \w is Unicode-aware in Python 3 (unlike the old [a-z0-9'] class), so
+    # accented and CJK text tokenises instead of vanishing entirely. The
+    # smart-apostrophe normalisation is separate: phones/macOS autocorrect
+    # straight ' to U+2019 ('), and without folding them together "doesn't"
+    # would tokenise differently depending on which apostrophe was typed.
+    text = (text or "").replace("’", "'")
+    return {w for w in re.findall(r"[\w']+", text.lower()) if w not in _STOP}
 
 def similarity(a: str, b: str) -> float:
     """Jaccard overlap of content words. 0.0 (nothing shared) to 1.0 (same words).
@@ -123,7 +133,6 @@ def remember(owner_id: int, candidates: list[dict]) -> None:
                 best, score = row, s
         if best is not None and score >= config.MEMORY_DEDUP_THRESHOLD:
             memories.bump(best["id"])
-            best["mention_count"] = best.get("mention_count", 1) + 1
             logging.info(f"memory: dedup {candidate['fact']!r} into #{best['id']} "
                          f"{best['fact']!r} (sim={score:.2f})")
         else:
@@ -151,19 +160,29 @@ def _sweep() -> None:
     from . import memory_skill
 
     # An owner who switches Memory off mid-day has queued turns already on
-    # disk; draining them anyway would extract facts from a skill that is off.
+    # disk. "Off" must mean off for both halves (see README): drain and
+    # discard rather than extracting from a skill that is switched off, and
+    # rather than leaving raw turns -- the sensitive half -- sitting on disk
+    # until someone flips it back on.
     if not registry.is_enabled(memory_skill):
+        dropped = memories.drain()
+        if dropped:
+            logging.info(f"memory: skill disabled, discarded {len(dropped)} queued turn(s)")
         return
     for row in memories.drain():
-        owner_id, text = int(row["owner_id"]), row["text"]
+        # Whole-row try, not just the model call: remember() writes to the
+        # same sqlite file the event loop's own requests use, so
+        # "database is locked" is a realistic failure here too, and it must
+        # not cost the rest of an already-drained batch.
         try:
+            owner_id, text = int(row["owner_id"]), row["text"]
             raw = brain.extract_facts(text)
+            candidates = parse_facts(raw)
+            logging.info(f"memory: {len(candidates)} candidate(s) from {text[:60]!r}")
+            remember(owner_id, candidates)
         except Exception as e:
-            logging.warning(f"memory: extraction call failed, dropping turn: {e}")
+            logging.warning(f"memory: dropped turn {row['id']} ({type(e).__name__}): {e}")
             continue
-        candidates = parse_facts(raw)
-        logging.info(f"memory: {len(candidates)} candidate(s) from {text[:60]!r}")
-        remember(owner_id, candidates)
 
 def for_prompt(user_id: int, text: str) -> list[str]:
     """The facts worth putting in front of the model for this message.
@@ -174,7 +193,9 @@ def for_prompt(user_id: int, text: str) -> list[str]:
     distracted by irrelevant context, so the floor matters as much as the cap.
     """
     rows = memories.all_for(user_id)
-    core = [r for r in rows if r["mention_count"] >= _CORE_MENTIONS]
+    # all_for() already orders by mention_count DESC, so a plain slice keeps
+    # the most-mentioned facts when there are more core facts than the cap.
+    core = [r for r in rows if r["mention_count"] >= _CORE_MENTIONS][:_CORE_CAP]
     rest = [r for r in rows if r["mention_count"] < _CORE_MENTIONS]
     scored = sorted(((similarity(text, r["fact"]), r) for r in rest),
                     key=lambda pair: pair[0], reverse=True)

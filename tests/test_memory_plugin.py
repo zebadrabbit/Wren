@@ -12,6 +12,8 @@ from wren.channel import Ctx, CollectingChannel
 from wren.skills import memory_skill as memory_plugin
 from wren.skills import memory_store as memory
 from wren import config
+from wren import settings
+from wren import registry
 
 @pytest.fixture(autouse=True)
 def tmp_db(tmp_path, monkeypatch):
@@ -25,6 +27,7 @@ def tmp_db(tmp_path, monkeypatch):
     "the standup is tomorrow at 9am",        # date/time
     "the deploy pipeline for that service keeps failing whenever the cache is "
     "cold and nobody has worked out why yet",  # over the length threshold
+    "talked to Kate about it",                # entity alone: no first-person, no time word, under 12 tokens
 ])
 def test_gate_fires(text):
     assert memory_plugin.should_extract(text) is True
@@ -89,6 +92,19 @@ def test_similarity_ignores_stopwords_and_case():
 def test_similarity_of_empty_text_is_zero():
     assert memory_plugin.similarity("", "owns a kayak") == 0.0
 
+def test_similarity_is_unicode_aware():
+    # the old [a-z0-9']+ pattern dropped every non-ASCII letter, so identical
+    # CJK text scored 0.0 -- \w is Unicode-aware in Python 3.
+    assert memory_plugin.similarity("喜欢咖啡", "喜欢咖啡") == 1.0
+
+def test_similarity_normalises_a_smart_apostrophe():
+    # phones/macOS insert U+2019; the old pattern split "doesn't" on it into
+    # two tokens, so the same fact spelled two ways scored < 1.0.
+    assert memory_plugin.similarity("doesn’t like cilantro", "doesn't like cilantro") == 1.0
+
+def test_similarity_keeps_accented_letters():
+    assert memory_plugin.similarity("prefers café au lait", "prefers café au lait") == 1.0
+
 def test_remember_stores_a_new_fact():
     memory_plugin.remember(1, [{"category": "preference", "fact": "dislikes cilantro"}])
     assert [r["fact"] for r in memory.all_for(1)] == ["dislikes cilantro"]
@@ -143,6 +159,40 @@ def test_sweep_survives_a_dead_model():
         memory_plugin._sweep()          # must not raise: it runs in a background task
     assert memory.all_for(1) == []
 
+def test_sweep_discards_the_queue_when_the_skill_is_disabled():
+    # Switching Memory off must mean what the README says: "stops both
+    # halves". Queued raw turns are the sensitive half -- they must not sit
+    # on disk (or get sent to a model) just because the sweep still runs.
+    settings.init_db()
+    memory_plugin.observe(1, "my sister Kate lives in Denver")
+    registry.set_enabled(memory_plugin, False)
+    try:
+        with patch.object(memory_plugin.brain, "extract_facts",
+                           side_effect=AssertionError("must not be called")):
+            memory_plugin._sweep()
+        assert memory.drain() == []
+        assert memory.all_for(1) == []
+    finally:
+        registry.set_enabled(memory_plugin, True)
+
+def test_sweep_survives_one_row_failing_to_store():
+    # int(row["owner_id"]) and remember(...) used to sit outside the try, so
+    # a realistic failure there (e.g. sqlite3.OperationalError: database is
+    # locked, from the background thread and the event loop sharing the
+    # file) aborted the loop and lost the rest of the already-drained batch.
+    memory_plugin.observe(1, "my sister Kate lives in Denver")
+    memory_plugin.observe(1, "I also own a kayak")
+    payload = '{"facts": [{"category": "fact", "fact": "some fact"}]}'
+    with patch.object(memory_plugin.brain, "extract_facts", return_value=payload), \
+         patch.object(memory_plugin, "remember",
+                      side_effect=[RuntimeError("locked"), None]) as mock_remember:
+        memory_plugin._sweep()
+    # the first row's remember() blew up; the second row's must still have
+    # been reached with its own parsed candidate, not skipped along with it.
+    assert mock_remember.call_count == 2
+    assert mock_remember.call_args_list[1].args == \
+        (1, [{"category": "fact", "fact": "some fact"}])
+
 def test_sweep_stores_nothing_when_the_model_says_nothing():
     memory_plugin.observe(1, "I guess that's fine then, whatever you think")
     with patch.object(memory_plugin.brain, "extract_facts", return_value='{"facts": []}'):
@@ -174,6 +224,15 @@ def test_for_prompt_caps_at_top_k(monkeypatch):
     for i in range(5):
         memory.save(1, "fact", f"owns kayak number {i}")
     assert len(memory_plugin.for_prompt(1, "tell me about my kayak")) == 2
+
+def test_for_prompt_caps_the_core_profile():
+    # core profile has no top-k floor of its own -- without a cap it grows
+    # forever and gets injected into every single chat turn uncapped.
+    for i in range(8):
+        mid = memory.save(1, "fact", f"core fact number {i}")
+        for _ in range(2):
+            memory.bump(mid)                    # mention_count == 3, all "core"
+    assert len(memory_plugin.for_prompt(1, "zzz unrelated")) == 5
 
 def test_for_prompt_drops_irrelevant_memories():
     memory.save(1, "fact", "drives a diesel van")

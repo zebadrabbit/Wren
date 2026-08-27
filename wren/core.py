@@ -159,6 +159,11 @@ async def handle_message(user_id: int, text: str, channel: Channel) -> None:
             # are commands, not disclosures, and running the extractor on
             # them is a model call spent to be told "nothing here".
             on = registry.is_enabled(memory_skill)
+            # for_prompt is a sqlite read done inline on the event loop, by
+            # design (spec D2): a household's memories are hundreds of rows,
+            # not thousands, and a thread hop costs more than the read itself
+            # -- unlike the model call on the next line, which is to_thread'd
+            # because it takes seconds, not microseconds.
             remembered = memory_skill.for_prompt(user_id, text) if on else []
             await channel.send(await asyncio.to_thread(brain.chat, text, history, remembered))
             if on:

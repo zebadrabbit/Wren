@@ -422,7 +422,11 @@ def test_chat_guideline_distinguishes_conversation_meta_questions_from_recall():
     with patch.object(brain, "_get_client", return_value=client):
         brain.detect_intent(1, "do you remember what I said")
     system_content = captured["messages"][0]["content"]
-    assert "memory" in system_content or "remember" in system_content
+    # Tightened: memory_skill's recall_memories guideline also mentions
+    # "remembers", so a loose "memory" or "remember" substring check now
+    # passes even with the chat carve-out deleted. Assert on the carve-out's
+    # own wording instead -- deleting it must fail this test.
+    assert "do you remember what I said" in system_content
 
 
 def test_pleasantries_are_named_as_chat_in_the_prompt():
