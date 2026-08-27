@@ -110,7 +110,16 @@ def _should_fire(now: datetime, hhmm: str, last_sent: date | None) -> bool:
         return False
     hour, minute = (int(x) for x in hhmm.split(":"))
     target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-    return target <= now < target + _WINDOW
+    # Compare instants (timestamp), not the aware datetimes directly: two aware
+    # datetimes sharing one tzinfo compare wall-clock fields, not instants, so
+    # a target inside a DST spring-forward gap (e.g. 02:30 America/Chicago on
+    # 2026-03-08) would satisfy `target <= now` for no minute of the day and
+    # the briefing would silently never fire. `target` resolves (fold=0) to a
+    # real instant past the gap, so this fires once, slightly late, rather
+    # than never.
+    t0 = target.timestamp()
+    n = now.timestamp()
+    return t0 <= n < t0 + _WINDOW.total_seconds()
 
 
 async def start() -> None:
@@ -125,6 +134,14 @@ async def start() -> None:
     while True:
         await asyncio.sleep(_STEP)
         try:
+            # Local imports: registry imports this module at module scope, and
+            # "off" in the panel must mean off for the unprompted half too --
+            # BRIEFING_TIME="" is the other, independent switch (asking still
+            # works either way).
+            from .. import registry
+            from . import briefing_skill
+            if not registry.is_enabled(briefing_skill):
+                continue
             now = _now()
             if not _should_fire(now, config.BRIEFING_TIME, _last_sent):
                 continue

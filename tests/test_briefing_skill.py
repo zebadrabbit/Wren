@@ -173,3 +173,45 @@ def test_briefing_time_is_labelled_in_the_panel():
     from pathlib import Path
     page = (Path(__file__).parent.parent / "wren" / "communication" / "chat.html").read_text()
     assert 'BRIEFING_TIME: { group: "Day"' in page
+
+
+def test_should_fire_survives_a_dst_spring_forward_gap():
+    # America/Chicago springs forward 01:59 CST -> 03:00 CDT on 2026-03-08;
+    # 02:30 is a wall-clock time that never happens that day. `_should_fire`
+    # must still fire once (for the resolved, slightly-later real instant)
+    # rather than never, which is what a wall-clock (not instant) comparison
+    # would silently do.
+    from zoneinfo import ZoneInfo
+    tz = ZoneInfo("America/Chicago")
+
+    # fold=0 resolves an imaginary wall time using the PRE-transition (CST,
+    # -06:00) offset, so 02:30 lands on the UTC instant 08:30 -- which is
+    # 03:30 CDT, half an hour past the transition itself (08:00 UTC), not
+    # the transition's first minute. 12 hours of UTC-anchored minutes from
+    # midnight comfortably covers that instant with room either side.
+    gap_start = datetime(2026, 3, 8, 0, 0, tzinfo=timezone.utc)
+    gap_minutes = [(gap_start + timedelta(seconds=60 * i)).astimezone(tz) for i in range(12 * 60)]
+    assert any(briefing_skill._should_fire(n, "02:30", None) for n in gap_minutes)
+
+    # A normal day (no DST transition) is unaffected: the window is exactly
+    # the 10 consecutive minutes starting at BRIEFING_TIME, no more, no less.
+    normal_start = datetime(2026, 8, 26, 0, 0, tzinfo=timezone.utc)
+    normal_minutes = [(normal_start + timedelta(seconds=60 * i)).astimezone(tz) for i in range(24 * 60)]
+    fires = sum(1 for n in normal_minutes if briefing_skill._should_fire(n, "07:30", None))
+    assert fires == 10
+
+
+def test_start_does_nothing_when_the_skill_is_disabled_in_the_panel(monkeypatch):
+    monkeypatch.setattr(config, "BRIEFING_TIME", "07:30")
+    monkeypatch.setattr(config, "WHITELIST", {"owner": 1})
+    briefing_skill._last_sent = None
+    registry.set_enabled(briefing_skill, False)
+    try:
+        with patch.object(router, "notify", new=AsyncMock(return_value=True)) as notify, \
+             patch("wren.skills.briefing_skill.asyncio.sleep", new=AsyncMock(side_effect=[None, asyncio.CancelledError])):
+            with pytest.raises(asyncio.CancelledError):
+                asyncio.run(briefing_skill.start())
+    finally:
+        registry.set_enabled(briefing_skill, True)
+    notify.assert_not_called()
+    assert briefing_skill._last_sent is None
