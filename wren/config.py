@@ -166,20 +166,22 @@ CALENDAR_URLS: list[str] = [u.strip() for u in os.environ.get("CALENDAR_URLS", "
 CALENDAR_CACHE_SECONDS = int(os.environ.get("CALENDAR_CACHE_SECONDS", "300"))
 
 
-def _coerce_coordinate(limit: float):
+def _coerce_coordinate(name: str, limit: float):
     def coerce(raw: str) -> float | None:
         raw = (raw or "").strip()
         if not raw:
             return None            # unset -> weather skill inactive
         value = float(raw)
         if not -limit <= value <= limit:
-            raise ValueError(f"must be between -{limit} and {limit}")
+            # name the key: a bare "must be between -90 and 90" doesn't say
+            # whether it's the plugins panel's Latitude or Longitude field
+            raise ValueError(f"{name} must be between -{limit} and {limit}")
         return value
     return coerce
 
 
-_coerce_lat = _coerce_coordinate(90.0)
-_coerce_lon = _coerce_coordinate(180.0)
+_coerce_lat = _coerce_coordinate("WEATHER_LAT", 90.0)
+_coerce_lon = _coerce_coordinate("WEATHER_LON", 180.0)
 
 
 def _coerce_units(raw: str) -> str:

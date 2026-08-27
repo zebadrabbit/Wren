@@ -96,6 +96,9 @@ _TOMORROW = re.compile(r"\btomorrow\b", re.I)
 
 
 async def handle(intent: str, ctx: Ctx) -> None:
+    if not is_active():
+        await ctx.channel.send("Weather isn't configured — set WEATHER_LAT and WEATHER_LON.")
+        return
     day = 1 if _TOMORROW.search(ctx.text or "") else 0
     try:
         text = await asyncio.to_thread(summary, day)

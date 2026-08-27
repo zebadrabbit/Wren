@@ -15,6 +15,7 @@ from .skills import shopping_store as shopping
 from . import settings
 
 logging.basicConfig(level=logging.INFO)
+logging.getLogger("httpx").setLevel(logging.WARNING)  # its INFO line prints the full request URL, and CALENDAR_URLS is a secret
 
 _STORAGE = (notes, shopping, reminders, contacts, github_state, pins, conversations, settings, memory)
 

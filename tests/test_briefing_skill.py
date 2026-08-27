@@ -7,6 +7,7 @@ os.environ.setdefault("LMSTUDIO_MODEL", "test-model")
 os.environ.setdefault("TIMEZONE", "UTC")
 
 import asyncio
+import logging
 from datetime import date, datetime, timedelta, timezone
 from unittest.mock import patch
 
@@ -81,6 +82,20 @@ def test_a_dead_feed_degrades_to_one_line():
     assert "Calendar: couldn't reach the feed." in text
 
 
+def test_a_non_httperror_calendar_failure_still_degrades_to_one_line():
+    # F6: _fetch used to wrap only httpx.HTTPError -- any other exception
+    # (here a stand-in RuntimeError for httpx.InvalidURL etc.) escaped
+    # _fetch() as a raw exception compose() does not catch, costing the whole
+    # briefing instead of just the Calendar line. Goes through the real
+    # events_between()/_fetch() path (only httpx.get is mocked) so this would
+    # have failed against the old bare `except httpx.HTTPError`.
+    calendar_skill._cache.clear()
+    with patch.object(weather_skill, "summary", return_value="72°F."), \
+         patch.object(calendar_skill.httpx, "get", side_effect=RuntimeError("boom")):
+        text = briefing_skill.compose(1)
+    assert "Calendar: couldn't reach the feed." in text
+
+
 def test_disabled_skill_is_skipped():
     registry.set_enabled(calendar_skill, False)
     try:
@@ -146,6 +161,26 @@ def test_start_sends_the_briefing_to_the_owner(monkeypatch):
     assert briefing_skill._last_sent == date(2026, 8, 26)
 
 
+def test_start_still_marks_the_day_sent_when_notify_returns_false(monkeypatch, caplog):
+    # M5: router.notify() returning False means "delivered to nobody" (e.g.
+    # NOTIFY_VIA is send-only), not a transient failure like a raised
+    # exception -- retrying every minute for the rest of the day would just
+    # repeat the same no-op. _last_sent must still advance, with a warning
+    # logged so the miss is visible.
+    monkeypatch.setattr(config, "BRIEFING_TIME", "07:30")
+    monkeypatch.setattr(config, "WHITELIST", {"owner": 1})
+    briefing_skill._last_sent = None
+    with patch.object(briefing_skill, "compose", return_value="Good morning."), \
+         patch.object(router, "notify", new=AsyncMock(return_value=False)) as notify, \
+         patch("wren.skills.briefing_skill.asyncio.sleep", new=AsyncMock(side_effect=[None, asyncio.CancelledError])):
+        with caplog.at_level(logging.WARNING):
+            with pytest.raises(asyncio.CancelledError):
+                asyncio.run(briefing_skill.start())
+    notify.assert_awaited_once_with(1, "Good morning.")
+    assert briefing_skill._last_sent == date(2026, 8, 26)
+    assert any("unreachable" in r.getMessage() for r in caplog.records)
+
+
 def test_start_does_nothing_when_off(monkeypatch):
     monkeypatch.setattr(config, "BRIEFING_TIME", "")
     briefing_skill._last_sent = None
@@ -167,6 +202,13 @@ def test_start_survives_a_raising_notify_and_retries_next_step(monkeypatch):
             asyncio.run(briefing_skill.start())
     assert notify.await_count == 2
     assert briefing_skill._last_sent == date(2026, 8, 26)
+
+
+def test_guideline_defers_specific_day_questions_to_recall_calendar():
+    # F4: the reciprocal half of the calendar_skill guideline fix -- pins that
+    # `briefing`'s guideline explicitly hands off to recall_calendar rather
+    # than re-claiming "what does a specific day look like".
+    assert "recall_calendar" in briefing_skill.PROMPT_GUIDELINES
 
 
 def test_briefing_time_is_labelled_in_the_panel():

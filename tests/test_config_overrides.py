@@ -410,6 +410,14 @@ def test_weather_coordinates_are_range_checked():
         config.SETTABLE["WEATHER_LON"].coerce("-181")
 
 
+def test_weather_coordinate_error_names_the_offending_key():
+    # M2: a bare "must be between -90 and 90" doesn't say whether it's
+    # Latitude or Longitude that was rejected -- the message must name the key.
+    with pytest.raises(ValueError) as excinfo:
+        config.SETTABLE["WEATHER_LAT"].coerce("91")
+    assert "WEATHER_LAT" in str(excinfo.value)
+
+
 def test_weather_units_is_an_enum():
     assert config.SETTABLE["WEATHER_UNITS"].coerce(" Celsius ") == "celsius"
     with pytest.raises(ValueError):

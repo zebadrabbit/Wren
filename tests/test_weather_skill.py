@@ -110,6 +110,17 @@ def test_handle_now_and_tomorrow():
         assert ctx.channel.sent[0].startswith("Tomorrow:")
 
 
+def test_handle_reports_unconfigured_without_fetching(monkeypatch):
+    # F3: handle() must check is_active() itself -- otherwise an unconfigured
+    # weather skill would make a live request with latitude=&longitude=.
+    monkeypatch.setattr(config, "WEATHER_LAT", None)
+    ctx = _ctx("what's the weather")
+    with patch.object(weather_skill.httpx, "get") as get:
+        asyncio.run(weather_skill.handle("get_weather", ctx))
+    get.assert_not_called()
+    assert ctx.channel.sent == ["Weather isn't configured — set WEATHER_LAT and WEATHER_LON."]
+
+
 def test_handle_reports_a_dead_service():
     with patch.object(weather_skill.httpx, "get", side_effect=httpx.ConnectError("nope")):
         ctx = _ctx("weather?")
@@ -123,10 +134,14 @@ def test_web_search_guideline_no_longer_claims_weather():
 
 
 def test_weather_settings_are_labelled_in_the_panel():
+    # M3: two independent substrings (key present, "Day" present somewhere)
+    # would still pass if the key were labelled under a different group --
+    # assert the joined form, as the calendar/briefing panel tests do, so the
+    # key and its group are actually adjacent.
     from pathlib import Path
     page = (Path(__file__).parent.parent / "wren" / "communication" / "chat.html").read_text()
     for key in ("WEATHER_LAT", "WEATHER_LON", "WEATHER_UNITS"):
-        assert f'{key}:' in page and 'group: "Day"' in page
+        assert f'{key}: {{ group: "Day"' in page
 
 
 def test_weather_coordinate_fields_carry_their_own_min_max_and_settingrow_reads_them():

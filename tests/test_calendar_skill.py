@@ -92,6 +92,39 @@ def test_transport_error_is_a_feederror_too():
             calendar_skill.events_between(date(2026, 8, 26), 1)
 
 
+def test_feederror_names_the_host_not_userinfo_credentials(monkeypatch):
+    # F5: urlsplit(url).netloc includes a `user:token@` prefix when a feed is
+    # handed out that way (Nextcloud, Radicale) -- .hostname strips it.
+    monkeypatch.setattr(config, "CALENDAR_URLS", ["https://erin:sup3rs3cr3t@cal.example/x.ics"])
+    with patch.object(calendar_skill.httpx, "get", side_effect=httpx.ConnectError("nope")):
+        with pytest.raises(calendar_skill.FeedError) as info:
+            calendar_skill.events_between(date(2026, 8, 26), 1)
+    assert "cal.example" in str(info.value)
+    assert "sup3rs3cr3t" not in str(info.value)
+
+
+def test_any_exception_from_the_request_is_wrapped_and_scrubbed():
+    # F6: only httpx.HTTPError was wrapped before -- an unrelated exception
+    # (InvalidURL, UnsupportedProtocol on some versions, UnicodeEncodeError,
+    # or here a stand-in RuntimeError) escaped raw, with the URL in its
+    # message, and crashed compose() instead of degrading one line.
+    with patch.object(calendar_skill.httpx, "get",
+                       side_effect=RuntimeError("boom https://cal.example/private-x")):
+        with pytest.raises(calendar_skill.FeedError) as info:
+            calendar_skill.events_between(date(2026, 8, 26), 1)
+    assert "private-x" not in str(info.value)
+    assert "cal.example" in str(info.value)
+
+
+def test_webcal_scheme_is_translated_to_https_before_the_request(monkeypatch):
+    # M1: webcal:// is what Apple/Google hand out; httpx has no opinion on
+    # the scheme, so it must be rewritten before the request.
+    monkeypatch.setattr(config, "CALENDAR_URLS", ["webcal://cal.example/x.ics"])
+    with patch.object(calendar_skill.httpx, "get", return_value=_response(FEED)) as get:
+        calendar_skill.events_between(date(2026, 8, 26), 1)
+    assert get.call_args.args[0] == "https://cal.example/x.ics"
+
+
 def _ev(summary, y, m, d, h=None, length_h=1, all_day=False):
     start = datetime(y, m, d, h or 0, tzinfo=TZ)
     end = start + (timedelta(days=1) if all_day else timedelta(hours=length_h))
@@ -152,12 +185,31 @@ def test_handle_sends_the_formatted_day(monkeypatch):
     assert ctx.channel.sent == ["Today (Wed Aug 26):\n  all day      Kate in town\n  09:00–09:30  Standup"]
 
 
+def test_handle_reports_unconfigured_without_fetching(monkeypatch):
+    # F2: handle() must check is_active() itself -- core only dispatches on
+    # is_enabled, so an unconfigured calendar would otherwise silently reach
+    # events_between() and reply as if the day were simply empty.
+    monkeypatch.setattr(config, "CALENDAR_URLS", [])
+    ctx = _ctx("what's on today")
+    with patch.object(calendar_skill.httpx, "get") as get:
+        asyncio.run(calendar_skill.handle("recall_calendar", ctx))
+    get.assert_not_called()
+    assert ctx.channel.sent == ["The calendar isn't configured — set CALENDAR_URLS."]
+
+
 def test_handle_reports_a_dead_feed(monkeypatch):
     monkeypatch.setattr(calendar_skill, "_today", lambda: date(2026, 8, 26))
     ctx = _ctx("what's on today")
     with patch.object(calendar_skill.httpx, "get", side_effect=httpx.ConnectError("nope")):
         asyncio.run(calendar_skill.handle("recall_calendar", ctx))
     assert ctx.channel.sent == ["Couldn't reach the calendar feed."]
+
+
+def test_guideline_mentions_tomorrow_so_it_does_not_collide_with_briefing():
+    # F4: "what does tomorrow look like" was landing on `briefing` (which only
+    # knows today) because the two intents' guidelines overlapped. Pinning the
+    # cross-reference here catches a future edit that silently un-does it.
+    assert "tomorrow" in calendar_skill.PROMPT_GUIDELINES
 
 
 def test_calendar_urls_is_a_secret_not_a_setting():

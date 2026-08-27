@@ -405,7 +405,10 @@ Set `CALENDAR_URLS` in `.env` to one or more ICS feed URLs (comma-separated).
 Every mainstream calendar exports one — in Google Calendar it is the "Secret
 address in iCal format" under the calendar's settings. Treat it like a
 password: it is managed with `manage.sh secret set CALENDAR_URLS …` and the
-plugins panel only ever says whether it is set.
+plugins panel only ever says whether it is set. The feed URL never appears in
+the service log either — `wren/run.py` raises the `httpx` logger above INFO
+specifically so its per-request line (which includes the full URL) is never
+written to the journal; a failed fetch is logged with the feed's host only.
 
 - "what's on my calendar" / "what does today look like"
 - "anything tomorrow?" / "what's on Friday"

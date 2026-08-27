@@ -159,7 +159,7 @@ Tomorrow: `Tomorrow: high 79, low 61, mostly sunny, 10% chance of rain.`
 `briefing` / the pushed message:
 ```
 Good morning. Wed Aug 26.
-Weather: 72°F and partly cloudy. High 81, low 63, 20% chance of rain.
+Weather: 72°F and partly cloudy, wind 8 mph. High 81, low 63, 20% chance of rain.
 Calendar:
   09:00–09:30  Standup
   13:00–14:00  Dentist

@@ -16,7 +16,7 @@ from .calendar_feed import Event
 INTENTS = ["recall_calendar"]
 PLUGIN_NAME = "Calendar"
 
-PROMPT_GUIDELINES = """- recall_calendar: user asks what is on their calendar, schedule or agenda, or what a day/week looks like; if they name a specific day set "when" to that date as ISO 8601, otherwise leave it out"""
+PROMPT_GUIDELINES = """- recall_calendar: user asks what is on their calendar, schedule or agenda, or what a NAMED day (today, tomorrow, Friday) or the week looks like; if they name a specific day set "when" to that date as ISO 8601, otherwise leave it out"""
 
 FETCH_TIMEOUT = 15.0
 
@@ -40,18 +40,35 @@ def inactive_reason() -> str:
 _cache: dict[str, tuple[float, str]] = {}
 
 
+_WEBCAL = re.compile(r"^webcal://", re.I)
+
+
 def _fetch(url: str) -> str:
     now = time.monotonic()
     hit = _cache.get(url)
     if hit and now - hit[0] < config.CALENDAR_CACHE_SECONDS:
         return hit[1]
+    # .hostname, not .netloc: netloc includes a `user:token@` userinfo prefix
+    # when the host hands the feed out that way (Nextcloud, Radicale), which
+    # would leak straight into a FeedError string otherwise.
+    host = urlsplit(url).hostname or "feed"
+    # webcal:// is what Apple/Google hand out; httpx has no opinion on the
+    # scheme, so translate it to https before the request. The cache key
+    # stays the original url so a webcal and https form of the same feed
+    # don't double-fetch.
+    request_url = _WEBCAL.sub("https://", url)
     try:
-        resp = httpx.get(url, timeout=FETCH_TIMEOUT, follow_redirects=True)
+        resp = httpx.get(request_url, timeout=FETCH_TIMEOUT, follow_redirects=True)
         resp.raise_for_status()
-    except httpx.HTTPError as e:
-        # `from None`: httpx puts the full URL in its messages and chained
-        # tracebacks, and the URL is the secret
-        raise FeedError(f"{urlsplit(url).netloc}: {type(e).__name__}") from None
+    except Exception as e:
+        # Broad on purpose: httpx.InvalidURL, UnsupportedProtocol (some
+        # versions), UnicodeEncodeError etc. all escape a bare `except
+        # httpx.HTTPError` and their messages may carry the URL -- and an
+        # uncaught exception here isn't caught by compose() either, costing
+        # the whole briefing over one dead feed.
+        # `from None`: the message/traceback of `e` may carry the URL, and
+        # the URL is the secret.
+        raise FeedError(f"{host}: {type(e).__name__}") from None
     _cache[url] = (now, resp.text)
     return resp.text
 
@@ -142,6 +159,9 @@ def _window(ctx: Ctx) -> tuple[date, int, str]:
 
 
 async def handle(intent: str, ctx: Ctx) -> None:
+    if not is_active():
+        await ctx.channel.send("The calendar isn't configured — set CALENDAR_URLS.")
+        return
     anchor, days, label = _window(ctx)
     try:
         events = await asyncio.to_thread(events_between, anchor, days)

@@ -16,7 +16,7 @@ from . import weather_skill
 INTENTS = ["briefing"]
 PLUGIN_NAME = "Briefing"
 
-PROMPT_GUIDELINES = """- briefing: user asks for their briefing, a rundown or overview of the day ("what's my day look like", "morning briefing", "catch me up")"""
+PROMPT_GUIDELINES = """- briefing: user asks for their briefing, a rundown or overview of TODAY as a whole ("morning briefing", "catch me up", "what's my day look like") — questions about a specific day or the calendar are recall_calendar"""
 
 
 def _now() -> datetime:

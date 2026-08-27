@@ -472,3 +472,11 @@ def test_memory_settings_are_labelled_in_the_plugins_panel():
     assert '"Memory"' in src
     for key in ("MEMORY_SWEEP_SECONDS", "MEMORY_DEDUP_THRESHOLD", "MEMORY_TOP_K"):
         assert f"{key}:" in src
+
+
+def test_dedup_threshold_field_min_matches_the_coercers_exclusive_floor():
+    # M4: _coerce_threshold in config.py requires strictly 0 < v <= 1, but the
+    # panel's HTML5 min was 0 -- so 0 was accepted by the browser field and
+    # then rejected by the server-side coerce(), a confusing round trip.
+    src = webchat._PAGE.read_text(encoding="utf-8")
+    assert "min: 0.01" in src
