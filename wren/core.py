@@ -36,6 +36,9 @@ HELP_TEXT = """Here's what I can actually do:
 **Weather** (needs WEATHER_LAT / WEATHER_LON)
 - "what's the weather" / "will it rain tomorrow"
 
+**Briefing**
+- "what's my day look like" — weather, calendar, today's reminders and the shopping list in one message
+
 **Shopping** (one shared list)
 - "add potatoes to shopping"
 - "got the potatoes" / "remove potatoes from shopping"

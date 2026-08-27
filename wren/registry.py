@@ -12,10 +12,11 @@ from .skills import pins_skill
 from .skills import memory_skill
 from .skills import calendar_skill
 from .skills import weather_skill
+from .skills import briefing_skill
 from .communication import github_plugin
 
 PLUGINS = [notes_skill, shopping_skill, reminder_skill, web_skill, contacts_skill,
-           pins_skill, memory_skill, calendar_skill, weather_skill]
+           pins_skill, memory_skill, calendar_skill, weather_skill, briefing_skill]
 # NOTE: gmail_plugin / github_plugin are Communication (input-only) plugins now,
 # not Skills -- they do not take chat intents, so they are intentionally left out
 # of PLUGINS/INTENT_HANDLERS. They are started directly by run.py alongside the
