@@ -9,7 +9,7 @@ from ..channel import Ctx
 INTENTS = ["web_search", "read_page"]
 PLUGIN_NAME = "Web Lookup"
 
-PROMPT_GUIDELINES = """- web_search: user wants current/live/real-world information — news, weather, prices, "what's happening with X", "look up X", "search for X"; distinct from chat which handles timeless questions and casual conversation
+PROMPT_GUIDELINES = """- web_search: user wants current/live/real-world information — news, prices, "what's happening with X", "look up X", "search for X"; distinct from chat which handles timeless questions and casual conversation
 - read_page: user wants Wren to read a specific web page in full — a pasted URL, or a follow-up like "read me the first one"/"more detail on #2" after a search"""
 
 def is_active() -> bool:

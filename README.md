@@ -416,6 +416,15 @@ for the day you asked about (daily/weekly/monthly/yearly, with weekday lists,
 exceptions and moved instances); exotic rules like "second Monday" fall back
 to the plain frequency.
 
+## Weather (optional)
+
+Set `WEATHER_LAT` and `WEATHER_LON` (decimal degrees) in `.env` or the
+plugins panel. Forecasts come from Open-Meteo — no account, no key, and the
+only thing sent is the coordinates.
+
+- "what's the weather" — now, plus today's high, low and rain chance
+- "will it rain tomorrow" — tomorrow's outlook
+
 ## Memory
 
 Wren picks up short facts about you as you talk — preferences, people,

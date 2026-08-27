@@ -33,6 +33,9 @@ HELP_TEXT = """Here's what I can actually do:
 **Calendar** (needs CALENDAR_URLS)
 - "what's on my calendar" / "what does tomorrow look like" / "show my week"
 
+**Weather** (needs WEATHER_LAT / WEATHER_LON)
+- "what's the weather" / "will it rain tomorrow"
+
 **Shopping** (one shared list)
 - "add potatoes to shopping"
 - "got the potatoes" / "remove potatoes from shopping"

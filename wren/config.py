@@ -164,6 +164,34 @@ REMINDER_POLL_SECONDS = int(os.environ.get("REMINDER_POLL_SECONDS", "30"))
 CALENDAR_URLS: list[str] = [u.strip() for u in os.environ.get("CALENDAR_URLS", "").split(",") if u.strip()]
 CALENDAR_CACHE_SECONDS = int(os.environ.get("CALENDAR_CACHE_SECONDS", "300"))
 
+
+def _coerce_coordinate(limit: float):
+    def coerce(raw: str) -> float | None:
+        raw = (raw or "").strip()
+        if not raw:
+            return None            # unset -> weather skill inactive
+        value = float(raw)
+        if not -limit <= value <= limit:
+            raise ValueError(f"must be between -{limit} and {limit}")
+        return value
+    return coerce
+
+
+_coerce_lat = _coerce_coordinate(90.0)
+_coerce_lon = _coerce_coordinate(180.0)
+
+
+def _coerce_units(raw: str) -> str:
+    value = (raw or "").strip().lower()
+    if value not in ("fahrenheit", "celsius"):
+        raise ValueError("WEATHER_UNITS must be fahrenheit or celsius")
+    return value
+
+
+WEATHER_LAT: float | None = _coerce_lat(os.environ.get("WEATHER_LAT", ""))
+WEATHER_LON: float | None = _coerce_lon(os.environ.get("WEATHER_LON", ""))
+WEATHER_UNITS: str = _coerce_units(os.environ.get("WEATHER_UNITS", "fahrenheit"))
+
 MEMORY_SWEEP_SECONDS = int(os.environ.get("MEMORY_SWEEP_SECONDS", "300"))
 MEMORY_DEDUP_THRESHOLD = float(os.environ.get("MEMORY_DEDUP_THRESHOLD", "0.7"))
 MEMORY_TOP_K = int(os.environ.get("MEMORY_TOP_K", "5"))
@@ -312,6 +340,9 @@ SETTABLE = {
     "EMAIL_POLL_SECONDS":    Setting(_coerce_poll_seconds),
     "GITHUB_POLL_SECONDS":   Setting(_coerce_poll_seconds),
     "CALENDAR_CACHE_SECONDS": Setting(_coerce_poll_seconds),
+    "WEATHER_LAT":   Setting(_coerce_lat, serialize=lambda v: "" if v is None else str(v)),
+    "WEATHER_LON":   Setting(_coerce_lon, serialize=lambda v: "" if v is None else str(v)),
+    "WEATHER_UNITS": Setting(_coerce_units),
     "SEARXNG_URL":           Setting(str.strip),
     "FIRECRAWL_URL":         Setting(str.strip),
     "GITHUB_WATCH":          Setting(_parse_github_watch, serialize=_serialize_github_watch),

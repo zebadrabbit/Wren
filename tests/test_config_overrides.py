@@ -399,3 +399,18 @@ def test_dedup_threshold_rejects_a_value_outside_zero_to_one():
 def test_calendar_cache_seconds_rejects_zero():
     with pytest.raises(ValueError):
         config.SETTABLE["CALENDAR_CACHE_SECONDS"].coerce("0")
+
+
+def test_weather_coordinates_are_range_checked():
+    assert config.SETTABLE["WEATHER_LAT"].coerce("41.88") == 41.88
+    assert config.SETTABLE["WEATHER_LAT"].coerce("") is None
+    with pytest.raises(ValueError):
+        config.SETTABLE["WEATHER_LAT"].coerce("91")
+    with pytest.raises(ValueError):
+        config.SETTABLE["WEATHER_LON"].coerce("-181")
+
+
+def test_weather_units_is_an_enum():
+    assert config.SETTABLE["WEATHER_UNITS"].coerce(" Celsius ") == "celsius"
+    with pytest.raises(ValueError):
+        config.SETTABLE["WEATHER_UNITS"].coerce("kelvin")
