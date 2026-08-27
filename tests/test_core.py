@@ -1,4 +1,4 @@
-import os, asyncio, pytest
+import os, asyncio, time, pytest
 from unittest.mock import patch
 os.environ.setdefault("DISCORD_TOKEN", "test")
 os.environ.setdefault("WREN_OWNER_ID", "1")
@@ -11,9 +11,10 @@ from wren import config
 from wren import core
 from wren import registry as plugins
 from wren import settings
+from wren import registry
 from wren.channel import Ctx, CollectingChannel
 from wren.skills import memory_store as memory
-from wren.skills import shopping_store
+from wren.skills import shopping_skill, shopping_store
 
 OWNER = 1
 
@@ -222,3 +223,139 @@ def test_skill_turn_is_not_observed_for_memory():
                       return_value={"intent": "add_shopping_item", "content": "milk"}):
         asyncio.run(core.handle_message(1, "add milk, my usual", ch))
     assert memory.drain() == []
+
+
+# --- voice confirmation guard -----------------------------------------------
+
+@pytest.fixture(autouse=True)
+def no_pending():
+    core._pending.clear()
+    yield
+    core._pending.clear()
+
+
+def _voice(text, detected_intent, content=""):
+    """One voice turn with the classifier pinned to `detected_intent`."""
+    ch = CollectingChannel()
+    with patch.object(brain, "detect_intent", return_value={"intent": detected_intent, "content": content, "tags": []}), \
+         patch.object(brain, "chat", return_value="chatty"):
+        asyncio.run(core.handle_message(OWNER, text, ch, source="voice"))
+    return ch
+
+
+def test_voice_destructive_intent_asks_instead_of_acting():
+    from wren import settings
+    settings.init_db(); shopping_store.init_db()
+    shopping_store.add("milk", "owner")
+    ch = _voice("remove milk", "remove_shopping_item", "milk")
+    assert ch.sent == ['Confirm: remove "milk" from the shopping list? Say yes or no.']
+    assert [i["item"] for i in shopping_store.active_items()] == ["milk"]
+    assert core._pending[OWNER][0] == "remove_shopping_item"
+
+
+def test_voice_non_destructive_intent_acts_immediately():
+    from wren import settings
+    settings.init_db(); shopping_store.init_db()
+    ch = _voice("add milk", "add_shopping_item", "milk")
+    assert [i["item"] for i in shopping_store.active_items()] == ["milk"]
+    assert OWNER not in core._pending
+
+
+def test_text_destructive_intent_is_unchanged():
+    from wren import settings
+    settings.init_db(); shopping_store.init_db()
+    shopping_store.add("milk", "owner")
+    ch = CollectingChannel()
+    with patch.object(brain, "detect_intent", return_value={"intent": "remove_shopping_item", "content": "milk", "tags": []}):
+        asyncio.run(core.handle_message(OWNER, "remove milk", ch))
+    assert shopping_store.active_items() == []
+    assert OWNER not in core._pending
+
+
+def test_yes_runs_the_pending_intent_on_the_current_channel():
+    from wren import settings
+    settings.init_db(); shopping_store.init_db()
+    shopping_store.add("milk", "owner")
+    _voice("remove milk", "remove_shopping_item", "milk")
+    ch = CollectingChannel()
+    with patch.object(brain, "detect_intent", side_effect=AssertionError("classifier must not run on a yes")):
+        asyncio.run(core.handle_message(OWNER, "Yes.", ch))
+    assert shopping_store.active_items() == []
+    assert ch.sent and "milk" in ch.sent[0]
+    assert OWNER not in core._pending
+
+
+def test_no_drops_it():
+    from wren import settings
+    settings.init_db(); shopping_store.init_db()
+    shopping_store.add("milk", "owner")
+    _voice("remove milk", "remove_shopping_item", "milk")
+    ch = CollectingChannel()
+    with patch.object(brain, "detect_intent", side_effect=AssertionError("classifier must not run on a no")):
+        asyncio.run(core.handle_message(OWNER, "no thanks", ch))
+    assert ch.sent == ["Okay, left it alone."]
+    assert [i["item"] for i in shopping_store.active_items()] == ["milk"]
+    assert OWNER not in core._pending
+
+
+def test_unrelated_text_clears_the_question_and_proceeds():
+    from wren import settings
+    settings.init_db(); shopping_store.init_db(); memory.init_db()
+    shopping_store.add("milk", "owner")
+    _voice("remove milk", "remove_shopping_item", "milk")
+    ch = CollectingChannel()
+    with patch.object(brain, "detect_intent", return_value={"intent": "chat", "content": "", "tags": []}), \
+         patch.object(brain, "chat", return_value="It's sunny."):
+        asyncio.run(core.handle_message(OWNER, "what's the weather", ch))
+    assert ch.sent == ["It's sunny."]
+    assert [i["item"] for i in shopping_store.active_items()] == ["milk"]
+    assert OWNER not in core._pending
+
+
+def test_expired_question_is_forgotten(monkeypatch):
+    from wren import settings
+    settings.init_db(); shopping_store.init_db(); memory.init_db()
+    shopping_store.add("milk", "owner")
+    _voice("remove milk", "remove_shopping_item", "milk")
+    intent, ctx, expires = core._pending[OWNER]
+    core._pending[OWNER] = (intent, ctx, time.monotonic() - 1)
+    ch = CollectingChannel()
+    with patch.object(brain, "detect_intent", return_value={"intent": "chat", "content": "", "tags": []}), \
+         patch.object(brain, "chat", return_value="chatty"):
+        asyncio.run(core.handle_message(OWNER, "yes", ch))
+    assert ch.sent == ["chatty"]                     # a bare yes with nothing pending is just a turn
+    assert [i["item"] for i in shopping_store.active_items()] == ["milk"]
+
+
+def test_newer_question_replaces_older():
+    from wren import settings
+    settings.init_db(); shopping_store.init_db()
+    _voice("remove milk", "remove_shopping_item", "milk")
+    _voice("clear the list", "clear_shopping", "")
+    assert core._pending[OWNER][0] == "clear_shopping"
+
+
+def test_yes_respects_a_skill_switched_off_meanwhile():
+    from wren import settings, registry
+    settings.init_db(); shopping_store.init_db()
+    shopping_store.add("milk", "owner")
+    _voice("remove milk", "remove_shopping_item", "milk")
+    registry.set_enabled(shopping_skill, False)
+    try:
+        ch = CollectingChannel()
+        asyncio.run(core.handle_message(OWNER, "yes", ch))
+    finally:
+        registry.set_enabled(shopping_skill, True)
+    assert ch.sent == ["That skill is switched off."]
+    assert [i["item"] for i in shopping_store.active_items()] == ["milk"]
+
+
+def test_ctx_carries_source():
+    seen = {}
+    async def fake_handle(intent, ctx):
+        seen["source"] = ctx.source
+    # INTENT_HANDLERS maps to the module; core looks `handle` up at call time
+    with patch.object(brain, "detect_intent", return_value={"intent": "add_shopping_item", "content": "milk", "tags": []}), \
+         patch.object(shopping_skill, "handle", new=fake_handle):
+        asyncio.run(core.handle_message(OWNER, "add milk", CollectingChannel(), source="voice"))
+    assert seen["source"] == "voice"

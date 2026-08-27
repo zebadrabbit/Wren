@@ -49,6 +49,10 @@ class Ctx:
     tags: list[str] = field(default_factory=list)
     person: str | None = None
     when: str | None = None
+    # "text" | "voice" -- how the words arrived. Voice is transcribed and
+    # therefore mis-heard sometimes; core asks before acting on anything
+    # destructive when this is "voice". Skills may read it; none must.
+    source: str = "text"
 
 
 class CollectingChannel:

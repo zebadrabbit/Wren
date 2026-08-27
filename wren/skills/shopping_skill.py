@@ -7,7 +7,7 @@ from ..channel import Ctx
 INTENTS = ["add_shopping_item", "remove_shopping_item", "restore_shopping_item",
            "clear_shopping", "recall_shopping", "send_shopping_list"]
 DESTRUCTIVE = ["remove_shopping_item", "clear_shopping"]
-CONFIRM = {"remove_shopping_item": "remove from the shopping list",
+CONFIRM = {"remove_shopping_item": 'remove "{content}" from the shopping list',
            "clear_shopping": "clear the whole shopping list"}
 PLUGIN_NAME = "Shopping List"
 

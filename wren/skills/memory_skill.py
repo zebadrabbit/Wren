@@ -11,7 +11,7 @@ from ..channel import Ctx
 
 INTENTS = ["recall_memories", "forget_memory"]
 DESTRUCTIVE = ["forget_memory"]
-CONFIRM = {"forget_memory": "forget"}
+CONFIRM = {"forget_memory": 'forget "{content}"'}
 PLUGIN_NAME = "Memory"
 
 PROMPT_GUIDELINES = """- recall_memories: user asks what Wren knows about THEM as a person — their preferences, people, projects (e.g. "what do you know about me"); NOT questions about this conversation — "do you remember what I said" stays chat

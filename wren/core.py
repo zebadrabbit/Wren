@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 import time
 
 from . import brain
@@ -74,6 +75,24 @@ _START_TIME = time.monotonic()
 
 brain.register_plugins(registry.all_intents(), registry.all_guidelines())
 
+# Questions core has asked and not yet had answered: user_id -> (intent, ctx,
+# expires_at). One per user; a newer destructive request replaces the older.
+# ponytail: process-local, so a restart forgets the question -- the safe
+# direction. Persist only if a multi-process deployment ever exists.
+_pending: dict[int, tuple[str, Ctx, float]] = {}
+_CONFIRM_TTL = 120.0
+_YES = re.compile(r"^(yes|yeah|yep|yup|do it|confirm|go ahead|sure)\b", re.I)
+_NO = re.compile(r"^(no|nope|nah|cancel|never mind|nevermind|stop|don't)\b", re.I)
+
+
+def _take_pending(user_id: int):
+    """The unexpired question for this user, removed. Answered or not, one
+    turn is all it gets: asking again is nagging."""
+    entry = _pending.pop(user_id, None)
+    if entry and entry[2] > time.monotonic():
+        return entry
+    return None
+
 
 def _format_uptime(seconds: float) -> str:
     seconds = int(seconds)
@@ -101,7 +120,7 @@ def _status_lines() -> list[str]:
     ]
 
 
-async def handle_message(user_id: int, text: str, channel: Channel) -> None:
+async def handle_message(user_id: int, text: str, channel: Channel, *, source: str = "text") -> None:
     """Transport-free dispatch. Surfaces authenticate the caller, build a
     Channel, and call this. Nothing below here knows what a Discord is."""
     # authorization gate — surfaces do authn (who are you), this does authz.
@@ -114,6 +133,32 @@ async def handle_message(user_id: int, text: str, channel: Channel) -> None:
         return
 
     await channel.ack("seen")
+
+    # Answering a question core asked last turn happens BEFORE the classifier:
+    # "yes" is not an intent, and a 7B model handed a bare "yes" with history
+    # will confidently pick something. Anything that is not a yes or a no
+    # drops the question and is handled as the new turn it is.
+    pending = _take_pending(user_id)
+    if pending:
+        intent, ctx, _ = pending
+        if _YES.match(text):
+            ctx.channel = channel     # reply where the answer came from
+            try:
+                plugin = registry.INTENT_HANDLERS.get(intent)
+                if plugin is None or not registry.is_enabled(plugin):
+                    await channel.send("That skill is switched off.")
+                else:
+                    await plugin.handle(intent, ctx)
+                await channel.ack("done")
+            except Exception as e:
+                logging.error(f"Error handling confirmation from {user_id}: {e}")
+                await channel.send("Something went wrong, try again.")
+                await channel.ack("error")
+            return
+        if _NO.match(text):
+            await channel.send("Okay, left it alone.")
+            await channel.ack("done")
+            return
 
     try:
         history = await channel.history(limit=10)
@@ -132,13 +177,23 @@ async def handle_message(user_id: int, text: str, channel: Channel) -> None:
             tags=result.get("tags", []),
             person=result.get("person"),
             when=result.get("when"),
+            source=source,
         )
 
         # is_enabled as well as membership: all_intents() already stops
         # offering a disabled skill, but a model can emit an intent it was
         # never offered. Treat that as unknown so it falls through to chat.
         if intent in registry.INTENT_HANDLERS and registry.is_enabled(registry.INTENT_HANDLERS[intent]):
-            await registry.INTENT_HANDLERS[intent].handle(intent, ctx)
+            if source == "voice" and intent in registry.destructive_intents():
+                # Transcription mis-hears and the skills fuzzy-match; between
+                # them "remove milk" can become "clear the list". Ask first.
+                _pending[user_id] = (intent, ctx, time.monotonic() + _CONFIRM_TTL)
+                phrase = registry.confirm_phrase(intent)
+                what = ctx.content.strip() or "that"
+                body = phrase.format(content=what) if "{content}" in phrase else phrase
+                await channel.send(f"Confirm: {body}? Say yes or no.")
+            else:
+                await registry.INTENT_HANDLERS[intent].handle(intent, ctx)
 
         elif intent == "help":
             await channel.send(HELP_TEXT)

@@ -245,5 +245,5 @@ def test_destructive_intents_unions_enabled_skills():
 
 
 def test_confirm_phrase_falls_back_to_the_intent_name():
-    assert registry.confirm_phrase("discard_idea") == "discard the idea"
+    assert registry.confirm_phrase("discard_idea") == 'discard the idea "{content}"'
     assert registry.confirm_phrase("no_such_intent") == "no such intent"

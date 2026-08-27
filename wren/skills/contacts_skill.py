@@ -7,7 +7,7 @@ from ..channel import Ctx
 
 INTENTS = ["add_contact", "remove_contact", "list_contacts"]
 DESTRUCTIVE = ["remove_contact"]
-CONFIRM = {"remove_contact": "remove the contact"}
+CONFIRM = {"remove_contact": 'remove the contact "{content}"'}
 PLUGIN_NAME = "Contacts"
 
 PROMPT_GUIDELINES = """- add_contact: owner wants to add a new whitelisted contact (e.g. "add 123456789012345678 as hubby"); content is the raw numeric user ID, person is the alias

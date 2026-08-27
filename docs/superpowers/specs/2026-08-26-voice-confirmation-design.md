@@ -59,10 +59,12 @@ is the undo, not the harm.
 **D3 — The guard sits between intent detection and dispatch, in core.** When
 `source == "voice"` and the intent is destructive, core stores
 `_pending[user_id] = (intent, ctx, expires_at)` and sends one question built
-from the skill's own words: `Confirm: <intent phrase> "<content>"? Say yes or
-no.` The phrase comes from a `CONFIRM = {intent: "discard the idea"}` dict on
-the skill beside `DESTRUCTIVE`, so the question reads naturally on every
-skill without core knowing any of them. Nothing runs yet.
+from the skill's own words. The phrase comes from a
+`CONFIRM = {intent: 'discard the idea "{content}"'}` template on the skill
+beside `DESTRUCTIVE` — `{content}` is filled from `ctx.content` (or "that"
+when empty) only where the template names it — so core sends
+`Confirm: {phrase}? Say yes or no.` without knowing any skill's wording.
+Nothing runs yet.
 
 **D4 — The next turn from that user resolves it, before the LLM is called.**
 At the top of `handle_message`, if `_pending` has an unexpired entry for this
@@ -108,7 +110,7 @@ def confirm_phrase(intent: str) -> str        # plugin.CONFIRM[intent], falls ba
 
 # each skill
 DESTRUCTIVE = [...]
-CONFIRM = {"discard_idea": "discard the idea", ...}
+CONFIRM = {"discard_idea": 'discard the idea "{content}"', ...}
 
 # wren/communication/http_plugin.py
 _dispatch(user_id, transcript, source="voice", transcript=transcript)
@@ -123,7 +125,7 @@ why every knob costs the owner something.
 ```
 voice "remove milk"  -> detect_intent -> remove_shopping_item (destructive, source=voice)
                      -> _pending[uid] = (intent, ctx, now+120)
-                     -> send: Confirm: remove from the shopping list "milk"? Say yes or no.
+                     -> send: Confirm: remove "milk" from the shopping list? Say yes or no.
 voice "yes"          -> _pending hit, _YES matches -> shopping_skill.handle(intent, ctx') -> "Removed milk."
 voice "no"           -> _pending hit, _NO matches  -> "Okay, left it alone."
 voice "what's the weather" -> _pending hit, neither matches -> drop, continue as a normal turn
