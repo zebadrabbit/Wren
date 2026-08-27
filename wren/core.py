@@ -30,6 +30,9 @@ HELP_TEXT = """Here's what I can actually do:
 - "what are my reminders" — shows all upcoming reminders with times
 - "cancel the trash reminder" — matches by phrase, asks for specifics if needed
 
+**Calendar** (needs CALENDAR_URLS)
+- "what's on my calendar" / "what does tomorrow look like" / "show my week"
+
 **Shopping** (one shared list)
 - "add potatoes to shopping"
 - "got the potatoes" / "remove potatoes from shopping"

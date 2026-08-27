@@ -1025,6 +1025,7 @@ const SKILL_INFO = {
   contacts_skill: "Owner-only: add or remove the people Wren will talk to.",
   pins_skill:     "Pins — save links and snippets worth keeping.",
   memory_skill:   "Memory — facts Wren picks up as you talk. Ask what it knows, or tell it to forget.",
+  calendar_skill: "Calendar — what's on today, tomorrow or this week, read from your ICS feed(s).",
 };
 
 const SECRET_INFO = {
@@ -1037,6 +1038,7 @@ const SECRET_INFO = {
   ANTHROPIC_API_KEY:  "Anthropic API key",
   OPENROUTER_API_KEY: "OpenRouter API key",
   FIRECRAWL_API_KEY:  "Firecrawl API key",
+  CALENDAR_URLS:      "Calendar feed URLs (ICS, comma-separated)",
 };
 
 const MODEL_HELP = "Applies live — but only providers named in LLM_PROVIDERS (.env) are ever used.";
@@ -1063,6 +1065,8 @@ const SETTING_META = {
                            help: "Your SearXNG instance (JSON format enabled). Empty disables web search." },
   FIRECRAWL_URL:         { group: "Web lookup", label: "Firecrawl URL",
                            help: "Used to fetch and clean pages. Its API key, if any, is a host-side secret." },
+  CALENDAR_CACHE_SECONDS: { group: "Day", label: "Calendar cache (seconds)",
+                            help: "How long a fetched feed is reused before asking again. Minimum 5.", num: true },
   OLLAMA_MODEL:          { group: "Models", label: "Ollama model", help: MODEL_HELP },
   LMSTUDIO_MODEL:        { group: "Models", label: "LM Studio model", help: MODEL_HELP },
   OPENAI_MODEL:          { group: "Models", label: "OpenAI model", help: MODEL_HELP },
@@ -1075,7 +1079,7 @@ const SETTING_META = {
   MEMORY_TOP_K:          { group: "Memory", label: "Facts per reply",
                            help: "How many relevant memories go in front of the model per turn.", num: true },
 };
-const SETTING_GROUPS = ["General", "Watchers", "Web lookup", "Models", "Memory", "Other"];
+const SETTING_GROUPS = ["General", "Watchers", "Web lookup", "Day", "Models", "Memory", "Other"];
 
 function showTab(name) {
   document.querySelectorAll("#ptabs .tab").forEach(t =>

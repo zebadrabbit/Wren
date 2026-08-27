@@ -399,6 +399,23 @@ just reports "Search is unavailable right now." Firecrawl works out of the box.
 - "read me the first one" / "read https://…" — fetches a page in full and
   summarizes it
 
+## Calendar (optional)
+
+Set `CALENDAR_URLS` in `.env` to one or more ICS feed URLs (comma-separated).
+Every mainstream calendar exports one — in Google Calendar it is the "Secret
+address in iCal format" under the calendar's settings. Treat it like a
+password: it is managed with `manage.sh secret set CALENDAR_URLS …` and the
+plugins panel only ever says whether it is set.
+
+- "what's on my calendar" / "what does today look like"
+- "anything tomorrow?" / "what's on Friday"
+- "show my week"
+
+Read-only: Wren never creates or edits events. Recurring events are expanded
+for the day you asked about (daily/weekly/monthly/yearly, with weekday lists,
+exceptions and moved instances); exotic rules like "second Monday" fall back
+to the plain frequency.
+
 ## Memory
 
 Wren picks up short facts about you as you talk — preferences, people,

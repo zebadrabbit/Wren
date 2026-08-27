@@ -166,7 +166,8 @@ def test_plugin_status_reflects_real_plugins_order_and_names():
     names = [name for name, _ in plugins.plugin_status()]
     assert names == [
         "Notes & Ideas", "Shopping List", "Reminders", "Web Lookup",
-        "Contacts", "Pins", "Memory", "Gmail (IMAP) Watcher", "GitHub Watcher",
+        "Contacts", "Pins", "Memory", "Calendar",
+        "Gmail (IMAP) Watcher", "GitHub Watcher",
     ]
 
 def test_plugin_status_web_plugin_inactive_without_searxng_url(monkeypatch):

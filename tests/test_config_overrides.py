@@ -394,3 +394,8 @@ def test_memory_settings_are_settable():
 def test_dedup_threshold_rejects_a_value_outside_zero_to_one():
     with pytest.raises(ValueError):
         config.SETTABLE["MEMORY_DEDUP_THRESHOLD"].coerce("1.5")
+
+
+def test_calendar_cache_seconds_rejects_zero():
+    with pytest.raises(ValueError):
+        config.SETTABLE["CALENDAR_CACHE_SECONDS"].coerce("0")

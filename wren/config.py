@@ -158,6 +158,12 @@ GITHUB_POLL_SECONDS = int(os.environ.get("GITHUB_POLL_SECONDS", "60"))
 
 REMINDER_POLL_SECONDS = int(os.environ.get("REMINDER_POLL_SECONDS", "30"))
 
+# Calendar feeds. A private ICS address is a capability URL -- whoever has it
+# can read the calendar -- so it is a SECRET_KEY (reported set/not-set only),
+# never a SETTABLE value the plugins panel would echo back.
+CALENDAR_URLS: list[str] = [u.strip() for u in os.environ.get("CALENDAR_URLS", "").split(",") if u.strip()]
+CALENDAR_CACHE_SECONDS = int(os.environ.get("CALENDAR_CACHE_SECONDS", "300"))
+
 MEMORY_SWEEP_SECONDS = int(os.environ.get("MEMORY_SWEEP_SECONDS", "300"))
 MEMORY_DEDUP_THRESHOLD = float(os.environ.get("MEMORY_DEDUP_THRESHOLD", "0.7"))
 MEMORY_TOP_K = int(os.environ.get("MEMORY_TOP_K", "5"))
@@ -305,6 +311,7 @@ SETTABLE = {
     "REMINDER_POLL_SECONDS": Setting(_coerce_poll_seconds),
     "EMAIL_POLL_SECONDS":    Setting(_coerce_poll_seconds),
     "GITHUB_POLL_SECONDS":   Setting(_coerce_poll_seconds),
+    "CALENDAR_CACHE_SECONDS": Setting(_coerce_poll_seconds),
     "SEARXNG_URL":           Setting(str.strip),
     "FIRECRAWL_URL":         Setting(str.strip),
     "GITHUB_WATCH":          Setting(_parse_github_watch, serialize=_serialize_github_watch),
@@ -346,7 +353,7 @@ SETTABLE = {
 SECRET_KEYS = (
     "WREN_TOKENS", "DISCORD_TOKEN", "TELEGRAM_TOKEN", "IMAP_PASSWORD",
     "GITHUB_TOKEN", "OPENAI_API_KEY", "ANTHROPIC_API_KEY",
-    "OPENROUTER_API_KEY", "FIRECRAWL_API_KEY",
+    "OPENROUTER_API_KEY", "FIRECRAWL_API_KEY", "CALENDAR_URLS",
 )
 
 
