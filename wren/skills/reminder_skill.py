@@ -10,6 +10,8 @@ from .. import flourish
 from ..channel import Ctx
 
 INTENTS = ["set_reminder", "recall_reminders", "cancel_reminder"]
+DESTRUCTIVE = ["cancel_reminder"]
+CONFIRM = {"cancel_reminder": "cancel the reminder"}
 PLUGIN_NAME = "Reminders"
 
 PROMPT_GUIDELINES = """- set_reminder: user wants to be reminded of something at a specific time; content is what to remind them of, and you must compute "when" as an absolute ISO 8601 datetime in the LOCAL timezone you were already told "today" is in (e.g. 2026-07-12T21:00:00, no UTC conversion) based on the current date/time and the relative or absolute time they gave (e.g. "in 20 minutes", "at 6pm", "tomorrow morning")

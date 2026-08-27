@@ -3,6 +3,8 @@ from . import pins_store as pins
 from .. import flourish
 
 INTENTS = ["pin_note", "unpin_note", "list_pins"]
+DESTRUCTIVE = ["unpin_note"]
+CONFIRM = {"unpin_note": "unpin"}
 PLUGIN_NAME = "Pins"
 
 PROMPT_GUIDELINES = """- pin_note: user wants to pin an important note (e.g. "pin: wifi password is 12345"); content is the text to pin

@@ -7,6 +7,8 @@ from .. import config
 from .. import flourish
 
 INTENTS = ["save_note", "recall_notes", "save_idea", "recall_ideas", "discard_idea", "expand_idea", "export_notes"]
+DESTRUCTIVE = ["discard_idea"]
+CONFIRM = {"discard_idea": "discard the idea"}
 PLUGIN_NAME = "Notes & Ideas"
 
 PROMPT_GUIDELINES = """- save_note: user is capturing something for later (grocery item, plan, reminder)

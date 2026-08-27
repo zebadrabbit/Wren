@@ -91,6 +91,21 @@ def all_guidelines() -> str:
         if (text := getattr(plugin, "PROMPT_GUIDELINES", ""))
     )
 
+def destructive_intents() -> set[str]:
+    """Intents that delete or irreversibly change something, declared by the
+    skills that own them. Core asks before running one that came in by voice."""
+    return {intent for plugin in enabled_plugins()
+            for intent in getattr(plugin, "DESTRUCTIVE", [])}
+
+
+def confirm_phrase(intent: str) -> str:
+    """How to word "do you want me to …?" for this intent, from the skill."""
+    for plugin in PLUGINS:
+        phrase = getattr(plugin, "CONFIRM", {}).get(intent)
+        if phrase:
+            return phrase
+    return intent.replace("_", " ")
+
 def plugin_status() -> list[tuple[str, bool]]:
     # is_active() alone answers "is it configured", not "is it on" -- without
     # the is_enabled() check here, an owner who switches a skill off in the

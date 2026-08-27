@@ -1,4 +1,5 @@
 import os, asyncio, types
+import pytest
 os.environ.setdefault("DISCORD_TOKEN", "test")
 os.environ.setdefault("WREN_OWNER_ID", "1")
 os.environ.setdefault("LLM_PROVIDERS", "lmstudio")
@@ -6,12 +7,14 @@ os.environ.setdefault("LMSTUDIO_BASE_URL", "http://test")
 os.environ.setdefault("LMSTUDIO_MODEL", "test-model")
 
 from wren import registry as plugins
+from wren import registry
 from wren.skills import notes_skill as notes_plugin
 from wren.skills import shopping_skill as shopping_plugin
 from wren.communication import gmail_plugin as email_plugin
 from wren.skills import reminder_skill as reminder_plugin
 from wren.skills import contacts_skill as contacts_plugin
 from wren.skills import pins_skill as pins_plugin
+from wren.skills import shopping_skill, notes_skill, reminder_skill, pins_skill, contacts_skill, memory_skill
 
 def test_all_intents_includes_both_plugins():
     intents = plugins.all_intents()
@@ -220,3 +223,27 @@ def test_plugin_status_reflects_a_skill_disabled_through_the_panel():
     finally:
         plugins.set_enabled(notes_plugin, True)
     assert dict(plugins.plugin_status())["Notes & Ideas"] is True
+
+
+@pytest.mark.parametrize("skill", [shopping_skill, notes_skill, reminder_skill, pins_skill, contacts_skill, memory_skill])
+def test_destructive_is_a_subset_of_intents_with_a_phrase_each(skill):
+    assert set(skill.DESTRUCTIVE) <= set(skill.INTENTS)
+    assert set(skill.CONFIRM) == set(skill.DESTRUCTIVE)
+    assert all(v and v == v.strip() for v in skill.CONFIRM.values())
+
+
+def test_destructive_intents_unions_enabled_skills():
+    from wren import settings
+    settings.init_db()
+    assert {"remove_shopping_item", "clear_shopping", "discard_idea",
+            "cancel_reminder", "unpin_note", "remove_contact", "forget_memory"} <= registry.destructive_intents()
+    registry.set_enabled(pins_skill, False)
+    try:
+        assert "unpin_note" not in registry.destructive_intents()
+    finally:
+        registry.set_enabled(pins_skill, True)
+
+
+def test_confirm_phrase_falls_back_to_the_intent_name():
+    assert registry.confirm_phrase("discard_idea") == "discard the idea"
+    assert registry.confirm_phrase("no_such_intent") == "no such intent"
