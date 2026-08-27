@@ -19,7 +19,6 @@ def tmp_db(tmp_path, monkeypatch):
     "my sister Kate lives in Denver",        # first person + entity
     "we're moving to Denver",                # first person plural
     "the standup is tomorrow at 9am",        # date/time
-    "Kate called about the car",             # capitalised entity
     "the deploy pipeline for that service keeps failing whenever the cache is "
     "cold and nobody has worked out why yet",  # over the length threshold
 ])

@@ -29,35 +29,10 @@ _WHEN = re.compile(
 )
 
 def _has_entity(text: str) -> bool:
-    # Common English words that legitimately start sentences (verbs, etc.)
-    # and are not proper nouns. Check first word against this list.
-    _COMMON_STARTERS = {
-        "sounds", "looks", "feels", "seems", "appears", "think",
-        "believe", "suppose", "imagine", "remember", "forget",
-        "know", "understand", "realize", "notice", "see", "hear",
-        "watch", "feel", "come", "go", "is", "was", "are", "were",
-        "have", "has", "had", "do", "does", "did", "say", "says", "said",
-        "being", "been", "be", "works", "worked", "work", "tell", "tells", "told",
-        "make", "makes", "made", "get", "gets", "got", "take", "takes", "took",
-    }
-
-    words = text.split()
-    if not words:
-        return False
-
-    # Check words inside the sentence (after position 0)
-    for w in words[1:]:
-        if w[:1].isupper() and w[1:2].islower() and len(w) > 2:
-            return True
-
-    # Also check the first word if it looks like a proper noun
-    # but exclude common sentence-starting verbs/words
-    first_word = words[0]
-    if first_word[:1].isupper() and first_word[1:2].islower() and len(first_word) > 2:
-        if first_word.lower() not in _COMMON_STARTERS:
-            return True
-
-    return False
+    # words[1:]: the first word of a sentence is capitalised whatever it is,
+    # so only a capital further in is evidence of a name.
+    return any(w[:1].isupper() and w[1:2].islower() and len(w) > 2
+               for w in text.split()[1:])
 
 def should_extract(text: str) -> bool:
     """Is this turn worth spending a model call on?
