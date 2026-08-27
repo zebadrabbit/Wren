@@ -46,3 +46,37 @@ def should_extract(text: str) -> bool:
         return False
     return bool(_FIRST_PERSON.search(text) or _WHEN.search(text)
                 or _has_entity(text) or len(text.split()) > _MIN_TOKENS)
+
+def parse_facts(raw: str) -> list[dict]:
+    """Strict. Anything unexpected is "nothing to remember", never a retry.
+
+    The model is a 7B instruct running with response_format=json_object, so
+    well-formed output is the norm and malformed output means it lost the
+    plot on this particular sentence. Asking it again costs a call to get the
+    same confusion back; the sentence will come round again if it mattered.
+    """
+    raw = (raw or "").strip()
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+    try:
+        data = json.loads(raw)
+    except Exception:
+        logging.info(f"memory: unparseable extraction, treated as none: {raw[:200]!r}")
+        return []
+    items = data.get("facts") if isinstance(data, dict) else None
+    if not isinstance(items, list):
+        logging.info(f"memory: extraction had no 'facts' list, treated as none: {raw[:200]!r}")
+        return []
+    out = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        category = str(item.get("category", "")).strip().lower()
+        fact = str(item.get("fact", "")).strip()
+        # "none" lands here too and is dropped by the same check, which is
+        # why the taxonomy does not need a branch of its own.
+        if category in CATEGORIES and fact:
+            out.append({"category": category, "fact": fact})
+    return out
