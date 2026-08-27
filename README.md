@@ -313,6 +313,13 @@ Tune `WREN_STT_MODEL` (`tiny.en` → `large-v3`) and `WREN_STT_DEVICE` /
 Voice requests are one-shot: channels without conversation history can't
 resolve follow-ups that depend on the previous turn.
 
+Anything that arrived by voice and would delete or cancel something — remove
+an item, clear the list, discard an idea, cancel a reminder, unpin, remove a
+contact — is confirmed first: Wren replies `Confirm: remove from the shopping
+list "milk"? Say yes or no.` and acts only on a "yes" in the next message
+(spoken or typed, within two minutes). Anything else drops the question.
+Typed messages are unchanged. Transcription mis-hears; this is the seatbelt.
+
 ## LLM providers and fallback
 
 Wren talks to an LLM for intent detection and replies. Supported providers:

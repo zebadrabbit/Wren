@@ -298,6 +298,19 @@ def test_no_drops_it():
     assert OWNER not in core._pending
 
 
+def test_yeah_no_is_a_no():
+    from wren import settings
+    settings.init_db(); shopping_store.init_db()
+    shopping_store.add("milk", "owner")
+    _voice("remove milk", "remove_shopping_item", "milk")
+    ch = CollectingChannel()
+    with patch.object(brain, "detect_intent", side_effect=AssertionError("classifier must not run on a no")):
+        asyncio.run(core.handle_message(OWNER, "yeah no", ch))
+    assert ch.sent == ["Okay, left it alone."]
+    assert [i["item"] for i in shopping_store.active_items()] == ["milk"]
+    assert OWNER not in core._pending
+
+
 def test_unrelated_text_clears_the_question_and_proceeds():
     from wren import settings
     settings.init_db(); shopping_store.init_db(); memory.init_db()

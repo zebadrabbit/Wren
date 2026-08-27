@@ -46,9 +46,9 @@ def _payload(channel: CollectingChannel, **extra) -> dict:
     }
 
 
-async def _dispatch(user_id: int, text: str, **extra) -> web.Response:
+async def _dispatch(user_id: int, text: str, *, source: str = "text", **extra) -> web.Response:
     channel = CollectingChannel()
-    await core.handle_message(user_id, text, channel)
+    await core.handle_message(user_id, text, channel, source=source)
     if not channel.sent and not channel.files:
         # core's authorization gate returned silently — the token is valid but
         # maps to a user who is not whitelisted. Say so rather than returning
@@ -101,7 +101,7 @@ async def voice(request: web.Request) -> web.Response:
 
     if not transcript.strip():
         return web.json_response({"transcript": "", "replies": [], "files": []})
-    return await _dispatch(user_id, transcript, transcript=transcript)
+    return await _dispatch(user_id, transcript, source="voice", transcript=transcript)
 
 
 def build_app() -> web.Application:

@@ -170,3 +170,5 @@ Each skill's test file gets one assertion that `DESTRUCTIVE ⊆ INTENTS` and
 - Undo on Discord/Telegram for text-originated deletes.
 - Reading `ctx.source` in any skill.
 - Per-intent TTLs or a setting for the TTL.
+- A "yes" carrying extra instructions ("yes and also add eggs") runs only the
+  confirmed intent; the rest is dropped.

@@ -36,7 +36,7 @@ def call(method, path, **kw):
 
 
 def _replies(*texts, files=()):
-    async def fake(user_id, text, channel):
+    async def fake(user_id, text, channel, *, source="text"):
         for t in texts:
             await channel.send(t)
         for data, name in files:
@@ -73,7 +73,7 @@ def test_malformed_bearer_header_is_401():
 def test_message_dispatches_and_returns_replies(monkeypatch):
     seen = {}
 
-    async def fake(user_id, text, channel):
+    async def fake(user_id, text, channel, *, source="text"):
         seen["user_id"], seen["text"] = user_id, text
         await channel.send("Saved.")
 
@@ -144,7 +144,7 @@ def test_voice_transcribes_then_dispatches(monkeypatch):
     from wren import stt
     seen = {}
 
-    async def fake(user_id, text, channel):
+    async def fake(user_id, text, channel, *, source="text"):
         seen["text"] = text
         await channel.send("Reminder set.")
 
@@ -155,6 +155,34 @@ def test_voice_transcribes_then_dispatches(monkeypatch):
     assert body["transcript"] == "remind me at six"
     assert body["replies"] == ["Reminder set."]
     assert seen["text"] == "remind me at six"
+
+
+def test_voice_dispatches_with_source_voice(monkeypatch):
+    from wren import stt
+    seen = {}
+
+    async def fake(user_id, text, channel, *, source="text"):
+        seen["source"] = source
+        await channel.send("ok")
+
+    monkeypatch.setattr(stt, "transcribe", lambda _audio: "remove milk")
+    monkeypatch.setattr(core, "handle_message", fake)
+    status, body = call("post", "/voice", token="good-token", data=b"RIFFfake")
+    assert status == 200
+    assert seen["source"] == "voice"
+
+
+def test_message_dispatches_with_source_text(monkeypatch):
+    seen = {}
+
+    async def fake(user_id, text, channel, *, source="text"):
+        seen["source"] = source
+        await channel.send("ok")
+
+    monkeypatch.setattr(core, "handle_message", fake)
+    status, body = call("post", "/message", token="good-token", json={"text": "remove milk"})
+    assert status == 200
+    assert seen["source"] == "text"
 
 
 def test_voice_silent_audio_returns_empty(monkeypatch):

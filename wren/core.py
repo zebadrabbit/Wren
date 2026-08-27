@@ -82,7 +82,9 @@ brain.register_plugins(registry.all_intents(), registry.all_guidelines())
 _pending: dict[int, tuple[str, Ctx, float]] = {}
 _CONFIRM_TTL = 120.0
 _YES = re.compile(r"^(yes|yeah|yep|yup|do it|confirm|go ahead|sure)\b", re.I)
-_NO = re.compile(r"^(no|nope|nah|cancel|never mind|nevermind|stop|don't)\b", re.I)
+# "yeah,? no" / "yes,? no" first: a colloquial no. Checked before _YES below
+# because ^yeah\b would otherwise claim it.
+_NO = re.compile(r"^(yeah,?\s*no|yes,?\s*no|no|nope|nah|cancel|never mind|nevermind|stop|don't)\b", re.I)
 
 
 def _take_pending(user_id: int):
@@ -141,6 +143,11 @@ async def handle_message(user_id: int, text: str, channel: Channel, *, source: s
     pending = _take_pending(user_id)
     if pending:
         intent, ctx, _ = pending
+        # _NO checked first: "yeah no" matches ^yeah\b in _YES too, and it means no.
+        if _NO.match(text):
+            await channel.send("Okay, left it alone.")
+            await channel.ack("done")
+            return
         if _YES.match(text):
             ctx.channel = channel     # reply where the answer came from
             try:
@@ -154,10 +161,6 @@ async def handle_message(user_id: int, text: str, channel: Channel, *, source: s
                 logging.error(f"Error handling confirmation from {user_id}: {e}")
                 await channel.send("Something went wrong, try again.")
                 await channel.ack("error")
-            return
-        if _NO.match(text):
-            await channel.send("Okay, left it alone.")
-            await channel.ack("done")
             return
 
     try:
