@@ -6,6 +6,7 @@ from . import config
 from . import contacts
 from . import conversations
 from .communication import github_state
+from .skills import memory_store as memory
 from .skills import notes_store as notes
 from .skills import pins_store as pins
 from . import registry
@@ -15,7 +16,7 @@ from . import settings
 
 logging.basicConfig(level=logging.INFO)
 
-_STORAGE = (notes, shopping, reminders, contacts, github_state, pins, conversations, settings)
+_STORAGE = (notes, shopping, reminders, contacts, github_state, pins, conversations, settings, memory)
 
 
 def init_dbs() -> None:
