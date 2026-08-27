@@ -130,6 +130,43 @@ def detect_intent(user_id: int, text: str, history: list[dict] | None = None) ->
         logging.warning(f"intent detection failed, falling back to chat: {e} (raw: {raw[:200]!r})")
         return {"intent": "chat", "content": text, "tags": [], "person": None}
 
+_EXTRACT = """You extract durable facts about a user from a single message.
+
+A durable fact is still true next week: a preference, a person in their life,
+a project they work on, or a stable fact about them. Moods, questions,
+commands, plans already handled elsewhere, and small talk are NOT durable
+facts. When in doubt, extract nothing.
+
+Reply ONLY with JSON in this exact shape:
+{"facts": [{"category": "preference|person|project|fact", "fact": "<short third-person statement>"}]}
+
+Message: "I can't stand cilantro, it ruins everything"
+{"facts": [{"category": "preference", "fact": "dislikes cilantro"}]}
+
+Message: "what's the weather looking like tomorrow"
+{"facts": []}
+
+Message: "thanks Wren, you're the best"
+{"facts": []}
+
+Message: "my sister Kate just moved to Denver"
+{"facts": [{"category": "person", "fact": "sister Kate lives in Denver"}]}
+"""
+
+def extract_facts(text: str) -> str:
+    """One message in, raw JSON out. No history, by design — see detect_intent.
+
+    temperature 0: this is a classification, and a creative extractor invents
+    facts about people, which is the worst failure this feature can have.
+    """
+    return _complete(
+        [{"role": "system", "content": _EXTRACT},
+         {"role": "user", "content": f'Message: "{text}"'}],
+        temperature=0.0,
+        max_tokens=200,
+        json_mode=True,
+    )
+
 def recall(notes: list[dict], query: str) -> str:
     notes_text = "\n".join(
         f"- [{n['created_at'][:10]}] {n['content']} (tags: {n['tags']})"

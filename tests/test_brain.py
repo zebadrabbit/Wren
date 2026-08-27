@@ -474,3 +474,22 @@ def test_detect_intent_retries_without_json_mode_if_provider_rejects_it():
         result = brain.detect_intent(1, "hi")
     assert result["intent"] == "chat"
     assert "response_format" not in client.chat.completions.create.call_args.kwargs
+
+def test_extract_facts_returns_raw_model_output():
+    payload = '{"facts": [{"category": "preference", "fact": "dislikes cilantro"}]}'
+    with patch.object(brain, "_get_client", return_value=_client_returning(payload)):
+        assert brain.extract_facts("I can't stand cilantro") == payload
+
+def test_extract_facts_asks_for_json_and_sends_no_history():
+    client = _client_returning('{"facts": []}')
+    with patch.object(brain, "_get_client", return_value=client):
+        brain.extract_facts("thanks Wren")
+    kwargs = client.chat.completions.create.call_args.kwargs
+    assert kwargs["response_format"] == {"type": "json_object"}
+    # one system prompt + the message under test, nothing else: conversation
+    # history is what taught the classifier to answer in prose instead of JSON
+    assert [m["role"] for m in kwargs["messages"]] == ["system", "user"]
+
+def test_extract_facts_prompt_shows_negative_examples():
+    # small models overfire; the empty answers are the important half
+    assert brain._EXTRACT.count('{"facts": []}') >= 2
