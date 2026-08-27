@@ -99,7 +99,7 @@ async def handle(intent: str, ctx: Ctx) -> None:
     day = 1 if _TOMORROW.search(ctx.text or "") else 0
     try:
         text = await asyncio.to_thread(summary, day)
-    except (httpx.HTTPError, KeyError, IndexError, TypeError) as e:
+    except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError) as e:
         logging.warning(f"weather: {type(e).__name__}: {e}")
         await ctx.channel.send("Couldn't reach the weather service.")
         return

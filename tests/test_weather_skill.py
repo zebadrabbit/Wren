@@ -127,3 +127,28 @@ def test_weather_settings_are_labelled_in_the_panel():
     page = (Path(__file__).parent.parent / "wren" / "communication" / "chat.html").read_text()
     for key in ("WEATHER_LAT", "WEATHER_LON", "WEATHER_UNITS"):
         assert f'{key}:' in page and 'group: "Day"' in page
+
+
+def test_weather_coordinate_fields_carry_their_own_min_max_and_settingrow_reads_them():
+    # Latitude/longitude go negative, so a hardcoded HTML5 min=5 (the
+    # poll-seconds default) would mark -87.63 :invalid and hide the minus key
+    # on mobile numeric keypads. settingRow() must read min/max/step from
+    # SETTING_META per-field instead of hardcoding 5.
+    from pathlib import Path
+    page = (Path(__file__).parent.parent / "wren" / "communication" / "chat.html").read_text()
+    assert "min: -90" in page
+    assert "min: -180" in page
+    assert "min: 0" in page          # MEMORY_DEDUP_THRESHOLD, same bug
+    assert "input.min = 5;" not in page
+
+
+def test_handle_reports_unreachable_on_a_non_json_body():
+    # A 200 with a non-JSON body (e.g. a CDN error page) makes resp.json()
+    # raise json.JSONDecodeError, a ValueError -- must be treated the same
+    # as "couldn't reach the service", not propagate out of the skill.
+    resp = MagicMock()
+    resp.json.side_effect = ValueError("not json")
+    with patch.object(weather_skill.httpx, "get", return_value=resp):
+        ctx = _ctx("weather?")
+        asyncio.run(weather_skill.handle("get_weather", ctx))
+    assert ctx.channel.sent == ["Couldn't reach the weather service."]
