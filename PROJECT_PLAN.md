@@ -241,3 +241,38 @@ it is pointed at a model too small to classify intent reliably.
 **Keep-style notes grid.** Cosmetic, an afternoon: tiles instead of a list.
 Worth doing because it reads better daily, not because it wins a comparison
 against the dozen mature self-hosted notes apps.
+
+## Roadmap 2026-08-26 — "Jarvis, not Alexa"
+
+The honest read of Wren at this point was: a household message bus with an
+NLU front end, structurally the same shape as Alexa (one message, one intent,
+one skill, one reply) with better language understanding, more doors, and no
+cloud. What separates a Jarvis from an Alexa is not more nouns; it is
+initiative (it speaks first), memory (it knows who it is talking to), and
+composition (it chains things). This roadmap is the first three steps in
+that direction, plus the one piece of safety the hardware device needs
+before it goes live. The Trello board holds the state; this is the why.
+
+1. **Memory slice 1** (spec `2026-08-18-memory-design.md`). Wren notices
+   durable facts while chatting, keeps them without duplicating, and feeds
+   the relevant ones back into later chat turns. Never into the classifier.
+2. **Calendar + weather skills**, and **the daily briefing** (spec
+   `2026-08-26-daily-briefing-design.md`). "What's today look like" becomes
+   answerable, and once a day Wren composes the answer unprompted and pushes
+   it through `NOTIFY_VIA` — with zero model calls, so it cannot invent an
+   appointment. This is the first thing that composes several skills into
+   one message, and the first proactive content worth a device.
+3. **Voice confirmation** (spec `2026-08-26-voice-confirmation-design.md`).
+   A message that arrived by `/voice` never deletes or cancels anything
+   without a "yes". Skills declare what is destructive; core asks.
+
+Deliberately not on this list: multi-intent turns ("look up X and save it")
+— the 7B classifier is too fragile to grow its prompt for that yet — and the
+device's own output channel, which cannot be designed until it is known
+where the device's replies should land (a DM, a phone push, or the device).
+
+Status as of 2026-08-27: all three are implemented and reviewed on stacked
+branches (`worktree-memory-slice-1`, then `worktree-daily-briefing`, which
+also carries voice confirmation) and await a merge to `main` plus a service
+restart. `PROJECT_PLAN.md`'s "Backlog after the skill-cards work" above is
+still valid and now sits behind these.
