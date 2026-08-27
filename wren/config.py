@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 import zoneinfo
 from typing import Callable, NamedTuple
 from dotenv import load_dotenv
@@ -192,6 +193,20 @@ WEATHER_LAT: float | None = _coerce_lat(os.environ.get("WEATHER_LAT", ""))
 WEATHER_LON: float | None = _coerce_lon(os.environ.get("WEATHER_LON", ""))
 WEATHER_UNITS: str = _coerce_units(os.environ.get("WEATHER_UNITS", "fahrenheit"))
 
+
+def _coerce_hhmm(raw: str) -> str:
+    """"" (off) or a normalised HH:MM in the configured TIMEZONE."""
+    raw = (raw or "").strip()
+    if not raw:
+        return ""
+    m = re.fullmatch(r"(\d{1,2}):(\d{2})", raw)
+    if not m or not (0 <= int(m.group(1)) <= 23 and 0 <= int(m.group(2)) <= 59):
+        raise ValueError("BRIEFING_TIME must be HH:MM (24-hour) or empty to switch it off")
+    return f"{int(m.group(1)):02d}:{m.group(2)}"
+
+
+BRIEFING_TIME: str = _coerce_hhmm(os.environ.get("BRIEFING_TIME", ""))
+
 MEMORY_SWEEP_SECONDS = int(os.environ.get("MEMORY_SWEEP_SECONDS", "300"))
 MEMORY_DEDUP_THRESHOLD = float(os.environ.get("MEMORY_DEDUP_THRESHOLD", "0.7"))
 MEMORY_TOP_K = int(os.environ.get("MEMORY_TOP_K", "5"))
@@ -343,6 +358,7 @@ SETTABLE = {
     "WEATHER_LAT":   Setting(_coerce_lat, serialize=lambda v: "" if v is None else str(v)),
     "WEATHER_LON":   Setting(_coerce_lon, serialize=lambda v: "" if v is None else str(v)),
     "WEATHER_UNITS": Setting(_coerce_units),
+    "BRIEFING_TIME": Setting(_coerce_hhmm),
     "SEARXNG_URL":           Setting(str.strip),
     "FIRECRAWL_URL":         Setting(str.strip),
     "GITHUB_WATCH":          Setting(_parse_github_watch, serialize=_serialize_github_watch),

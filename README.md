@@ -425,6 +425,26 @@ only thing sent is the coordinates.
 - "what's the weather" — now, plus today's high, low and rain chance
 - "will it rain tomorrow" — tomorrow's outlook
 
+## Daily briefing (optional)
+
+Ask "what's my day look like" any time, or set `BRIEFING_TIME` (e.g. `07:30`,
+in your `TIMEZONE`) and Wren sends it unprompted every morning through
+`NOTIFY_VIA`:
+
+    Good morning. Wed Aug 26.
+    Weather: 72°F and partly cloudy, wind 8 mph. High 81, low 63, 20% chance of rain.
+    Calendar:
+      09:00–09:30  Standup
+      13:00–14:00  Dentist
+    Reminders today:
+      17:00  call the vet
+    Shopping list: 6 items.
+
+Sections that have nothing to say are left out. No model is involved — the
+briefing is assembled from what the calendar, weather, reminders and shopping
+skills already know, so it cannot invent an appointment. Switching any of
+those skills off in the plugins panel drops its section.
+
 ## Memory
 
 Wren picks up short facts about you as you talk — preferences, people,

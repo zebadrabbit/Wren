@@ -1,9 +1,10 @@
 import asyncio
 import logging
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from .. import config
+from .. import router
 from ..channel import Ctx
 from . import calendar_skill
 from . import reminder_skill
@@ -95,3 +96,43 @@ def compose(user_id: int) -> str:
 
 async def handle(intent: str, ctx: Ctx) -> None:
     await ctx.channel.send(await asyncio.to_thread(compose, ctx.user_id))
+
+
+_STEP = 60                      # seconds between checks; also how quickly a panel change applies
+_WINDOW = timedelta(minutes=10)  # fire only this long after BRIEFING_TIME; later means a restart, not a morning
+_last_sent: date | None = None
+# ponytail: process-local. A restart inside the ten-minute window could send
+# twice; persist the date in settings if that is ever observed.
+
+
+def _should_fire(now: datetime, hhmm: str, last_sent: date | None) -> bool:
+    if not hhmm or last_sent == now.date():
+        return False
+    hour, minute = (int(x) for x in hhmm.split(":"))
+    target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    return target <= now < target + _WINDOW
+
+
+async def start() -> None:
+    """Once a day, at BRIEFING_TIME local, push the briefing to the owner.
+
+    Sleeps first and re-reads the setting every step: the queue of things to
+    say is empty at boot, and a time changed in the plugins panel should take
+    effect without a restart. `_last_sent` is set only after notify returns,
+    so a transient failure is retried next step, inside the window.
+    """
+    global _last_sent
+    while True:
+        await asyncio.sleep(_STEP)
+        try:
+            now = _now()
+            if not _should_fire(now, config.BRIEFING_TIME, _last_sent):
+                continue
+            owner = config.WHITELIST["owner"]
+            text = await asyncio.to_thread(compose, owner)
+            ok = await router.notify(owner, text)
+            if not ok:
+                logging.warning("briefing: owner unreachable, skipping today")
+            _last_sent = now.date()
+        except Exception as e:
+            logging.warning(f"briefing loop failed: {e}")

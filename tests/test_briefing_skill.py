@@ -116,3 +116,60 @@ def test_handle_sends_the_briefing():
     with patch.object(briefing_skill, "compose", return_value="Good morning."):
         asyncio.run(briefing_skill.handle("briefing", ctx))
     assert ctx.channel.sent == ["Good morning."]
+
+
+from unittest.mock import AsyncMock
+from wren import router
+
+
+def test_should_fire_inside_the_window_once_per_day():
+    t = datetime(2026, 8, 26, 7, 30, tzinfo=timezone.utc)
+    assert briefing_skill._should_fire(t.replace(hour=7, minute=29), "07:30", None) is False
+    assert briefing_skill._should_fire(t, "07:30", None) is True
+    assert briefing_skill._should_fire(t.replace(minute=39), "07:30", None) is True
+    assert briefing_skill._should_fire(t.replace(minute=41), "07:30", None) is False   # restart later in the day: skip
+    assert briefing_skill._should_fire(t, "07:30", date(2026, 8, 26)) is False           # already sent today
+    assert briefing_skill._should_fire(t, "07:30", date(2026, 8, 25)) is True
+    assert briefing_skill._should_fire(t, "", None) is False                             # switched off
+
+
+def test_start_sends_the_briefing_to_the_owner(monkeypatch):
+    monkeypatch.setattr(config, "BRIEFING_TIME", "07:30")
+    monkeypatch.setattr(config, "WHITELIST", {"owner": 1})
+    briefing_skill._last_sent = None
+    with patch.object(briefing_skill, "compose", return_value="Good morning."), \
+         patch.object(router, "notify", new=AsyncMock(return_value=True)) as notify, \
+         patch("wren.skills.briefing_skill.asyncio.sleep", new=AsyncMock(side_effect=[None, asyncio.CancelledError])):
+        with pytest.raises(asyncio.CancelledError):
+            asyncio.run(briefing_skill.start())
+    notify.assert_awaited_once_with(1, "Good morning.")
+    assert briefing_skill._last_sent == date(2026, 8, 26)
+
+
+def test_start_does_nothing_when_off(monkeypatch):
+    monkeypatch.setattr(config, "BRIEFING_TIME", "")
+    briefing_skill._last_sent = None
+    with patch.object(router, "notify", new=AsyncMock(return_value=True)) as notify, \
+         patch("wren.skills.briefing_skill.asyncio.sleep", new=AsyncMock(side_effect=[None, asyncio.CancelledError])):
+        with pytest.raises(asyncio.CancelledError):
+            asyncio.run(briefing_skill.start())
+    notify.assert_not_called()
+
+
+def test_start_survives_a_raising_notify_and_retries_next_step(monkeypatch):
+    monkeypatch.setattr(config, "BRIEFING_TIME", "07:30")
+    monkeypatch.setattr(config, "WHITELIST", {"owner": 1})
+    briefing_skill._last_sent = None
+    with patch.object(briefing_skill, "compose", return_value="Good morning."), \
+         patch.object(router, "notify", new=AsyncMock(side_effect=[RuntimeError("503"), True])) as notify, \
+         patch("wren.skills.briefing_skill.asyncio.sleep", new=AsyncMock(side_effect=[None, None, asyncio.CancelledError])):
+        with pytest.raises(asyncio.CancelledError):
+            asyncio.run(briefing_skill.start())
+    assert notify.await_count == 2
+    assert briefing_skill._last_sent == date(2026, 8, 26)
+
+
+def test_briefing_time_is_labelled_in_the_panel():
+    from pathlib import Path
+    page = (Path(__file__).parent.parent / "wren" / "communication" / "chat.html").read_text()
+    assert 'BRIEFING_TIME: { group: "Day"' in page

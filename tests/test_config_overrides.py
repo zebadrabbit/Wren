@@ -414,3 +414,12 @@ def test_weather_units_is_an_enum():
     assert config.SETTABLE["WEATHER_UNITS"].coerce(" Celsius ") == "celsius"
     with pytest.raises(ValueError):
         config.SETTABLE["WEATHER_UNITS"].coerce("kelvin")
+
+
+def test_briefing_time_is_hhmm_or_empty():
+    assert config.SETTABLE["BRIEFING_TIME"].coerce("") == ""
+    assert config.SETTABLE["BRIEFING_TIME"].coerce("7:05") == "07:05"
+    with pytest.raises(ValueError):
+        config.SETTABLE["BRIEFING_TIME"].coerce("25:00")
+    with pytest.raises(ValueError):
+        config.SETTABLE["BRIEFING_TIME"].coerce("morning")
