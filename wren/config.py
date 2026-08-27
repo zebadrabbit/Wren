@@ -158,6 +158,10 @@ GITHUB_POLL_SECONDS = int(os.environ.get("GITHUB_POLL_SECONDS", "60"))
 
 REMINDER_POLL_SECONDS = int(os.environ.get("REMINDER_POLL_SECONDS", "30"))
 
+MEMORY_SWEEP_SECONDS = int(os.environ.get("MEMORY_SWEEP_SECONDS", "300"))
+MEMORY_DEDUP_THRESHOLD = float(os.environ.get("MEMORY_DEDUP_THRESHOLD", "0.7"))
+MEMORY_TOP_K = int(os.environ.get("MEMORY_TOP_K", "5"))
+
 
 def _validate_timezone(raw: str) -> str:
     raw = raw.strip()

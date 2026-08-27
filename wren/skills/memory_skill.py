@@ -80,3 +80,52 @@ def parse_facts(raw: str) -> list[dict]:
         if category in CATEGORIES and fact:
             out.append({"category": category, "fact": fact})
     return out
+
+# Stop words carry no evidence, and leaving them in inflates every score
+# toward "these two sentences are both English".
+_STOP = {"a", "an", "the", "i", "im", "i'm", "is", "are", "was", "were", "to", "of",
+         "and", "that", "it", "for", "in", "on", "my", "me", "we", "us", "our",
+         "you", "your", "has", "have", "had", "be", "at"}
+
+def _tokens(text: str) -> set[str]:
+    return {w for w in re.findall(r"[a-z0-9']+", (text or "").lower()) if w not in _STOP}
+
+def similarity(a: str, b: str) -> float:
+    """Jaccard overlap of content words. 0.0 (nothing shared) to 1.0 (same words).
+
+    ponytail: lexical, so "dislikes cilantro" and "hates cilantro" read as
+    different facts and both get stored. That is the one thing embeddings
+    would buy, and it is not worth a torch dependency in a repo people are
+    meant to self-host from a six-line requirements.txt. Swap the body for
+    cosine over real vectors if duplicate drift ever gets annoying -- this
+    function is the only place either caller looks.
+    """
+    ta, tb = _tokens(a), _tokens(b)
+    if not ta or not tb:
+        return 0.0
+    return len(ta & tb) / len(ta | tb)
+
+def remember(owner_id: int, candidates: list[dict]) -> None:
+    """Merge candidates into the store, logging every decision.
+
+    `known` is updated as we go, not re-read: two identical candidates in one
+    batch must merge into each other rather than both being stored.
+    """
+    known = memories.all_for(owner_id)
+    for candidate in candidates:
+        best, score = None, 0.0
+        for row in known:
+            s = similarity(candidate["fact"], row["fact"])
+            if s > score:
+                best, score = row, s
+        if best is not None and score >= config.MEMORY_DEDUP_THRESHOLD:
+            memories.bump(best["id"])
+            best["mention_count"] = best.get("mention_count", 1) + 1
+            logging.info(f"memory: dedup {candidate['fact']!r} into #{best['id']} "
+                         f"{best['fact']!r} (sim={score:.2f})")
+        else:
+            new_id = memories.save(owner_id, candidate["category"], candidate["fact"])
+            known.append({"id": new_id, "fact": candidate["fact"],
+                          "category": candidate["category"], "mention_count": 1})
+            logging.info(f"memory: stored #{new_id} [{candidate['category']}] "
+                         f"{candidate['fact']!r} (best sim={score:.2f})")
