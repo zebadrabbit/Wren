@@ -9,9 +9,11 @@ from .skills import reminder_skill
 from .skills import web_skill
 from .skills import contacts_skill
 from .skills import pins_skill
+from .skills import memory_skill
 from .communication import github_plugin
 
-PLUGINS = [notes_skill, shopping_skill, reminder_skill, web_skill, contacts_skill, pins_skill]
+PLUGINS = [notes_skill, shopping_skill, reminder_skill, web_skill, contacts_skill,
+           pins_skill, memory_skill]
 # NOTE: gmail_plugin / github_plugin are Communication (input-only) plugins now,
 # not Skills -- they do not take chat intents, so they are intentionally left out
 # of PLUGINS/INTENT_HANDLERS. They are started directly by run.py alongside the

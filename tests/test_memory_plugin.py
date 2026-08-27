@@ -1,4 +1,5 @@
 import os, pytest
+from unittest.mock import patch
 os.environ.setdefault("DISCORD_TOKEN", "test")
 os.environ.setdefault("WREN_OWNER_ID", "1")
 os.environ.setdefault("LLM_PROVIDERS", "lmstudio")
@@ -114,3 +115,34 @@ def test_remember_respects_the_configured_threshold(monkeypatch):
     memory.save(1, "person", "sister Kate lives in Denver")
     memory_plugin.remember(1, [{"category": "person", "fact": "sister Kate lives in Denver now"}])
     assert len(memory.all_for(1)) == 2      # 0.8 no longer clears the bar
+
+
+# --- observe / sweep -------------------------------------------------------
+
+def test_observe_enqueues_a_qualifying_turn():
+    memory_plugin.observe(1, "my sister Kate lives in Denver")
+    assert len(memory.drain()) == 1
+
+def test_observe_skips_a_turn_the_gate_rejects():
+    memory_plugin.observe(1, "thanks")
+    assert memory.drain() == []
+
+def test_sweep_extracts_dedups_and_empties_the_queue():
+    memory_plugin.observe(1, "my sister Kate lives in Denver")
+    payload = '{"facts": [{"category": "person", "fact": "sister Kate lives in Denver"}]}'
+    with patch.object(memory_plugin.brain, "extract_facts", return_value=payload):
+        memory_plugin._sweep()
+    assert [r["fact"] for r in memory.all_for(1)] == ["sister Kate lives in Denver"]
+    assert memory.drain() == []
+
+def test_sweep_survives_a_dead_model():
+    memory_plugin.observe(1, "my sister Kate lives in Denver")
+    with patch.object(memory_plugin.brain, "extract_facts", side_effect=RuntimeError("down")):
+        memory_plugin._sweep()          # must not raise: it runs in a background task
+    assert memory.all_for(1) == []
+
+def test_sweep_stores_nothing_when_the_model_says_nothing():
+    memory_plugin.observe(1, "I guess that's fine then, whatever you think")
+    with patch.object(memory_plugin.brain, "extract_facts", return_value='{"facts": []}'):
+        memory_plugin._sweep()
+    assert memory.all_for(1) == []

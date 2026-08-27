@@ -6,6 +6,7 @@ from . import brain
 from . import config
 from . import flourish
 from .skills import notes_store as notes
+from .skills import memory_skill
 from . import registry
 from . import router
 from .channel import Channel, Ctx
@@ -154,7 +155,13 @@ async def handle_message(user_id: int, text: str, channel: Channel) -> None:
                     await channel.send(f"Couldn't reach {target_name} — they may be unreachable right now.")
 
         else:  # chat
+            # Only chat turns are observed: "add milk" and "remind me at 6"
+            # are commands, not disclosures, and running the extractor on
+            # them is a model call spent to be told "nothing here".
+            on = registry.is_enabled(memory_skill)
             await channel.send(await asyncio.to_thread(brain.chat, text, history))
+            if on:
+                memory_skill.observe(user_id, text)
 
         await channel.ack("done")
     except Exception as e:

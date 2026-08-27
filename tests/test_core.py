@@ -1,4 +1,5 @@
 import os, asyncio, pytest
+from unittest.mock import patch
 os.environ.setdefault("DISCORD_TOKEN", "test")
 os.environ.setdefault("WREN_OWNER_ID", "1")
 os.environ.setdefault("LLM_PROVIDERS", "lmstudio")
@@ -9,7 +10,10 @@ from wren import brain
 from wren import config
 from wren import core
 from wren import registry as plugins
+from wren import settings
 from wren.channel import Ctx, CollectingChannel
+from wren.skills import memory_store as memory
+from wren.skills import shopping_store
 
 OWNER = 1
 
@@ -194,3 +198,25 @@ def test_disabled_skill_intent_falls_through_to_chat(monkeypatch):
         registry.set_enabled(notes_skill, True)
 
     assert channel.sent == ["chatty reply"]
+
+
+# --- memory hook ------------------------------------------------------------
+
+def test_chat_turn_is_observed_for_memory():
+    settings.init_db()
+    memory.init_db()
+    ch = CollectingChannel()
+    with patch.object(brain, "detect_intent", return_value={"intent": "chat", "content": "x"}), \
+         patch.object(brain, "chat", return_value="sure"):
+        asyncio.run(core.handle_message(1, "my sister Kate lives in Denver", ch))
+    assert len(memory.drain()) == 1
+
+def test_skill_turn_is_not_observed_for_memory():
+    settings.init_db()
+    memory.init_db()
+    shopping_store.init_db()
+    ch = CollectingChannel()
+    with patch.object(brain, "detect_intent",
+                      return_value={"intent": "add_shopping_item", "content": "milk"}):
+        asyncio.run(core.handle_message(1, "add milk, my usual", ch))
+    assert memory.drain() == []

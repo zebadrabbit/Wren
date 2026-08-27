@@ -129,3 +129,45 @@ def remember(owner_id: int, candidates: list[dict]) -> None:
                           "category": candidate["category"], "mention_count": 1})
             logging.info(f"memory: stored #{new_id} [{candidate['category']}] "
                          f"{candidate['fact']!r} (best sim={score:.2f})")
+
+def observe(user_id: int, text: str) -> None:
+    """Hot path. A regex and one INSERT — no model call, no network."""
+    if not should_extract(text):
+        logging.debug(f"memory: gate skipped {text[:60]!r}")
+        return
+    memories.enqueue(user_id, text)
+
+def _sweep() -> None:
+    """Drain the queue and merge whatever the model finds. Blocking by design:
+    start() runs it in a thread so the sqlite writes and the LLM call never
+    touch the event loop shared by every surface."""
+    # Local imports: registry imports this module, and this module needs a
+    # reference to itself to ask registry whether it is switched on. At module
+    # scope either one is a cycle.
+    from .. import registry
+    from . import memory_skill
+
+    # An owner who switches Memory off mid-day has queued turns already on
+    # disk; draining them anyway would extract facts from a skill that is off.
+    if not registry.is_enabled(memory_skill):
+        return
+    for row in memories.drain():
+        owner_id, text = int(row["owner_id"]), row["text"]
+        try:
+            raw = brain.extract_facts(text)
+        except Exception as e:
+            logging.warning(f"memory: extraction call failed, dropping turn: {e}")
+            continue
+        candidates = parse_facts(raw)
+        logging.info(f"memory: {len(candidates)} candidate(s) from {text[:60]!r}")
+        remember(owner_id, candidates)
+
+async def start() -> None:
+    # Sleeps first: the queue is empty at boot, and a sweep racing the
+    # surfaces' own startup buys nothing.
+    while True:
+        await asyncio.sleep(config.MEMORY_SWEEP_SECONDS)
+        try:
+            await asyncio.to_thread(_sweep)
+        except Exception as e:
+            logging.warning(f"memory sweep failed: {e}")
