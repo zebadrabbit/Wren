@@ -493,3 +493,28 @@ def test_extract_facts_asks_for_json_and_sends_no_history():
 def test_extract_facts_prompt_shows_negative_examples():
     # small models overfire; the empty answers are the important half
     assert brain._EXTRACT.count('{"facts": []}') >= 2
+
+
+# --- memory injection ---------------------------------------------------
+
+def test_chat_injects_memories_into_the_system_prompt():
+    client = _client_returning("sure")
+    with patch.object(brain, "_get_client", return_value=client):
+        brain.chat("what should I cook", memories=["dislikes cilantro"])
+    system = client.chat.completions.create.call_args.kwargs["messages"][0]["content"]
+    assert "dislikes cilantro" in system
+
+def test_chat_without_memories_is_unchanged():
+    client = _client_returning("sure")
+    with patch.object(brain, "_get_client", return_value=client):
+        brain.chat("hello", memories=[])
+    system = client.chat.completions.create.call_args.kwargs["messages"][0]["content"]
+    assert "know about" not in system
+
+def test_detect_intent_never_sees_memories():
+    # the 2026-08-18 regression, pinned: nothing may grow this prompt
+    client = _client_returning('{"intent": "chat", "content": "hi", "tags": []}')
+    with patch.object(brain, "_get_client", return_value=client):
+        brain.detect_intent(1, "hi")
+    system = client.chat.completions.create.call_args.kwargs["messages"][0]["content"]
+    assert "know about" not in system

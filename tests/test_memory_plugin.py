@@ -146,3 +146,33 @@ def test_sweep_stores_nothing_when_the_model_says_nothing():
     with patch.object(memory_plugin.brain, "extract_facts", return_value='{"facts": []}'):
         memory_plugin._sweep()
     assert memory.all_for(1) == []
+
+
+# --- for_prompt --------------------------------------------------------
+
+def test_for_prompt_returns_nothing_when_the_store_is_empty():
+    assert memory_plugin.for_prompt(1, "what should I cook") == []
+
+def test_for_prompt_picks_the_relevant_memory():
+    memory.save(1, "person", "sister Kate lives in Denver")
+    memory.save(1, "fact", "drives a diesel van")
+    assert memory_plugin.for_prompt(1, "remind me to call Kate") == \
+        ["sister Kate lives in Denver"]
+
+def test_for_prompt_always_includes_the_core_profile():
+    mid = memory.save(1, "preference", "dislikes cilantro")
+    for _ in range(2):
+        memory.bump(mid)                       # mention_count == 3
+    # nothing in common with the message, and it comes back anyway
+    assert memory_plugin.for_prompt(1, "how tall is the Eiffel tower") == \
+        ["dislikes cilantro"]
+
+def test_for_prompt_caps_at_top_k(monkeypatch):
+    monkeypatch.setattr(config, "MEMORY_TOP_K", 2)
+    for i in range(5):
+        memory.save(1, "fact", f"owns kayak number {i}")
+    assert len(memory_plugin.for_prompt(1, "tell me about my kayak")) == 2
+
+def test_for_prompt_drops_irrelevant_memories():
+    memory.save(1, "fact", "drives a diesel van")
+    assert memory_plugin.for_prompt(1, "what is the capital of Peru") == []

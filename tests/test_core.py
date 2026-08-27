@@ -135,8 +135,9 @@ def test_plugin_intent_is_routed_to_that_plugin_with_a_ctx(detected, monkeypatch
 
 
 def test_unknown_intent_falls_through_to_chat(detected, monkeypatch):
+    memory.init_db()
     detected(intent="something_nobody_owns", content="ignored")
-    monkeypatch.setattr(brain, "chat", lambda text, history=None: f"chatted about {text}")
+    monkeypatch.setattr(brain, "chat", lambda text, history=None, memories=None: f"chatted about {text}")
     ch = dispatch("how are you")
     # chat gets the raw text, not the detected content
     assert ch.sent == ["chatted about how are you"]
@@ -187,6 +188,7 @@ def test_disabled_skill_intent_falls_through_to_chat(monkeypatch):
 
     settings.init_db()
     notes_store.init_db()
+    memory.init_db()
     monkeypatch.setattr(brain, "detect_intent", lambda *a, **k: {"intent": "save_note", "content": "milk"})
     monkeypatch.setattr(brain, "chat", lambda *a, **k: "chatty reply")
     registry.set_enabled(notes_skill, False)

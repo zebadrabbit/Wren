@@ -159,7 +159,8 @@ async def handle_message(user_id: int, text: str, channel: Channel) -> None:
             # are commands, not disclosures, and running the extractor on
             # them is a model call spent to be told "nothing here".
             on = registry.is_enabled(memory_skill)
-            await channel.send(await asyncio.to_thread(brain.chat, text, history))
+            remembered = memory_skill.for_prompt(user_id, text) if on else []
+            await channel.send(await asyncio.to_thread(brain.chat, text, history, remembered))
             if on:
                 memory_skill.observe(user_id, text)
 

@@ -182,9 +182,18 @@ def recall(notes: list[dict], query: str) -> str:
         max_tokens=400,
     )
 
-def chat(text: str, history: list[dict] | None = None) -> str:
+def chat(text: str, history: list[dict] | None = None,
+         memories: list[str] | None = None) -> str:
+    system = f"You are Wren, a personal assistant. Short, structured, ready. No filler. Answer directly, no reasoning or thinking process shown. /no_think Today is {_now()}."
+    if memories:
+        # Plain bullets, and an explicit licence to ignore them: without it a
+        # small model treats anything in its prompt as something it was just
+        # asked about and works the facts into the reply whether they fit or not.
+        system += ("\n\nWhat you already know about this person:\n"
+                   + "\n".join(f"- {m}" for m in memories)
+                   + "\nUse these only if they are relevant. Do not list them back.")
     messages = [
-        {"role": "system", "content": f"You are Wren, a personal assistant. Short, structured, ready. No filler. Answer directly, no reasoning or thinking process shown. /no_think Today is {_now()}."},
+        {"role": "system", "content": system},
     ]
     if history:
         messages.extend(history)

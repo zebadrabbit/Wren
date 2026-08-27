@@ -162,6 +162,22 @@ def _sweep() -> None:
         logging.info(f"memory: {len(candidates)} candidate(s) from {text[:60]!r}")
         remember(owner_id, candidates)
 
+def for_prompt(user_id: int, text: str) -> list[str]:
+    """The facts worth putting in front of the model for this message.
+
+    Two sources, because lexical matching alone is not enough: anything said
+    three times is "core profile" and goes in every turn, and the rest has to
+    earn its place by sharing words with what was just asked. Small models get
+    distracted by irrelevant context, so the floor matters as much as the cap.
+    """
+    rows = memories.all_for(user_id)
+    core = [r for r in rows if r["mention_count"] >= _CORE_MENTIONS]
+    rest = [r for r in rows if r["mention_count"] < _CORE_MENTIONS]
+    scored = sorted(((similarity(text, r["fact"]), r) for r in rest),
+                    key=lambda pair: pair[0], reverse=True)
+    picked = [r for score, r in scored[:config.MEMORY_TOP_K] if score >= _INJECT_FLOOR]
+    return [r["fact"] for r in core + picked]
+
 async def start() -> None:
     # Sleeps first: the queue is empty at boot, and a sweep racing the
     # surfaces' own startup buys nothing.
