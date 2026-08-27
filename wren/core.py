@@ -84,7 +84,18 @@ _CONFIRM_TTL = 120.0
 _YES = re.compile(r"^(yes|yeah|yep|yup|do it|confirm|go ahead|sure)\b", re.I)
 # "yeah,? no" / "yes,? no" first: a colloquial no. Checked before _YES below
 # because ^yeah\b would otherwise claim it.
-_NO = re.compile(r"^(yeah,?\s*no|yes,?\s*no|no|nope|nah|cancel|never mind|nevermind|stop|don't)\b", re.I)
+# don'?[’']?t: faster-whisper emits the curly apostrophe (U+2019), and
+# transcripts sometimes drop it entirely -- "don't"/"don’t"/"dont" all count.
+# cancel/stop are anchored to the WHOLE utterance (optionally "it"/"that"/
+# "this" and trailing punctuation) via their own $-terminated alternative:
+# unlike the other words here, they are common word-one of a real command
+# ("cancel my 6pm reminder"), which must fall through to the classifier
+# rather than be read as an answer to an unrelated pending question.
+_NO = re.compile(
+    r"^(?:yeah,?\s*no|yes,?\s*no|no|nope|nah|never mind|nevermind|don'?[’']?t)\b"
+    r"|^(?:cancel|stop)(?:\s+(?:it|that|this))?[.!]?$",
+    re.I,
+)
 
 
 def _take_pending(user_id: int):
@@ -124,7 +135,11 @@ def _status_lines() -> list[str]:
 
 async def handle_message(user_id: int, text: str, channel: Channel, *, source: str = "text") -> None:
     """Transport-free dispatch. Surfaces authenticate the caller, build a
-    Channel, and call this. Nothing below here knows what a Discord is."""
+    Channel, and call this. Nothing below here knows what a Discord is.
+
+    `source` is "text" or "voice" — voice gets a yes/no confirmation before
+    running anything destructive, since transcription mis-hears; text is
+    unaffected and always acts immediately."""
     # authorization gate — surfaces do authn (who are you), this does authz.
     # Kept here rather than per-surface so a new surface cannot forget it.
     if user_id not in config.id_to_name():
@@ -190,11 +205,18 @@ async def handle_message(user_id: int, text: str, channel: Channel, *, source: s
             if source == "voice" and intent in registry.destructive_intents():
                 # Transcription mis-hears and the skills fuzzy-match; between
                 # them "remove milk" can become "clear the list". Ask first.
-                _pending[user_id] = (intent, ctx, time.monotonic() + _CONFIRM_TTL)
                 phrase = registry.confirm_phrase(intent)
-                what = ctx.content.strip() or "that"
+                # ctx.content is the model's extraction and brain.detect_intent
+                # does no coercion -- a bare `"content": null` from the model
+                # must not raise here.
+                what = (ctx.content or "").strip() or "that"
                 body = phrase.format(content=what) if "{content}" in phrase else phrase
                 await channel.send(f"Confirm: {body}? Say yes or no.")
+                # Armed only once the question is actually out: a None content
+                # above, or a send() that raises (e.g. a Discord rate limit),
+                # must not leave a destructive intent pending that the user
+                # never saw asked -- the next "yes" would fire it blind.
+                _pending[user_id] = (intent, ctx, time.monotonic() + _CONFIRM_TTL)
             else:
                 await registry.INTENT_HANDLERS[intent].handle(intent, ctx)
 

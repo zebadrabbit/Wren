@@ -35,7 +35,11 @@ Run with `python3 -m wren.run`. Full architecture doc: `README.md`
    special-cased between plugins of the same role.
 4. **Adding a skill**: new file in `wren/skills/` exposing `INTENTS`,
    `PROMPT_GUIDELINES`, `async handle(intent, ctx)` — then add it to the
-   `PLUGINS` list in `wren/registry.py`. That's the only wiring point.
+   `PLUGINS` list in `wren/registry.py`. That's the only wiring point. If any
+   intent deletes or irreversibly changes something, also declare optional
+   `DESTRUCTIVE = [...]` (⊆ `INTENTS`) and `CONFIRM = {intent: 'verb phrase,
+   may contain "{content}"'}` — a skill that omits them gets no voice
+   confirmation for anything it deletes.
 5. **Adding a communication plugin**: new file in `wren/communication/`,
    then add its name to `COMMUNICATION_PLUGINS` in `.env`. `run.py` imports
    `wren.communication.<name>_plugin` dynamically — the module name must be

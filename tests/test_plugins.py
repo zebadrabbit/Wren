@@ -225,11 +225,17 @@ def test_plugin_status_reflects_a_skill_disabled_through_the_panel():
     assert dict(plugins.plugin_status())["Notes & Ideas"] is True
 
 
-@pytest.mark.parametrize("skill", [shopping_skill, notes_skill, reminder_skill, pins_skill, contacts_skill, memory_skill])
+# registry.PLUGINS, not a hand-picked subset: a future skill that adds
+# DESTRUCTIVE/CONFIRM is covered for free, and one that never deletes
+# anything (calendar_skill, weather_skill, briefing_skill, web_skill) passes
+# trivially on the empty defaults instead of needing to be remembered here.
+@pytest.mark.parametrize("skill", registry.PLUGINS)
 def test_destructive_is_a_subset_of_intents_with_a_phrase_each(skill):
-    assert set(skill.DESTRUCTIVE) <= set(skill.INTENTS)
-    assert set(skill.CONFIRM) == set(skill.DESTRUCTIVE)
-    assert all(v and v == v.strip() for v in skill.CONFIRM.values())
+    destructive = set(getattr(skill, "DESTRUCTIVE", []))
+    confirm = getattr(skill, "CONFIRM", {})
+    assert destructive <= set(skill.INTENTS)
+    assert set(confirm) == destructive
+    assert all(v and v == v.strip() for v in confirm.values())
 
 
 def test_destructive_intents_unions_enabled_skills():

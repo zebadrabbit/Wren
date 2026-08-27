@@ -172,6 +172,36 @@ def test_voice_dispatches_with_source_voice(monkeypatch):
     assert seen["source"] == "voice"
 
 
+def test_voice_destructive_intent_asks_for_confirmation_end_to_end(monkeypatch):
+    # M5: every other /voice test patches core.handle_message itself, so none
+    # of them actually exercise the destructive-intent confirmation path this
+    # surface is supposed to trigger. This one leaves handle_message real and
+    # walks the whole chain: stt -> detect_intent -> core -> registry -> the
+    # exact confirmation wording a user (or kitchen device) would hear.
+    from wren import stt, brain, settings
+    from wren.skills import shopping_store, memory_store
+
+    settings.init_db()
+    shopping_store.init_db()
+    memory_store.init_db()          # harmless here -- the chat branch is never reached
+    shopping_store.add("milk", "owner")
+
+    monkeypatch.setattr(stt, "transcribe", lambda _audio: "remove milk from the list")
+    monkeypatch.setattr(
+        brain, "detect_intent",
+        lambda user_id, text, history=None: {"intent": "remove_shopping_item", "content": "milk", "tags": []},
+    )
+    try:
+        status, body = call("post", "/voice", token="good-token", data=b"RIFFfake")
+        assert status == 200
+        assert body["replies"] == ['Confirm: remove "milk" from the shopping list? Say yes or no.']
+        assert [i["item"] for i in shopping_store.active_items()] == ["milk"]
+    finally:
+        # a real handle_message arms core._pending -- clear it so it cannot
+        # bleed into a later test that shares the module-level dict
+        core._pending.clear()
+
+
 def test_message_dispatches_with_source_text(monkeypatch):
     seen = {}
 

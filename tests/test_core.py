@@ -253,6 +253,54 @@ def test_voice_destructive_intent_asks_instead_of_acting():
     assert core._pending[OWNER][0] == "remove_shopping_item"
 
 
+def test_voice_destructive_with_null_content_still_arms_and_asks():
+    # F1: brain.detect_intent can return {"content": None} (no coercion in
+    # brain.py) -- ctx.content.strip() would raise AttributeError, landing in
+    # the outer except with the destructive intent already armed and no
+    # question ever shown. Guard it; the question must still go out.
+    from wren import settings
+    settings.init_db(); shopping_store.init_db()
+    ch = CollectingChannel()
+    with patch.object(brain, "detect_intent",
+                       return_value={"intent": "clear_shopping", "content": None, "tags": []}):
+        asyncio.run(core.handle_message(OWNER, "clear the list", ch, source="voice"))
+    assert ch.sent == ["Confirm: clear the whole shopping list? Say yes or no."]
+    assert core._pending[OWNER][0] == "clear_shopping"
+
+
+def test_voice_confirm_send_failure_does_not_arm_a_blind_confirmation():
+    # F1: arming must happen AFTER the question is sent. A channel.send that
+    # raises (e.g. a Discord rate limit) must not leave a destructive intent
+    # pending that the user never actually saw asked -- the next "yes" would
+    # fire it blind.
+    from wren import settings
+    settings.init_db(); shopping_store.init_db()
+    shopping_store.add("milk", "owner")
+
+    class RaisingOnceChannel(CollectingChannel):
+        """Raises on the first send only, like a transient Discord rate
+        limit: the confirmation question fails, but the error-path send
+        that follows (a separate call) still gets through."""
+
+        def __init__(self):
+            super().__init__()
+            self._raised = False
+
+        async def send(self, text: str) -> None:
+            if not self._raised:
+                self._raised = True
+                raise RuntimeError("simulated send failure")
+            await super().send(text)
+
+    ch = RaisingOnceChannel()
+    with patch.object(brain, "detect_intent",
+                       return_value={"intent": "remove_shopping_item", "content": "milk", "tags": []}):
+        asyncio.run(core.handle_message(OWNER, "remove milk", ch, source="voice"))
+    assert OWNER not in core._pending
+    assert [i["item"] for i in shopping_store.active_items()] == ["milk"]
+    assert ch.sent == ["Something went wrong, try again."]
+
+
 def test_voice_non_destructive_intent_acts_immediately():
     from wren import settings
     settings.init_db(); shopping_store.init_db()
@@ -306,6 +354,70 @@ def test_yeah_no_is_a_no():
     ch = CollectingChannel()
     with patch.object(brain, "detect_intent", side_effect=AssertionError("classifier must not run on a no")):
         asyncio.run(core.handle_message(OWNER, "yeah no", ch))
+    assert ch.sent == ["Okay, left it alone."]
+    assert [i["item"] for i in shopping_store.active_items()] == ["milk"]
+    assert OWNER not in core._pending
+
+
+def test_cancel_alone_is_a_no():
+    # M1: "cancel"/"stop" only count as "no" when that IS the whole utterance
+    # (optionally with "it"/"that"/"this" and trailing punctuation).
+    from wren import settings
+    settings.init_db(); shopping_store.init_db()
+    shopping_store.add("milk", "owner")
+    _voice("remove milk", "remove_shopping_item", "milk")
+    ch = CollectingChannel()
+    with patch.object(brain, "detect_intent", side_effect=AssertionError("classifier must not run on a no")):
+        asyncio.run(core.handle_message(OWNER, "cancel that", ch))
+    assert ch.sent == ["Okay, left it alone."]
+    assert [i["item"] for i in shopping_store.active_items()] == ["milk"]
+    assert OWNER not in core._pending
+
+
+def test_cancel_with_a_command_falls_through_to_the_classifier():
+    # M1: "cancel my 6pm reminder" is a real command riding along with an
+    # unrelated pending question, not an answer to it -- a bare "cancel"/
+    # "stop" prefix must not swallow it.
+    from wren import settings
+    settings.init_db(); shopping_store.init_db()
+    shopping_store.add("milk", "owner")
+    _voice("remove milk", "remove_shopping_item", "milk")
+    ch = CollectingChannel()
+    calls = []
+
+    def fake(user_id, text, history=None):
+        calls.append(text)
+        return {"intent": "help", "content": "", "tags": []}
+
+    with patch.object(brain, "detect_intent", side_effect=fake):
+        asyncio.run(core.handle_message(OWNER, "cancel my 6pm reminder", ch))
+    assert calls == ["cancel my 6pm reminder"]
+
+
+def test_curly_apostrophe_dont_is_a_no():
+    # M3: faster-whisper emits the curly apostrophe (U+2019), not the
+    # straight one -- "don’t" must still read as a no.
+    from wren import settings
+    settings.init_db(); shopping_store.init_db()
+    shopping_store.add("milk", "owner")
+    _voice("remove milk", "remove_shopping_item", "milk")
+    ch = CollectingChannel()
+    with patch.object(brain, "detect_intent", side_effect=AssertionError("classifier must not run on a no")):
+        asyncio.run(core.handle_message(OWNER, "don’t", ch))
+    assert ch.sent == ["Okay, left it alone."]
+    assert [i["item"] for i in shopping_store.active_items()] == ["milk"]
+    assert OWNER not in core._pending
+
+
+def test_dont_without_apostrophe_is_a_no():
+    # M3: transcripts sometimes drop the apostrophe entirely.
+    from wren import settings
+    settings.init_db(); shopping_store.init_db()
+    shopping_store.add("milk", "owner")
+    _voice("remove milk", "remove_shopping_item", "milk")
+    ch = CollectingChannel()
+    with patch.object(brain, "detect_intent", side_effect=AssertionError("classifier must not run on a no")):
+        asyncio.run(core.handle_message(OWNER, "dont", ch))
     assert ch.sent == ["Okay, left it alone."]
     assert [i["item"] for i in shopping_store.active_items()] == ["milk"]
     assert OWNER not in core._pending

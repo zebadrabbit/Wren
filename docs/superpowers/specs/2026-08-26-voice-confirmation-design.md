@@ -68,13 +68,20 @@ Nothing runs yet.
 
 **D4 — The next turn from that user resolves it, before the LLM is called.**
 At the top of `handle_message`, if `_pending` has an unexpired entry for this
-user: `^(yes|yeah|yep|yup|do it|confirm|go ahead)\b` runs the stored handler
-with the stored ctx (but the *current* channel — the reply goes where the
-answer came from); `^(no|nope|nah|cancel|never mind|stop)\b` drops it and
-sends `Okay, left it alone.`; anything else drops it silently and the message
-proceeds as a normal turn — the user changed the subject, and asking again is
-nagging. The regexes run on the stripped, lower-cased text. No classifier
-call is spent on "yes".
+user, `_NO` is checked first (`^(yeah,?\s*no|yes,?\s*no|no|nope|nah|never
+mind|nevermind|don'?[’']?t)\b`, plus `cancel`/`stop` matched only when they
+are the *entire* utterance — optionally followed by "it"/"that"/"this" and
+trailing punctuation — via a separate `$`-anchored alternative, so "cancel my
+6pm reminder" is a command, not an answer): it drops the question and sends
+`Okay, left it alone.`. `_NO` runs before `_YES`
+(`^(yes|yeah|yep|yup|do it|confirm|go ahead|sure)\b`) because "yeah no"
+matches `^yeah\b` in `_YES` too and means no. A `_YES` match runs the stored
+handler with the stored ctx (but the *current* channel — the reply goes
+where the answer came from). Anything matching neither drops the question
+silently and the message proceeds as a normal turn — the user changed the
+subject, and asking again is nagging. The regexes run on the stripped text,
+case-insensitively (`re.I`), not lower-cased first. No classifier call is
+spent on a yes or a no.
 
 **D5 — Pending confirmations expire after 120 seconds and are in-memory.** A
 `dict` in core, one entry per user, overwritten by a newer destructive
@@ -137,8 +144,10 @@ question asked by voice and answered in the web chat replies in the web chat.
 
 ## Error handling
 
-- The stored handler raising is caught by `handle_message`'s existing
-  `except` — same "Something went wrong" path as any skill error.
+- The stored handler raising is caught by the pending block's own
+  `try`/`except` (a separate block from the main turn's, ahead of the
+  classifier call) — it mirrors the main path exactly: the same "Something
+  went wrong, try again." reply and `ack("error")`.
 - A skill switched off between the question and the "yes" is checked again
   at confirmation time through the same `is_enabled` guard dispatch uses; the
   reply is `That skill is switched off.`

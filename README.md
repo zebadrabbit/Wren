@@ -315,10 +315,14 @@ resolve follow-ups that depend on the previous turn.
 
 Anything that arrived by voice and would delete or cancel something — remove
 an item, clear the list, discard an idea, cancel a reminder, unpin, remove a
-contact — is confirmed first: Wren replies `Confirm: remove from the shopping
-list "milk"? Say yes or no.` and acts only on a "yes" in the next message
-(spoken or typed, within two minutes). Anything else drops the question.
-Typed messages are unchanged. Transcription mis-hears; this is the seatbelt.
+contact, forget a memory — is confirmed first: Wren replies `Confirm: remove
+"milk" from the shopping list? Say yes or no.` and acts only on a "yes" in
+the next message (spoken or typed, within two minutes). Anything else drops
+the question. Typed messages are unchanged. Transcription mis-hears; this is
+the seatbelt. Confirmation is keyed by user id, not by device or token — on
+a shared bearer token (one `WREN_TOKENS` entry used by a kitchen device),
+everyone using it is the same "user" as far as Wren is concerned, so
+anyone's "yes" answers anyone's pending question.
 
 ## LLM providers and fallback
 
@@ -579,7 +583,11 @@ external event ──▶ communication plugin (input-only) ──▶ router.noti
 
 Adding a Skill: write a module in `wren/skills/` exposing `INTENTS`,
 `PROMPT_GUIDELINES`, and `async handle(intent, ctx)`, then add it to
-`registry.py`'s `PLUGINS` list. Write output with `await ctx.channel.send(...)`
+`registry.py`'s `PLUGINS` list. If any intent deletes or irreversibly changes
+something, also declare `DESTRUCTIVE = [...]` (a subset of `INTENTS`) and
+`CONFIRM = {intent: 'verb phrase, may contain "{content}"'}` — a skill that
+omits them gets no voice confirmation for anything it deletes. Write output
+with `await ctx.channel.send(...)`
 — never import `discord`/`aiohttp`, or the skill stops working on every other
 communication plugin. An event-only skill (background task, no user commands)
 only needs an optional `async start()`, and should use `router.notify(...)`

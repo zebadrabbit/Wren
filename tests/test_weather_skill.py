@@ -153,7 +153,7 @@ def test_weather_coordinate_fields_carry_their_own_min_max_and_settingrow_reads_
     page = (Path(__file__).parent.parent / "wren" / "communication" / "chat.html").read_text()
     assert "min: -90" in page
     assert "min: -180" in page
-    assert "min: 0" in page          # MEMORY_DEDUP_THRESHOLD, same bug
+    assert "min: 0.01" in page       # MEMORY_DEDUP_THRESHOLD -- fixed by the briefing wave; "min: 0" alone was a substring of this and passed vacuously
     assert "input.min = 5;" not in page
 
 
