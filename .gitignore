@@ -1,5 +1,6 @@
 .env
 wren.db
+wren.db.bak-*
 __pycache__/
 *.pyc
 .pytest_cache/

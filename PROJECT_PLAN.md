@@ -276,3 +276,7 @@ branches (`worktree-memory-slice-1`, then `worktree-daily-briefing`, which
 also carries voice confirmation) and await a merge to `main` plus a service
 restart. `PROJECT_PLAN.md`'s "Backlog after the skill-cards work" above is
 still valid and now sits behind these.
+
+Merged to `main` and live since 2026-09-21 (fast-forward, 973 tests green; the
+worktrees are gone). Memory needs no configuration; weather, calendar and the
+briefing each stay off until their `.env` keys are set.
