@@ -305,8 +305,11 @@ Household Gaps") holds the state; this is the order and the why.
    and capped at twenty, and the answer prompt labels each record with its
    source and date. No new intent; the classifier is untouched. Attachments
    come back only for the notes that matched. Ceiling: lexical matching.
-8. **Timers.** 9. **Undo for typed messages.** 10. **Gmail digest / sender
-   allowlist.**
+8. ~~**Timers.**~~ Landed 2026-09-26: "timer 20 minutes" / "set a 10 minute
+   timer" is parsed in the reminder skill (no content needed) and fires "20
+   minute timer is up"; any reminder due within the hour reads back as "in N
+   min", so "how long is left on the timer" is recall_reminders.
+9. **Undo for typed messages.** 10. **Gmail digest / sender allowlist.**
 
 ## Roadmap 2026-08-26 — "Jarvis, not Alexa"
 

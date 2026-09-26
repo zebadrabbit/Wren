@@ -86,8 +86,9 @@ def test_recall_reminders_lists_one_combined_message():
     combined = ch.sent[0]
     assert "check the oven" in combined
     assert "call mom" in combined
-    assert reminder_plugin._format_local(oven_when) in combined
-    assert reminder_plugin._format_local(mom_when) in combined
+    # within the hour a reminder reads as "in N min" (timers made this matter)
+    assert reminder_plugin._when_phrase(oven_when) in combined
+    assert reminder_plugin._when_phrase(mom_when) in combined
 
 
 def test_recall_reminders_emits_a_card_with_local_times():
@@ -599,3 +600,48 @@ def test_recall_shows_the_rule_in_prose_and_in_the_card():
     rows = ch.cards[0]["data"]["reminders"]
     assert rows[0]["local"].endswith(", every 3 days")
     assert "every" not in rows[1]["local"]
+
+
+# --- timers ---------------------------------------------------------------
+# "timer 20 minutes" is a reminder with nothing to say; "how long is left" is
+# recall, which now reads "in N min" for anything due within the hour.
+
+@pytest.mark.parametrize("text,expected", [
+    ("timer 20 minutes", (20, "minutes")),
+    ("set a 10 minute timer", (10, "minutes")),
+    ("timer for 2 hours", (2, "hours")),
+    ("5 min timer", (5, "minutes")),
+    ("start a 90 second timer", (90, "seconds")),
+    ("remind me in 20 minutes to check the oven", None),
+    ("how long is left on the timer", None),
+])
+def test_parse_timer(text, expected):
+    assert reminder_plugin._parse_timer(text) == expected
+
+def test_a_timer_needs_no_content_and_says_how_long():
+    ch = CollectingChannel()
+    asyncio.run(reminder_plugin.handle("set_reminder", Ctx(user_id=1, channel=ch, content="", text="timer 20 minutes")))
+    _assert_flourished(ch.sent[0], "Timer set, 20 minutes.")
+    row = reminders.pending(1)[0]
+    assert row["content"] == "20 minute timer is up"
+    fire = datetime.fromisoformat(row["fire_at"])
+    assert timedelta(minutes=19) < fire - datetime.now(timezone.utc) <= timedelta(minutes=20)
+
+def test_a_one_hour_timer_reads_singular():
+    ch = CollectingChannel()
+    asyncio.run(reminder_plugin.handle("set_reminder", Ctx(user_id=1, channel=ch, content="timer", text="set a 1 hour timer")))
+    _assert_flourished(ch.sent[0], "Timer set, 1 hour.")
+    assert reminders.pending(1)[0]["content"] == "1 hour timer is up"
+
+def test_when_phrase_is_relative_within_the_hour_and_absolute_beyond():
+    assert reminder_plugin._when_phrase(_future_iso(12 * 60 + 5)) == "in 12 min"
+    assert reminder_plugin._when_phrase(_future_iso(30)) == "in under a minute"
+    far = _future_iso(2 * 24 * 3600)
+    assert reminder_plugin._when_phrase(far) == reminder_plugin._format_local(far)
+
+def test_how_long_is_left_shows_minutes_remaining():
+    reminders.save(1, "20 minute timer is up", _future_iso(12 * 60 + 5))
+    ch = CollectingChannel()
+    asyncio.run(reminder_plugin.handle("recall_reminders", Ctx(user_id=1, channel=ch, content="", text="how long is left on the timer")))
+    assert ch.sent == ["[in 12 min] 20 minute timer is up"]
+    assert ch.cards[0]["data"]["reminders"][0]["local"] == "in 12 min"

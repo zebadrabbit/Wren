@@ -14,8 +14,8 @@ DESTRUCTIVE = ["cancel_reminder"]
 CONFIRM = {"cancel_reminder": 'cancel the reminder "{content}"'}
 PLUGIN_NAME = "Reminders"
 
-PROMPT_GUIDELINES = """- set_reminder: user wants to be reminded of something at a specific time; content is what to remind them of, and you must compute "when" as an absolute ISO 8601 datetime in the LOCAL timezone you were already told "today" is in (e.g. 2026-07-12T21:00:00, no UTC conversion) based on the current date/time and the relative or absolute time they gave (e.g. "in 20 minutes", "at 6pm", "tomorrow morning"); for a repeating reminder ("every tuesday at 8pm", "every morning") "when" is the FIRST occurrence — the repetition is handled elsewhere
-- recall_reminders: user wants to see their upcoming reminders
+PROMPT_GUIDELINES = """- set_reminder: user wants to be reminded of something at a specific time; content is what to remind them of, and you must compute "when" as an absolute ISO 8601 datetime in the LOCAL timezone you were already told "today" is in (e.g. 2026-07-12T21:00:00, no UTC conversion) based on the current date/time and the relative or absolute time they gave (e.g. "in 20 minutes", "at 6pm", "tomorrow morning"); a timer ("timer 20 minutes", "set a 10 minute timer") is set_reminder too, with nothing to remind about; for a repeating reminder ("every tuesday at 8pm", "every morning") "when" is the FIRST occurrence — the repetition is handled elsewhere
+- recall_reminders: user wants to see their upcoming reminders, or how long is left on a timer ("how long is left", "how long on the timer")
 - cancel_reminder: user wants to cancel a previously set reminder; content is a short phrase identifying which one, not the full reminder text — set content to "all" if they want every reminder cancelled ("clear my reminders", "cancel everything")"""
 
 _GRACE = timedelta(seconds=30)
@@ -104,6 +104,22 @@ def _next_fire(fire_at_iso: str, repeat: str, now: datetime) -> datetime:
         t += step
     return t.astimezone(timezone.utc).replace(microsecond=0)
 
+# "timer 20 minutes", "set a 10 minute timer", "5 min timer": a reminder with
+# nothing to say, so parsed here like "in 20 minutes" is -- the model would
+# otherwise reject it for having no content or guess a time.
+_TIMER = re.compile(
+    r"\b(?:(\d+)\s*-?\s*(second|sec|minute|min|hour|hr)s?\s+timer"
+    r"|timer\s+(?:for\s+)?(\d+)\s*(second|sec|minute|min|hour|hr)s?)\b", re.I)
+
+def _parse_timer(text: str) -> tuple[int, str] | None:
+    """(count, unit) for a timer phrase, unit one of seconds/minutes/hours."""
+    m = _TIMER.search(text or "")
+    if not m:
+        return None
+    count = int(m.group(1) or m.group(3))
+    unit = _UNITS[(m.group(2) or m.group(4)).lower()]
+    return (count, unit) if count else None
+
 # the surface named in the sentence; the rule lives in router so the contacts
 # skill parses "add 555 as hubby on telegram" the same way
 _parse_via = router.named_surface
@@ -128,6 +144,16 @@ def _parse_when(when):
 def _format_local(fire_at_utc_iso: str) -> str:
     dt = datetime.fromisoformat(fire_at_utc_iso).astimezone(ZoneInfo(config.TIMEZONE))
     return dt.strftime("%Y-%m-%d %H:%M %Z")
+
+def _when_phrase(fire_at_utc_iso: str) -> str:
+    """How a pending reminder's time reads back: "in 12 min" within the hour
+    (what "how long is left on the timer" wants), the local clock beyond."""
+    left = datetime.fromisoformat(fire_at_utc_iso) - datetime.now(timezone.utc)
+    if left < timedelta(minutes=1):
+        return "in under a minute"
+    if left < timedelta(hours=1):
+        return f"in {int(left.total_seconds() // 60)} min"
+    return _format_local(fire_at_utc_iso)
 
 # Deliberately narrow. "all" as the whole phrase, or "all/every … reminders"
 # in what the user actually typed -- NOT a bare \ball\b, which would read
@@ -163,6 +189,14 @@ async def handle(intent: str, ctx: Ctx) -> None:
             if surface is None or not getattr(surface, "CAN_NOTIFY", True):
                 await ctx.channel.send(f"I can't send reminders on {via}.")
                 return
+        timer = _parse_timer(ctx.text)
+        if timer:
+            count, unit = timer
+            fire_at = (datetime.now(timezone.utc) + timedelta(**{unit: count})).isoformat(timespec="seconds")
+            length = f"{count} {unit if count != 1 else unit[:-1]}"
+            reminders.save(ctx.user_id, f"{count} {unit[:-1]} timer is up", fire_at, via=via)
+            await ctx.channel.send(flourish.flourish(f"Timer set, {length}."))
+            return
         parsed_utc = _relative_when(ctx.text) or _parse_when(ctx.when)
         repeat = _parse_repeat(ctx.text)
         # the model tends to leave the rule inside content; what fires at 8pm
@@ -184,7 +218,7 @@ async def handle(intent: str, ctx: Ctx) -> None:
         # and the card should never have to. The rule rides in the same string
         # so the card shows it without knowing what a rule is.
         def _local(r):
-            return _format_local(r["fire_at"]) + (
+            return _when_phrase(r["fire_at"]) + (
                 f", {_format_repeat(r['repeat'])}" if r.get("repeat") else "")
         rows = [{"content": r["content"], "fire_at": r["fire_at"], "local": _local(r)}
                 for r in items]
