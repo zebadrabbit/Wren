@@ -384,3 +384,55 @@ def test_save_reply_classifies_by_the_sniffed_type_not_the_declared_one():
     lied = Inbound(filename="blob", mime="application/octet-stream", data=JPEG)
     asyncio.run(notes_plugin.handle("save_note", Ctx(user_id=1, channel=ch, content="x", files=[lied])))
     assert ch.sent == ["Saved, 1 image."]
+
+
+# --- large collections: summary in prose, everything in the card ---------
+# Spec: docs/superpowers/specs/2026-08-17-skill-cards-and-spaces-design.md,
+# "Large collections". Past SUMMARY_AFTER rows a text surface gets a tag
+# breakdown and an invitation to narrow; the card still carries every row.
+
+def test_recall_notes_past_threshold_gets_tag_breakdown_not_listing():
+    for i in range(10):
+        notes.save(1, f"house note {i}", ["house"])
+    for i in range(8):
+        notes.save(1, f"work note {i}", ["work"])
+    notes.save(1, "loose note", [])
+    ch = CollectingChannel()
+    asyncio.run(notes_plugin.handle("recall_notes", Ctx(user_id=1, channel=ch, content="")))
+    assert ch.sent == ["19 notes: house 10, work 8, untagged 1. Which?"]
+    assert len(ch.cards[0]["data"]["notes"]) == 19
+
+
+def test_recall_notes_at_threshold_still_lists_everything():
+    for i in range(notes_plugin.SUMMARY_AFTER):
+        notes.save(1, f"note {i}", ["house"])
+    ch = CollectingChannel()
+    asyncio.run(notes_plugin.handle("recall_notes", Ctx(user_id=1, channel=ch, content="")))
+    assert "Which?" not in ch.sent[0]
+    assert all(f"note {i}" in ch.sent[0] for i in range(notes_plugin.SUMMARY_AFTER))
+
+
+def test_recall_notes_one_tag_past_threshold_shows_newest_and_a_count():
+    # Nothing to narrow by ("20 notes: work 20. Which?" would be useless), so
+    # the newest SUMMARY_AFTER are listed and the rest counted.
+    for i in range(20):
+        notes.save(1, f"work note {i:02d}", ["work"])
+    ch = CollectingChannel()
+    asyncio.run(notes_plugin.handle("recall_notes", Ctx(user_id=1, channel=ch, content="", tags=["work"])))
+    text = ch.sent[0]
+    assert "work note 19" in text and "work note 05" in text
+    assert "work note 04" not in text
+    assert text.endswith("…and 5 more. Ask about one to narrow it down.")
+    assert len(ch.cards[0]["data"]["notes"]) == 20
+
+
+def test_recall_ideas_past_threshold_shows_newest_and_a_count():
+    for i in range(16):
+        notes.save(1, f"idea {i:02d}", ["idea"])
+    ch = CollectingChannel()
+    asyncio.run(notes_plugin.handle("recall_ideas", Ctx(user_id=1, channel=ch, content="")))
+    text = ch.sent[0]
+    assert text.count("\n- ") == notes_plugin.SUMMARY_AFTER - 1 and text.startswith("- idea 15")
+    assert "- idea 00" not in text
+    assert text.endswith("…and 1 more. Ask about one to narrow it down.")
+    assert len(ch.cards[0]["data"]["ideas"]) == 16

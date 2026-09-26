@@ -200,7 +200,10 @@ mirror of the `send_file` that already exists for exports), and per-surface
 handling. A real feature, not an afternoon — and it unlocked a use that existed
 rather than improving one that already worked.
 
-**Summarise large collections in prose.** Already specified in
+**Summarise large collections in prose.** Landed 2026-09-26: past
+`notes_skill.SUMMARY_AFTER` (15) rows a text surface gets the tag breakdown,
+or the newest 15 and a count when there is only one tag to narrow by; the
+card still gets every row. History: already specified in
 `docs/superpowers/specs/2026-08-17-skill-cards-and-spaces-design.md`: past ~15
 items, text surfaces get a tag breakdown and an invitation to narrow, while the
 card keeps showing everything (it is scrollable and already filters by tag).

@@ -1,3 +1,4 @@
+from collections import Counter
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from ..channel import Ctx
@@ -19,6 +20,31 @@ PROMPT_GUIDELINES = """- save_note: user is capturing something for later (groce
 - discard_idea: user wants to delete a previously saved idea; content is a short phrase identifying which idea, not the full idea text
 - expand_idea: user wants Wren to elaborate/brainstorm further on a previously saved idea; content is a short phrase identifying which idea, not the full idea text
 - export_notes: user wants their notes/ideas as a downloadable file to use elsewhere (e.g. "send my notes as a file", "export my ideas so I can paste them into X")"""
+
+
+# Past this many rows a text surface gets a summary instead of the listing.
+# Not a reaction to any platform's message limit (chunking in the plugins is
+# the net for that): prose is linear and unfilterable, so past some size a
+# breakdown is simply the better answer. A count rather than a byte budget so
+# ten long notes and thirty short ones behave the same, predictable way. The
+# card is scrollable and filters by tag on its own, so it always gets every row.
+SUMMARY_AFTER = 15
+
+
+def _summary(lines: list[str], tags: list[list[str]] | None, noun: str) -> str:
+    """The prose for a listing. Up to SUMMARY_AFTER rows it is the listing
+    itself. Past that: a tag breakdown and an invitation to narrow ("47 notes:
+    house 12, work 20, untagged 6. Which?"), or, when there is only one bucket
+    to narrow by, the newest SUMMARY_AFTER and a count of the rest."""
+    n = len(lines)
+    if n <= SUMMARY_AFTER:
+        return "\n".join(lines)
+    buckets = Counter(t for row in (tags or []) for t in (row or ["untagged"]))
+    if len(buckets) > 1:
+        breakdown = ", ".join(f"{t} {c}" for t, c in buckets.most_common())
+        return f"{n} {noun}: {breakdown}. Which?"
+    return ("\n".join(lines[:SUMMARY_AFTER])
+            + f"\n…and {n - SUMMARY_AFTER} more. Ask about one to narrow it down.")
 
 
 def _describe(atts: list) -> str:
@@ -131,10 +157,11 @@ async def handle(intent: str, ctx: Ctx) -> None:
                                for a in notes.attachments(n["id"])]}
                     for n in matches]
             if rows:
-                text = "\n".join(
-                    f"[{n['created_at'][:10]}] {n['content']}{_marker(n['id'])}"
-                    + (f" (tags: {n['tags']})" if n["tags"] else "")
-                    for n in matches)
+                text = _summary(
+                    [f"[{n['created_at'][:10]}] {n['content']}{_marker(n['id'])}"
+                     + (f" (tags: {n['tags']})" if n["tags"] else "")
+                     for n in matches],
+                    [r["tags"] for r in rows], "notes")
             else:
                 text = "No notes found."
             # One message, not one per note: a wall of separate messages is what
@@ -146,7 +173,10 @@ async def handle(intent: str, ctx: Ctx) -> None:
                 # re-renders later; content stays empty for the reason above
                 params={"content": "", "tags": list(ctx.tags or [])},
             )
-            await _send_attachments(ctx, [n["id"] for n in matches])
+            # A summary is an invitation to narrow; the files of every note
+            # in the corpus would undo it. They arrive with the narrowed reply.
+            if len(matches) <= SUMMARY_AFTER:
+                await _send_attachments(ctx, [n["id"] for n in matches])
 
     elif intent == "save_idea":
         if not ctx.content.strip():
@@ -158,7 +188,7 @@ async def handle(intent: str, ctx: Ctx) -> None:
     elif intent == "recall_ideas":
         ideas = notes.search(ctx.user_id, tags=["idea"])
         rows = [{"content": i["content"], "created_at": i["created_at"]} for i in ideas]
-        text = "\n".join(f"- {i['content']}" for i in ideas) if ideas else "No ideas saved."
+        text = _summary([f"- {i['content']}" for i in ideas], None, "ideas") if ideas else "No ideas saved."
         await ctx.channel.send_card(
             "ideas", {"ideas": rows}, text,
             intent="recall_ideas", params={"content": ""},
