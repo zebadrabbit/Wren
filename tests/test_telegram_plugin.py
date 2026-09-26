@@ -107,8 +107,6 @@ def test_group_chat_message_is_ignored_but_still_advances_offset():
 
 
 @pytest.mark.parametrize("update", [
-    # a photo: a message with no "text" at all
-    _update(update_id=3, text=None, photo=[{"file_id": "abc"}]),
     # a sticker
     _update(update_id=3, text=None, sticker={"file_id": "abc"}),
     # an edit arrives under a different key entirely
@@ -617,6 +615,19 @@ def test_failed_download_is_reported_and_the_caption_still_reaches_core():
     sent.assert_awaited_once_with(42, "Couldn't fetch that photo, try again.")
     _user, text, _channel = handle.await_args.args
     assert text == "tyre receipt" and handle.await_args.kwargs["files"] == []
+
+
+def test_malformed_getfile_response_is_reported_not_swallowed():
+    # getFile answering with the wrong shape must still produce the reply,
+    # not an outer-handler log line and silence
+    api = AsyncMock(side_effect=[[_photo_update(caption=None)], ["not", "a", "dict"]])
+    sent = AsyncMock()
+    with patch.object(telegram_plugin, "_api", new=api), \
+         patch.object(telegram_plugin, "_send_text", new=sent), \
+         patch.object(core, "handle_message", new=AsyncMock()) as handle:
+        assert asyncio.run(telegram_plugin._poll_once(None)) == 2
+    sent.assert_awaited_once_with(42, "Couldn't fetch that photo, try again.")
+    handle.assert_not_called()
 
 
 def test_sticker_is_still_skipped():

@@ -295,7 +295,11 @@ async def _poll_once(offset: int | None) -> int | None:
                     continue
                 try:
                     data = await _fetch_file(want["file_id"])
-                except (aiohttp.ClientError, TelegramError, KeyError) as e:
+                except (aiohttp.ClientError, TelegramError, KeyError, TypeError) as e:
+                    # KeyError/TypeError: getFile answered with the wrong shape
+                    # (missing "file_path", or not even a dict) -- still a
+                    # failed fetch from the caller's point of view, not a bug
+                    # to fall through to the outer handler and go silent.
                     logging.warning(f"telegram: file download failed: {e}")
                     await _send_text(user_id, "Couldn't fetch that photo, try again.")
                     continue
