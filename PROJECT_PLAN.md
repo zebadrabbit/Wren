@@ -267,7 +267,13 @@ Household Gaps") holds the state; this is the order and the why.
    second door, the Telegram plugin translates everyone in both directions,
    and `router.notify` with no `via` routes a contact to a surface they are
    on. The old table is rebuilt in place with its rows.
-3. **Generic named lists.** The shopping machinery with a list-name column.
+3. ~~**Generic named lists.**~~ Landed 2026-09-26: a `list` column on
+   `shopping_items` (default `shopping`), the name parsed in the skill from
+   "…my packing list" / "…the hardware store list" (one or two words), the
+   six shopping intents unchanged, replies name the list when it is not
+   shopping, and the card carries the name in its data and params (a new
+   optional `list` field on `Ctx` and `/api/dispatch`) so a reload re-reads
+   the same list. Not yet: "what lists do I have", rename, delete.
 4. **Web chat as an installable app with push.** Also the answer to where
    device replies land.
 5. **Calendar write (CalDAV).**

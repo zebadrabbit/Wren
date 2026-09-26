@@ -67,6 +67,10 @@ class Ctx:
     source: str = "text"
     # Files that arrived with the words. Only the notes skill reads these.
     files: list[Inbound] = field(default_factory=list)
+    # Which named list a shopping intent is about, when the words are not there
+    # to parse it from -- a card re-reading itself after a reload. Typed
+    # messages leave this empty and the skill reads the name from `text`.
+    list_name: str = ""
 
 
 class CollectingChannel:

@@ -130,3 +130,39 @@ def test_a_remove_then_restore_does_not_inflate_the_suggestions():
     shopping.remove("milk")
     after = [c["count"] for c in shopping.common_items(threshold=1) if c["item"] == "milk"][0]
     assert after == before
+
+
+# --- named lists (2026-09-26) ------------------------------------------------
+# Every row belongs to a list; the shopping list is just the default one.
+
+def test_lists_are_isolated():
+    shopping.add("tent", "owner", list_name="packing")
+    shopping.add("milk", "owner")
+    assert [i["item"] for i in shopping.active_items()] == ["milk"]
+    assert [i["item"] for i in shopping.active_items(list_name="packing")] == ["tent"]
+    assert shopping.remove("tent") is False               # not on the shopping list
+    assert shopping.remove("tent", list_name="packing") is True
+    assert shopping.restore("tent", list_name="packing") is True
+    assert shopping.clear(list_name="packing") == 1
+    assert [i["item"] for i in shopping.active_items()] == ["milk"]
+
+def test_common_items_are_per_list():
+    for _ in range(3):
+        shopping.add("rope", "owner", list_name="packing")
+        shopping.clear(list_name="packing")
+    assert shopping.common_items() == []
+    assert [c["item"] for c in shopping.common_items(list_name="packing")] == ["rope"]
+
+def test_a_pre_2026_09_26_table_keeps_its_rows_on_the_shopping_list(tmp_path, monkeypatch):
+    import sqlite3
+    path = tmp_path / "old.db"
+    monkeypatch.setenv("WREN_DB", str(path))
+    con = sqlite3.connect(path)
+    con.execute("CREATE TABLE shopping_items (id INTEGER PRIMARY KEY AUTOINCREMENT, item TEXT NOT NULL,"
+                " original_text TEXT NOT NULL, added_by TEXT NOT NULL, status TEXT NOT NULL, added_at TEXT NOT NULL)")
+    con.execute("INSERT INTO shopping_items (item, original_text, added_by, status, added_at)"
+                " VALUES ('milk', 'Milk', 'owner', 'active', '2026-07-01T00:00:00')")
+    con.commit(); con.close()
+    shopping.init_db()
+    assert [i["item"] for i in shopping.active_items()] == ["milk"]
+    assert shopping.active_items(list_name="packing") == []

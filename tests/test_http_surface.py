@@ -197,7 +197,7 @@ def test_voice_destructive_intent_asks_for_confirmation_end_to_end(monkeypatch):
     try:
         status, body = call("post", "/voice", token="good-token", data=b"RIFFfake")
         assert status == 200
-        assert body["replies"] == ['Confirm: remove "milk" from the shopping list? Say yes or no.']
+        assert body["replies"] == ['Confirm: remove "milk" from the list? Say yes or no.']
         assert [i["item"] for i in shopping_store.active_items()] == ["milk"]
     finally:
         # a real handle_message arms core._pending -- clear it so it cannot

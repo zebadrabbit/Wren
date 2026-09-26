@@ -976,3 +976,27 @@ def test_every_render_card_call_passes_the_reply_files():
     assert calls, "no renderCard calls found"
     for args in calls:
         assert args.count(",") == 2, f"renderCard call without files: {args}"
+
+
+def test_dispatch_passes_the_list_name_into_ctx():
+    # the shopping card of a named list re-reads itself with {"list": "packing"};
+    # without this the card falls back to the shopping list on every reload
+    calls = []
+
+    async def fake_handle(intent, ctx):
+        calls.append(ctx.list_name)
+
+    plugin = MagicMock()
+    plugin.__name__ = "wren.fake_shopping_skill"
+    plugin.handle = fake_handle
+    with patch.dict(registry.INTENT_HANDLERS, {"recall_shopping": plugin}):
+        status, _ = call("post", "/api/dispatch", token=TOKEN_A,
+                         json={"intent": "recall_shopping", "list": "packing"})
+    assert status == 200
+    assert calls == ["packing"]
+
+
+def test_dispatch_rejects_a_non_string_list_name():
+    status, _ = call("post", "/api/dispatch", token=TOKEN_A,
+                     json={"intent": "recall_shopping", "list": ["packing"]})
+    assert status == 400

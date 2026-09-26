@@ -698,6 +698,10 @@ function cardShell(mount, refreshIntent, refreshParams) {
 
 function shoppingCard(data, mount) {
   const items = data.items || [];
+  // which named list this is; every dispatch below carries it so the row
+  // controls and the refresh act on this list and not the shopping one
+  const list = data.list || "shopping";
+  const title = list === "shopping" ? "Shopping" : list.charAt(0).toUpperCase() + list.slice(1);
   const rows = items.map(i =>
     '<li><span class="citem">' + esc(i.text) + '</span>' +
     '<button class="cx" data-item="' + esc(i.text) + '" title="remove">✕</button></li>'
@@ -708,7 +712,7 @@ function shoppingCard(data, mount) {
     : "";
   mount.innerHTML =
     '<div class="card shopping">' +
-      '<header>Shopping · ' + items.length + "</header>" +
+      '<header>' + esc(title) + ' · ' + items.length + "</header>" +
       (items.length ? "<ul>" + rows + "</ul>"
                     : '<p class="cempty">Nothing on the list.</p>') +
       sugg +
@@ -717,7 +721,7 @@ function shoppingCard(data, mount) {
       "<button>+</button></form>" +
     "</div>";
 
-  const { guarded, refresh } = cardShell(mount, "recall_shopping", {});
+  const { guarded, refresh } = cardShell(mount, "recall_shopping", { list });
 
   for (const b of mount.querySelectorAll(".cx")) {
     b.onclick = async () => {
@@ -730,7 +734,7 @@ function shoppingCard(data, mount) {
       b.disabled = true;
       const item = b.dataset.item;          // read before the button is replaced
       try {
-        const r = await dispatch("remove_shopping_item", { content: item });
+        const r = await dispatch("remove_shopping_item", { content: item, list });
         // The removal has ALREADY happened server-side. The row lingers only
         // as an undo affordance -- deferring the write until the timer
         // expired would mean closing the tab silently cancelled the removal,
@@ -742,7 +746,7 @@ function shoppingCard(data, mount) {
         li.querySelector(".cundo").onclick = () => {
           clearTimeout(timer);
           return guarded(async () => {
-            const back = await dispatch("restore_shopping_item", { content: item });
+            const back = await dispatch("restore_shopping_item", { content: item, list });
             await refresh(back);
           });
         };
@@ -763,7 +767,7 @@ function shoppingCard(data, mount) {
     mount._busy = true;
     input.value = "";
     try {
-      const r = await dispatch("add_shopping_item", { content: text });
+      const r = await dispatch("add_shopping_item", { content: text, list });
       await refresh(r);
     } catch (err) {
       input.value = text;                // a failed add must not destroy what was typed
@@ -1149,7 +1153,7 @@ async function send() {
 // A module missing here renders with no caption, which is fine.
 const SKILL_INFO = {
   notes_skill:    "Notes and ideas — “remember that…”, then ask about them later.",
-  shopping_skill: "The shared shopping list — add things, read it back, clear it.",
+  shopping_skill: "Shared lists — the shopping list by default, or any named one (\"add a tent to the packing list\").",
   reminder_skill: "Reminders — “remind me to…” — delivered via the notify channel.",
   web_skill:      "Web lookup — search and summarise pages (needs SearXNG below).",
   contacts_skill: "Owner-only: add or remove the people Wren will talk to.",

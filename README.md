@@ -10,7 +10,8 @@
 ---
 
 Talk to Wren in plain English and it works out the intent — save a note, manage
-a shared shopping list, capture an idea, set a reminder, search the web,
+a shared shopping list (or any named list: "add a tent to the packing
+list"), capture an idea, set a reminder, search the web,
 message someone else on the whitelist, or just chat.
 
 Wren is transport-agnostic. It is built from two kinds of plugin:
@@ -338,7 +339,7 @@ resolve follow-ups that depend on the previous turn.
 Anything that arrived by voice and would delete or cancel something — remove
 an item, clear the list, discard an idea, cancel a reminder, unpin, remove a
 contact, forget a memory — is confirmed first: Wren replies `Confirm: remove
-"milk" from the shopping list? Say yes or no.` and acts only on a "yes" in
+"milk" from the list? Say yes or no.` and acts only on a "yes" in
 the next message (spoken or typed, within two minutes). Anything else drops
 the question. Typed messages are unchanged. Transcription mis-hears; this is
 the seatbelt. Confirmation is keyed by user id, not by device or token — on

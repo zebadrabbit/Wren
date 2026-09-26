@@ -310,20 +310,22 @@ def register_routes(app: web.Application, authenticate) -> None:
         tags = body.get("tags") or []
         person = body.get("person")
         when = body.get("when")
+        list_name = body.get("list") or ""
         if (not isinstance(content, str)
                 or not isinstance(tags, list) or not all(isinstance(t, str) for t in tags)
                 or (person is not None and not isinstance(person, str))
-                or (when is not None and not isinstance(when, str))):
+                or (when is not None and not isinstance(when, str))
+                or not isinstance(list_name, str)):
             # tags elements matter, not just the container: notes_store does
             # ",".join(tags), which TypeErrors on a non-str element -- a 500
             # from a crafted body, same class of bug _json_object guards
             # against for the body itself.
-            return web.json_response({"error": "bad 'content', 'tags', 'person' or 'when'"},
+            return web.json_response({"error": "bad 'content', 'tags', 'person', 'when' or 'list'"},
                                      status=400)
 
         channel = CollectingChannel()
         ctx = Ctx(user_id=user_id, channel=channel, content=content, tags=tags,
-                  person=person, when=when)
+                  person=person, when=when, list_name=list_name)
         try:
             await plugin.handle(intent, ctx)
         except Exception as e:

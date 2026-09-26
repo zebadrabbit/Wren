@@ -248,7 +248,7 @@ def test_voice_destructive_intent_asks_instead_of_acting():
     settings.init_db(); shopping_store.init_db()
     shopping_store.add("milk", "owner")
     ch = _voice("remove milk", "remove_shopping_item", "milk")
-    assert ch.sent == ['Confirm: remove "milk" from the shopping list? Say yes or no.']
+    assert ch.sent == ['Confirm: remove "milk" from the list? Say yes or no.']
     assert [i["item"] for i in shopping_store.active_items()] == ["milk"]
     assert core._pending[OWNER][0] == "remove_shopping_item"
 
@@ -264,7 +264,7 @@ def test_voice_destructive_with_null_content_still_arms_and_asks():
     with patch.object(brain, "detect_intent",
                        return_value={"intent": "clear_shopping", "content": None, "tags": []}):
         asyncio.run(core.handle_message(OWNER, "clear the list", ch, source="voice"))
-    assert ch.sent == ["Confirm: clear the whole shopping list? Say yes or no."]
+    assert ch.sent == ["Confirm: clear the whole list? Say yes or no."]
     assert core._pending[OWNER][0] == "clear_shopping"
 
 

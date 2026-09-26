@@ -12,37 +12,49 @@ def init_db() -> None:
                 original_text TEXT NOT NULL,
                 added_by      TEXT NOT NULL,
                 status        TEXT NOT NULL,
-                added_at      TEXT NOT NULL
+                added_at      TEXT NOT NULL,
+                list          TEXT NOT NULL DEFAULT 'shopping'
             )
         """)
+        # Named lists (2026-09-26): rows written before the column existed
+        # are the shopping list, which the DEFAULT says for them. Same
+        # additive migration as reminders.via.
+        cols = {row[1] for row in con.execute("PRAGMA table_info(shopping_items)")}
+        if "list" not in cols:
+            try:
+                con.execute("ALTER TABLE shopping_items ADD COLUMN list TEXT NOT NULL DEFAULT 'shopping'")
+            except sqlite3.OperationalError as e:
+                if "duplicate column name" not in str(e):
+                    raise
 
-def add(item_text: str, added_by: str) -> tuple[int, bool]:
+def add(item_text: str, added_by: str, list_name: str = "shopping") -> tuple[int, bool]:
     normalized = item_text.strip().lower()
     with db.conn() as con:
         con.row_factory = sqlite3.Row
         existing = con.execute(
-            "SELECT id FROM shopping_items WHERE item=? AND status='active'",
-            (normalized,),
+            "SELECT id FROM shopping_items WHERE item=? AND status='active' AND list=?",
+            (normalized, list_name),
         ).fetchone()
         if existing:
             return existing["id"], False
         ts = datetime.now(timezone.utc).isoformat()
         cur = con.execute(
-            "INSERT INTO shopping_items (item, original_text, added_by, status, added_at) VALUES (?,?,?,?,?)",
-            (normalized, item_text.strip(), added_by, "active", ts),
+            "INSERT INTO shopping_items (item, original_text, added_by, status, added_at, list)"
+            " VALUES (?,?,?,?,?,?)",
+            (normalized, item_text.strip(), added_by, "active", ts, list_name),
         )
         return cur.lastrowid, True
 
-def remove(item_text: str) -> bool:
+def remove(item_text: str, list_name: str = "shopping") -> bool:
     normalized = item_text.strip().lower()
     with db.conn() as con:
         cur = con.execute(
-            "UPDATE shopping_items SET status='removed' WHERE item=? AND status='active'",
-            (normalized,),
+            "UPDATE shopping_items SET status='removed' WHERE item=? AND status='active' AND list=?",
+            (normalized, list_name),
         )
         return cur.rowcount > 0
 
-def restore(item_text: str) -> bool:
+def restore(item_text: str, list_name: str = "shopping") -> bool:
     """Undo a remove: flip the most recently removed row back to active.
 
     Deliberately not add() again. add() only matches rows with status='active',
@@ -55,13 +67,13 @@ def restore(item_text: str) -> bool:
     with db.conn() as con:
         cur = con.execute(
             "UPDATE shopping_items SET status='active' WHERE id = ("
-            "  SELECT id FROM shopping_items WHERE item=? AND status='removed'"
+            "  SELECT id FROM shopping_items WHERE item=? AND status='removed' AND list=?"
             "  ORDER BY id DESC LIMIT 1)",
-            (normalized,),
+            (normalized, list_name),
         )
         return cur.rowcount > 0
 
-def clear() -> int:
+def clear(list_name: str = "shopping") -> int:
     """Mark every active item removed; returns how many there were.
 
     A status flip, not a DELETE, for the same reason remove() is: the rows stay
@@ -69,29 +81,32 @@ def clear() -> int:
     mistaken clear is recoverable with one UPDATE).
     """
     with db.conn() as con:
-        cur = con.execute("UPDATE shopping_items SET status='removed' WHERE status='active'")
+        cur = con.execute("UPDATE shopping_items SET status='removed' WHERE status='active' AND list=?",
+                          (list_name,))
         return cur.rowcount
 
-def active_items() -> list[dict]:
+def active_items(list_name: str = "shopping") -> list[dict]:
     with db.conn() as con:
         con.row_factory = sqlite3.Row
         rows = con.execute(
-            "SELECT * FROM shopping_items WHERE status='active' ORDER BY added_at ASC"
+            "SELECT * FROM shopping_items WHERE status='active' AND list=? ORDER BY added_at ASC",
+            (list_name,),
         ).fetchall()
     return [dict(r) for r in rows]
 
-def common_items(threshold: int = 3, limit: int = 5) -> list[dict]:
+def common_items(threshold: int = 3, limit: int = 5, list_name: str = "shopping") -> list[dict]:
     with db.conn() as con:
         con.row_factory = sqlite3.Row
         rows = con.execute(
             """
             SELECT item, COUNT(*) as count
             FROM shopping_items
+            WHERE list=?
             GROUP BY item
             HAVING COUNT(*) >= ?
             ORDER BY count DESC
             LIMIT ?
             """,
-            (threshold, limit),
+            (list_name, threshold, limit),
         ).fetchall()
     return [dict(r) for r in rows]

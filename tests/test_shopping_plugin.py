@@ -94,7 +94,7 @@ def test_recall_shopping_emits_a_card_alongside_the_prose():
     assert all(i["added_by"] == "ann" for i in card["data"]["items"])
     # the refresh wiring: without these the stored card cannot re-read itself
     assert card["intent"] == "recall_shopping"
-    assert card["params"] == {"content": ""}
+    assert card["params"] == {"content": "", "list": "shopping"}
     # the prose is untouched -- Discord and Telegram still get exactly this
     assert "milk, eggs" in ch.sent[0]
 
@@ -152,3 +152,71 @@ def test_restore_is_offered_to_the_model():
     # typed on any surface routes here too, which needs the intent registered
     assert "restore_shopping_item" in shopping_plugin.INTENTS
     assert "restore_shopping_item" in shopping_plugin.PROMPT_GUIDELINES
+
+
+# --- named lists: "add a tent to my packing list" -----------------------------
+# The name is parsed here from the user's words; the classifier keeps its six
+# intents. No name, or grocery/groceries, means the shopping list.
+
+@pytest.mark.parametrize("text,expected", [
+    ("add a tent to my packing list", "packing"),
+    ("put rope on the packing list", "packing"),
+    ("take rope off the packing list", "packing"),
+    ("what's on the hardware store list", "hardware store"),
+    ("take the tent off the packing list", "packing"),
+    ("clear the packing list", "packing"),
+    ("add milk to the shopping list", "shopping"),
+    ("add milk to the grocery list", "shopping"),
+    ("add milk to my groceries list", "shopping"),
+    ("add milk", "shopping"),
+    ("what's on the list", "shopping"),
+    ("add the christmas list of guests to notes", "shopping"),  # "list of" is not a list name
+])
+def test_list_name_from_text(text, expected):
+    assert shopping_plugin._list_name(Ctx(user_id=1, channel=CollectingChannel(), text=text)) == expected
+
+def test_list_name_from_a_card_dispatch_with_no_text():
+    assert shopping_plugin._list_name(Ctx(user_id=1, channel=CollectingChannel(), list_name="packing")) == "packing"
+    assert shopping_plugin._list_name(Ctx(user_id=1, channel=CollectingChannel())) == "shopping"
+
+def test_add_to_a_named_list_says_which_and_keeps_shopping_clean():
+    ch = CollectingChannel()
+    asyncio.run(shopping_plugin.handle("add_shopping_item", Ctx(
+        user_id=1, channel=ch, content="tent", text="add a tent to my packing list")))
+    _assert_flourished(ch.sent[-1], "Added tent to the packing list.")
+    assert shopping.active_items() == []
+    assert [i["item"] for i in shopping.active_items(list_name="packing")] == ["tent"]
+
+def test_remove_and_clear_target_the_named_list():
+    shopping.add("tent", "owner", list_name="packing")
+    shopping.add("milk", "owner")
+    ch = CollectingChannel()
+    asyncio.run(shopping_plugin.handle("remove_shopping_item", Ctx(
+        user_id=1, channel=ch, content="tent", text="take the tent off the packing list")))
+    _assert_flourished(ch.sent[-1], "Got it, removed tent from the packing list.")
+    asyncio.run(shopping_plugin.handle("clear_shopping", Ctx(user_id=1, channel=ch, text="clear the packing list")))
+    assert "packing list" in ch.sent[-1]
+    assert [i["item"] for i in shopping.active_items()] == ["milk"]
+
+def test_recall_a_named_list_carries_the_name_in_the_card_and_its_params():
+    shopping.add("tent", "owner", list_name="packing")
+    ch = CollectingChannel()
+    asyncio.run(shopping_plugin.handle("recall_shopping", Ctx(
+        user_id=1, channel=ch, content="", text="what's on my packing list")))
+    assert ch.sent == ["tent"]
+    card = ch.cards[0]
+    assert card["data"]["list"] == "packing"
+    assert card["params"] == {"content": "", "list": "packing"}
+    assert card["data"]["items"][0]["text"] == "tent"
+
+def test_recall_an_empty_named_list():
+    ch = CollectingChannel()
+    asyncio.run(shopping_plugin.handle("recall_shopping", Ctx(
+        user_id=1, channel=ch, content="", text="what's on my packing list")))
+    assert ch.sent == ["The packing list is empty."]
+
+def test_the_shopping_card_params_are_unchanged_for_the_default_list():
+    ch = CollectingChannel()
+    asyncio.run(shopping_plugin.handle("recall_shopping", Ctx(user_id=1, channel=ch, content="")))
+    assert ch.cards[0]["params"] == {"content": "", "list": "shopping"}
+    assert ch.cards[0]["data"]["list"] == "shopping"
