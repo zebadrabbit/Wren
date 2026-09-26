@@ -831,3 +831,22 @@ def test_dispatch_returns_files_from_a_send_file_intent():
     assert status == 200
     assert body["files"] == [{"filename": "notes.md",
                               "data": base64.b64encode(b"hello").decode("ascii")}]
+
+
+def test_log_is_the_containing_block_for_the_speaker_labels():
+    # .sr speaker labels are position:absolute; with #log static they anchor
+    # to #app and pile up below the scrolling log, so the page itself grows a
+    # scrollbar and the composer floats mid-window (2026-09-26).
+    from pathlib import Path
+    page = (Path(__file__).parent.parent / "wren" / "communication" / "chat.html").read_text()
+    rule = page[page.index("#log {"):]
+    rule = rule[:rule.index("}")]
+    assert "position: relative" in rule
+
+
+def test_reopen_does_not_remount_cards_without_a_refresh_intent():
+    # The locate card has intent "" (one-shot). Re-mounting it on reopen would
+    # re-prompt for geolocation, or 400 on /api/dispatch, every time.
+    from pathlib import Path
+    page = (Path(__file__).parent.parent / "wren" / "communication" / "chat.html").read_text()
+    assert "if (m.card && m.card.intent) mountStoredCard(" in page
