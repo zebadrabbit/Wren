@@ -1005,7 +1005,7 @@ async function showList(intent) {
     const r = await dispatch(intent, {});
     const card = (r.cards || [])[0];
     const b = bubble("assistant", md((card && card.text) || (r.replies || []).join("\n")));
-    if (card) renderCard(card, b.querySelector(".body"));
+    if (card) renderCard(card, b.querySelector(".body"), r.files);
   } catch (e) {
     bubble("assistant", "<em>" + esc(e.message || "Something went wrong.") + "</em>");
   }
@@ -1103,7 +1103,10 @@ async function send() {
     const thumbs = files.filter(f => f.type.startsWith("image/"))
       .map(f => '<img class="rimg" alt="" src="' + URL.createObjectURL(f) + '">').join("");
     const names = files.filter(f => !f.type.startsWith("image/")).map(f => "📎 " + esc(f.name)).join(" ");
-    bubble("user", thumbs + (names ? "<div>" + names + "</div>" : "") + esc(text));
+    const ub = bubble("user", thumbs + (names ? "<div>" + names + "</div>" : "") + esc(text));
+    for (const img of ub.querySelectorAll(".rimg")) {
+      img.onload = () => URL.revokeObjectURL(img.src);   // the decoded image survives the revoke
+    }
     thinking = bubble("assistant", '<div class="dots"><span></span><span></span><span></span></div>');
     let body, opts;
     if (files.length) {

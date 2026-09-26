@@ -937,3 +937,18 @@ def test_notes_card_rows_show_a_thumbnail_for_attached_images():
     page = _page()
     assert "renderCard(c, b.querySelector(\".body\"), data.files)" in page
     assert 'class="cthumb"' in page
+
+
+def test_user_bubble_thumbnails_revoke_their_object_urls():
+    page = _page()
+    # both the chip and the sent bubble revoke after load; count both
+    assert page.count("URL.revokeObjectURL(img.src)") >= 2
+
+
+def test_every_render_card_call_passes_the_reply_files():
+    import re
+    page = _page()
+    calls = [m for m in re.findall(r"renderCard\(([^;]*?)\);", page)]
+    assert calls, "no renderCard calls found"
+    for args in calls:
+        assert args.count(",") == 2, f"renderCard call without files: {args}"
