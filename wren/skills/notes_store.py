@@ -35,6 +35,9 @@ def init_db() -> None:
                 created_at TEXT NOT NULL
             )
         """)
+        con.execute(
+            "CREATE INDEX IF NOT EXISTS idx_attachments_note ON attachments(note_id)"
+        )
 
 def save(owner_id: int, content: str, tags: list[str]) -> int:
     ts = datetime.now(timezone.utc).isoformat()

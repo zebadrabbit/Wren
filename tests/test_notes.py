@@ -151,3 +151,13 @@ def test_attachments_come_back_in_insertion_order():
 
 def test_max_files_per_reply_is_five():
     assert notes.MAX_FILES_PER_REPLY == 5
+
+
+def test_init_db_indexes_attachments_by_note():
+    from wren import db
+    notes.init_db()
+    with db.conn() as con:
+        row = con.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_attachments_note'"
+        ).fetchone()
+    assert row is not None
