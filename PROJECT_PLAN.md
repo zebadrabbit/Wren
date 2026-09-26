@@ -189,7 +189,16 @@ and Telegram get prose, each plugin chunking at its own platform's limit.
 
 Ordered roughly by value, not by size.
 
-**Inbound images and files.** Landed 2026-09-26 (spec: docs/superpowers/specs/2026-09-26-inbound-images-design.md; Telegram and web chat, images and PDFs, no vision). Discord and vision remain open.
+**Inbound images and files.** Landed 2026-09-26 (spec:
+docs/superpowers/specs/2026-09-26-inbound-images-design.md; Telegram and web
+chat, images and PDFs, no vision). Discord and vision remain open. History: a
+screenshot or a photo could not enter through any door. `telegram_plugin._incoming`
+skipped every message without a `text` field, which is exactly how photos,
+stickers and voice notes arrive; Discord attachments were ignored the same way.
+Needed blob storage, an inbound-file capability on the `Channel` protocol (the
+mirror of the `send_file` that already exists for exports), and per-surface
+handling. A real feature, not an afternoon — and it unlocked a use that existed
+rather than improving one that already worked.
 
 **Summarise large collections in prose.** Already specified in
 `docs/superpowers/specs/2026-08-17-skill-cards-and-spaces-design.md`: past ~15
