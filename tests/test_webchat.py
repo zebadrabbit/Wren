@@ -906,3 +906,34 @@ def test_post_message_reply_files_carry_mime(monkeypatch):
     cid = _convo()
     _, body = call("post", f"/api/conversations/{cid}/message", token=TOKEN_A, json={"text": "show"})
     assert body["files"][0]["mime"] == "image/jpeg"
+
+
+def _page():
+    from pathlib import Path
+    return (Path(__file__).parent.parent / "wren" / "communication" / "chat.html").read_text()
+
+
+def test_page_has_the_attachment_plumbing():
+    page = _page()
+    assert 'id="chips"' in page
+    assert "pendingFiles" in page
+    assert "new FormData()" in page
+    assert 'addEventListener("paste"' in page or ".onpaste" in page
+    assert '.ondrop' in page or 'addEventListener("drop"' in page
+
+
+def test_api_helper_does_not_force_json_content_type_on_form_bodies():
+    page = _page()
+    assert "instanceof FormData" in page
+
+
+def test_reply_images_render_inline_and_pdfs_as_links():
+    page = _page()
+    assert 'f.mime.startsWith("image/")' in page
+    assert '<img class="rimg"' in page
+
+
+def test_notes_card_rows_show_a_thumbnail_for_attached_images():
+    page = _page()
+    assert "renderCard(c, b.querySelector(\".body\"), data.files)" in page
+    assert 'class="cthumb"' in page

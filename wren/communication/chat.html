@@ -286,6 +286,21 @@ main footer { padding: 10px 20px 18px; }
 .cmark { width: 22px; height: 22px; flex: none; align-self: flex-end;
          margin: 0 0 7px 6px; opacity: .35; transition: opacity .18s ease; }
 #composer:focus-within .cmark { opacity: .9; }
+/* pending attachments, above the input */
+#chips { max-width: 760px; margin: 0 auto 6px; display: flex; flex-wrap: wrap; gap: 6px; }
+#chips[hidden] { display: none; }
+.chip { position: relative; width: 56px; height: 56px; border-radius: 8px; overflow: hidden;
+        border: 1px solid var(--line); background: var(--panel); display: flex;
+        align-items: center; justify-content: center; font-size: 11px; color: var(--muted); }
+.chip img { width: 100%; height: 100%; object-fit: cover; }
+.chip button { position: absolute; top: 2px; right: 2px; width: 18px; height: 18px; border: 0;
+               border-radius: 50%; background: rgba(0,0,0,.55); color: #fff; font-size: 11px;
+               line-height: 18px; padding: 0; cursor: pointer; }
+#composer.dragover { border-color: var(--accent); }
+/* files in bubbles */
+.rimg { max-width: min(100%, 420px); max-height: 360px; border-radius: 10px; display: block; }
+.msg.user .rimg { max-width: 240px; margin-bottom: 6px; }
+.cthumb { width: 32px; height: 32px; object-fit: cover; border-radius: 4px; flex: none; }
 #text {
   flex: 1; resize: none; padding: 6px 8px; border: 0; background: transparent;
   color: var(--text); font: inherit; max-height: 180px; outline: none;
@@ -484,6 +499,7 @@ main footer { padding: 10px 20px 18px; }
     </header>
     <div id="log"><div id="inner"></div></div>
     <footer>
+      <div id="chips" hidden></div>
       <div id="composer">
         <svg class="cmark" aria-hidden="true"><use href="#wren-mark"/></svg>
         <textarea id="text" rows="1" placeholder="Message Wren…"></textarea>
@@ -578,7 +594,10 @@ function md(src) {
 async function api(path, opts = {}) {
   const res = await fetch(path, {
     ...opts,
-    headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json",
+    headers: { "Authorization": "Bearer " + token,
+               // a FormData body sets its own multipart boundary; forcing
+               // application/json here would make the server reject it
+               ...(opts.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
                ...(opts.headers || {}) },
   });
   if (res.status === 401) { signOut("That token was rejected."); throw new Error("unauthorized"); }
@@ -607,6 +626,9 @@ function bubble(role, html) {
   return d;
 }
 function fileLink(f) {
+  if (f.mime && f.mime.startsWith("image/")) {
+    return '<img class="rimg" alt="' + esc(f.filename) + '" src="data:' + f.mime + ';base64,' + f.data + '">';
+  }
   return '<a class="dl" download="' + esc(f.filename) +
          '" href="data:application/octet-stream;base64,' + f.data + '">⤓ ' +
          esc(f.filename) + "</a>";
@@ -660,7 +682,7 @@ function cardShell(mount, refreshIntent, refreshParams) {
   async function refresh(r) {
     const fresh = await dispatch(refreshIntent, refreshParams || {});
     if (fresh.cards && fresh.cards.length) {
-      renderCard(fresh.cards[0], mount);
+      renderCard(fresh.cards[0], mount, fresh.files);
       cardStatus(mount, ((r && r.replies) || []).join(" "));
     } else {
       cardStatus(mount, ((r && r.replies) || []).join(" ") || "Could not refresh.");
@@ -752,16 +774,26 @@ function shoppingCard(data, mount) {
   };
 }
 
-function notesCard(data, mount) {
+function notesCard(data, mount, files) {
   const notes = data.notes || [];
   const allTags = [...new Set(notes.flatMap(n => n.tags || []))].sort();
   const chips = allTags.map(t =>
     '<button class="ctag" data-tag="' + esc(t) + '">' + esc(t) + "</button>").join("");
-  const rows = notes.map(n =>
-    '<li data-tags="' + esc((n.tags || []).join(",")) + '">' +
-      '<span class="citem">' + esc(n.content) + "</span>" +
+  // Thumbnails come from the reply's own files, matched by name: the card
+  // holds metadata only, the bytes ride beside it exactly once.
+  const byName = {};
+  for (const f of files || []) byName[f.filename] = f;
+  const rows = notes.map(n => {
+    const first = (n.files || []).find(a => a.mime.startsWith("image/") && byName[a.filename]);
+    const thumb = first
+      ? '<img class="cthumb" alt="" src="data:' + first.mime + ';base64,' + byName[first.filename].data + '">'
+      : "";
+    const mark = (n.files || []).length ? ' <span class="cwhen">📎' + (n.files || []).length + "</span>" : "";
+    return '<li data-tags="' + esc((n.tags || []).join(",")) + '">' + thumb +
+      '<span class="citem">' + esc(n.content) + mark + "</span>" +
       '<span class="cwhen">' + esc((n.created_at || "").slice(0, 10)) + "</span>" +
-    "</li>").join("");
+    "</li>";
+  }).join("");
   mount.innerHTML =
     '<div class="card notes">' +
       "<header>Notes · " + notes.length + "</header>" +
@@ -845,10 +877,10 @@ function locateCard(_data, mount) {
 const CARDS = { shopping: shoppingCard, notes: notesCard,
                 ideas: ideasCard, reminders: remindersCard, locate: locateCard };
 
-function renderCard(card, mount) {
+function renderCard(card, mount, files) {
   const draw = CARDS[card.kind];
   if (!draw) return false;      // unknown kind: leave the prose bubble alone
-  draw(card.data || {}, mount);
+  draw(card.data || {}, mount, files || []);
   return true;
 }
 
@@ -857,7 +889,7 @@ function renderCard(card, mount) {
 async function mountStoredCard(card, mount) {
   try {
     const r = await dispatch(card.intent, card.params || {});
-    if (r.cards && r.cards.length) renderCard(r.cards[0], mount);
+    if (r.cards && r.cards.length) renderCard(r.cards[0], mount, r.files);
   } catch (e) { /* prose stays */ }
 }
 
@@ -1004,28 +1036,91 @@ async function newConvo() {
   await openConvo(c.id);
 }
 
+/* ── attachments ───────────────────────────────────────────────────────── */
+// Files waiting to go with the next message. Images and PDFs only; the
+// server sniffs bytes and refuses the rest, this filter just keeps the chip
+// row honest.
+let pendingFiles = [];
+const ACCEPT = ["image/jpeg", "image/png", "image/webp", "image/gif", "application/pdf"];
+
+function addFiles(list) {
+  for (const f of list) {
+    if (!ACCEPT.includes(f.type)) continue;
+    pendingFiles.push(f);
+  }
+  drawChips();
+}
+
+function drawChips() {
+  const box = $("#chips");
+  box.innerHTML = "";
+  box.hidden = pendingFiles.length === 0;
+  pendingFiles.forEach((f, i) => {
+    const chip = document.createElement("div");
+    chip.className = "chip";
+    if (f.type.startsWith("image/")) {
+      const img = document.createElement("img");
+      img.src = URL.createObjectURL(f);
+      img.onload = () => URL.revokeObjectURL(img.src);
+      chip.append(img);
+    } else {
+      chip.textContent = "PDF";
+    }
+    const x = document.createElement("button");
+    x.type = "button"; x.textContent = "✕"; x.title = "remove";
+    x.onclick = () => { pendingFiles.splice(i, 1); drawChips(); };
+    chip.append(x);
+    box.append(chip);
+  });
+}
+
+$("#text").addEventListener("paste", e => {
+  const items = [...(e.clipboardData || {}).items || []].filter(i => i.kind === "file");
+  if (!items.length) return;
+  e.preventDefault();
+  addFiles(items.map(i => i.getAsFile()).filter(Boolean));
+});
+$("#composer").ondragover = e => { e.preventDefault(); $("#composer").classList.add("dragover"); };
+$("#composer").ondragleave = () => $("#composer").classList.remove("dragover");
+$("#composer").ondrop = e => {
+  e.preventDefault(); $("#composer").classList.remove("dragover");
+  addFiles(e.dataTransfer.files);
+};
+
 async function send() {
   const text = $("#text").value.trim();
-  if (!text || busy) return;
+  if ((!text && !pendingFiles.length) || busy) return;
   // busy is set BEFORE the first await: a second Enter during newConvo()'s
   // round-trip used to pass the guard above and create a duplicate
   // conversation plus a double post of the same message.
   busy = true; $("#send").disabled = true;
   $("#text").value = ""; $("#text").style.height = "auto";
+  const files = pendingFiles; pendingFiles = []; drawChips();
   let thinking = null;
   try {
     if (active === null) await newConvo();
     const gone = $("#landing"); if (gone) gone.remove();
-    bubble("user", esc(text));
+    const thumbs = files.filter(f => f.type.startsWith("image/"))
+      .map(f => '<img class="rimg" alt="" src="' + URL.createObjectURL(f) + '">').join("");
+    const names = files.filter(f => !f.type.startsWith("image/")).map(f => "📎 " + esc(f.name)).join(" ");
+    bubble("user", thumbs + (names ? "<div>" + names + "</div>" : "") + esc(text));
     thinking = bubble("assistant", '<div class="dots"><span></span><span></span><span></span></div>');
-    const data = await api("/api/conversations/" + active + "/message",
-                           { method: "POST", body: JSON.stringify({ text }) });
+    let body, opts;
+    if (files.length) {
+      body = new FormData();
+      body.append("text", text);
+      for (const f of files) body.append("file", f, f.name);
+      opts = { method: "POST", body };
+    } else {
+      opts = { method: "POST", body: JSON.stringify({ text }) };
+    }
+    const data = await api("/api/conversations/" + active + "/message", opts);
     thinking.remove(); thinking = null;
     if ((data.cards || []).length) {
       // one bubble per card; its prose is the fallback if the kind is unknown
       for (const c of data.cards) {
         const b = bubble("assistant", md(c.text || ""));
-        renderCard(c, b.querySelector(".body"));
+        renderCard(c, b.querySelector(".body"), data.files);
       }
     } else {
       for (const r of data.replies) bubble("assistant", md(r));
@@ -1035,6 +1130,7 @@ async function send() {
     loadConvos();
   } catch (e) {
     if (thinking) thinking.remove();
+    pendingFiles = files; drawChips();
     bubble("assistant", '<em>' + esc(e.message || "Something went wrong.") + "</em>");
   } finally {
     busy = false; $("#send").disabled = false; $("#text").focus();
