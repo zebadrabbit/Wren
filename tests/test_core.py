@@ -484,3 +484,118 @@ def test_ctx_carries_source():
          patch.object(shopping_skill, "handle", new=fake_handle):
         asyncio.run(core.handle_message(OWNER, "add milk", CollectingChannel(), source="voice"))
     assert seen["source"] == "voice"
+
+
+# --- inbound files -------------------------------------------------------
+
+from wren.channel import Inbound
+
+JPEG = b"\xff\xd8\xff\xe0" + b"\0" * 32
+
+
+def _photo(name="a.jpg"):
+    return Inbound(filename=name, mime="image/jpeg", data=JPEG)
+
+
+@pytest.fixture
+def notes_handler(monkeypatch):
+    """A fake notes skill that records the Ctx it was handed."""
+    seen = []
+
+    class FakeNotes:
+        INTENTS = ["save_note"]
+
+        @staticmethod
+        async def handle(intent, ctx):
+            seen.append((intent, ctx))
+            await ctx.channel.send("saved")
+    monkeypatch.setattr(registry, "INTENT_HANDLERS", {"save_note": FakeNotes, "chat": None})
+    monkeypatch.setattr(registry, "is_enabled", lambda p: True)
+    monkeypatch.setattr(core, "_pending_files", {})
+    return seen
+
+
+def test_files_with_a_caption_force_save_note_and_keep_the_classifier_tags(detected, notes_handler):
+    detected(intent="get_weather", content="whatever the model thought", tags=["receipt"])
+    ch = CollectingChannel()
+    asyncio.run(core.handle_message(OWNER, "tyre place receipt", ch, files=[_photo()]))
+    (intent, ctx), = notes_handler
+    assert intent == "save_note"
+    assert ctx.content == "tyre place receipt"       # the caption, not the model's extraction
+    assert ctx.tags == ["receipt"]
+    assert [f.filename for f in ctx.files] == ["a.jpg"]
+    assert ch.sent == ["saved"]
+
+
+def test_files_without_a_caption_are_parked_and_wren_asks(detected, notes_handler):
+    ch = CollectingChannel()
+    asyncio.run(core.handle_message(OWNER, "", ch, files=[_photo()]))
+    assert ch.sent == ["What is this?"]
+    assert notes_handler == []
+    assert detected.calls == []                       # no LLM call for a bare photo
+    assert OWNER in core._pending_files
+
+
+def test_the_next_message_becomes_the_caption_for_parked_files(detected, notes_handler):
+    ch = CollectingChannel()
+    asyncio.run(core.handle_message(OWNER, "", ch, files=[_photo("park.jpg")]))
+    asyncio.run(core.handle_message(OWNER, "what's the weather", ch, files=None))
+    (intent, ctx), = notes_handler
+    assert intent == "save_note"
+    assert ctx.content == "what's the weather"        # whatever it says, it is the caption
+    assert [f.filename for f in ctx.files] == ["park.jpg"]
+    assert OWNER not in core._pending_files
+
+
+def test_a_second_bare_photo_replaces_the_parked_one(detected, notes_handler):
+    ch = CollectingChannel()
+    asyncio.run(core.handle_message(OWNER, "", ch, files=[_photo("first.jpg")]))
+    asyncio.run(core.handle_message(OWNER, "", ch, files=[_photo("second.jpg")]))
+    assert ch.sent == ["What is this?", "What is this?"]
+    files, _deadline = core._pending_files[OWNER]
+    assert [f.filename for f in files] == ["second.jpg"]
+
+
+def test_expired_parked_files_are_reported_then_the_text_is_handled_normally(detected, notes_handler, monkeypatch):
+    memory.init_db()                                   # the chat branch reads memories
+    ch = CollectingChannel()
+    asyncio.run(core.handle_message(OWNER, "", ch, files=[_photo()]))
+    files, _ = core._pending_files[OWNER]
+    core._pending_files[OWNER] = (files, time.monotonic() - 1)      # already expired
+    detected(intent="chat", content="", tags=[])
+    monkeypatch.setattr(brain, "chat", lambda *a, **k: "hello back")
+    asyncio.run(core.handle_message(OWNER, "hello", ch))
+    assert ch.sent[1] == "That photo timed out, send it again."
+    assert ch.sent[2] == "hello back"
+    assert notes_handler == []
+    assert OWNER not in core._pending_files
+
+
+def test_a_strangers_files_are_dropped_with_their_text(detected, notes_handler):
+    ch = CollectingChannel()
+    asyncio.run(core.handle_message(999, "mine", ch, files=[_photo()]))
+    assert ch.sent == [] and notes_handler == [] and 999 not in core._pending_files
+
+
+def test_a_pending_yes_no_is_answered_before_parked_files_are_used(detected, notes_handler, monkeypatch):
+    ch = CollectingChannel()
+    asyncio.run(core.handle_message(OWNER, "", ch, files=[_photo()]))
+    fired = []
+
+    class FakeDestructive:
+        @staticmethod
+        async def handle(intent, ctx):
+            fired.append(intent)
+    monkeypatch.setitem(registry.INTENT_HANDLERS, "clear_shopping", FakeDestructive)
+    core._pending[OWNER] = ("clear_shopping", Ctx(user_id=OWNER, channel=ch), time.monotonic() + 60)
+    asyncio.run(core.handle_message(OWNER, "yes", ch))
+    assert fired == ["clear_shopping"]
+    assert OWNER in core._pending_files                # still parked for the next message
+
+
+def test_files_when_notes_is_switched_off_say_so(detected, notes_handler, monkeypatch):
+    monkeypatch.setattr(registry, "is_enabled", lambda p: False)
+    ch = CollectingChannel()
+    asyncio.run(core.handle_message(OWNER, "receipt", ch, files=[_photo()]))
+    assert ch.sent == ["Notes is switched off, so I can't keep that."]
+    assert notes_handler == []

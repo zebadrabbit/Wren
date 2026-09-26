@@ -10,7 +10,7 @@ from .skills import notes_store as notes
 from .skills import memory_skill
 from . import registry
 from . import router
-from .channel import Channel, Ctx
+from .channel import Channel, Ctx, Inbound
 
 HELP_TEXT = """Here's what I can actually do:
 
@@ -97,6 +97,25 @@ _NO = re.compile(
     re.I,
 )
 
+# Files that arrived without a caption, waiting for one: user_id ->
+# (files, expires_at). The next message from that user is the caption,
+# whatever it says -- a wrong caption is one note to delete, while guessing
+# whether "what's the weather" was meant as one is worse. Process-local for
+# the same reason as _pending.
+_pending_files: dict[int, tuple[list[Inbound], float]] = {}
+_FILES_TTL = 300.0
+
+
+def _take_parked(user_id: int) -> tuple[list[Inbound], bool] | None:
+    """(files, still_fresh) for this user's parked files, removed; None if
+    nothing was parked. Expired entries come back with False so the caller
+    can say so instead of silently dropping a photo."""
+    entry = _pending_files.pop(user_id, None)
+    if entry is None:
+        return None
+    files, deadline = entry
+    return files, deadline > time.monotonic()
+
 
 def _take_pending(user_id: int):
     """The unexpired question for this user, removed. Answered or not, one
@@ -133,20 +152,26 @@ def _status_lines() -> list[str]:
     ]
 
 
-async def handle_message(user_id: int, text: str, channel: Channel, *, source: str = "text") -> None:
+async def handle_message(user_id: int, text: str, channel: Channel, *, source: str = "text",
+                         files: list[Inbound] | None = None) -> None:
     """Transport-free dispatch. Surfaces authenticate the caller, build a
     Channel, and call this. Nothing below here knows what a Discord is.
 
     `source` is "text" or "voice" — voice gets a yes/no confirmation before
     running anything destructive, since transcription mis-hears; text is
-    unaffected and always acts immediately."""
+    unaffected and always acts immediately.
+
+    `files` are attachments that arrived with the words. With a caption they
+    become a note; without one Wren asks what the photo is and the next
+    message answers."""
     # authorization gate — surfaces do authn (who are you), this does authz.
     # Kept here rather than per-surface so a new surface cannot forget it.
     if user_id not in config.id_to_name():
         return
 
     text = (text or "").strip()
-    if not text:
+    files = list(files or [])
+    if not text and not files:
         return
 
     await channel.ack("seen")
@@ -178,6 +203,23 @@ async def handle_message(user_id: int, text: str, channel: Channel, *, source: s
                 await channel.ack("error")
             return
 
+    # A caption arriving for parked files, or a bare photo to park. After the
+    # yes/no check on purpose: an answer to a question core asked is still an
+    # answer, and the photo keeps waiting.
+    if text and not files:
+        parked = _take_parked(user_id)
+        if parked is not None:
+            parked_files, fresh = parked
+            if fresh:
+                files = parked_files
+            else:
+                await channel.send("That photo timed out, send it again.")
+    if files and not text:
+        _pending_files[user_id] = (files, time.monotonic() + _FILES_TTL)
+        await channel.send("What is this?")
+        await channel.ack("done")
+        return
+
     try:
         history = await channel.history(limit=10)
 
@@ -187,6 +229,17 @@ async def handle_message(user_id: int, text: str, channel: Channel, *, source: s
         # Discord gateway heartbeat would stall on each call.
         result = await asyncio.to_thread(brain.detect_intent, user_id, text, history)
         intent = result.get("intent", "chat")
+        if files:
+            # Without vision there is nothing else Wren can do with a picture,
+            # and "receipt from the tyre place" must not gamble on a small
+            # model's guess. The classifier still ran: its tags are kept.
+            intent = "save_note"
+            result["content"] = text
+            notes_plugin = registry.INTENT_HANDLERS.get("save_note")
+            if notes_plugin is None or not registry.is_enabled(notes_plugin):
+                await channel.send("Notes is switched off, so I can't keep that.")
+                await channel.ack("done")
+                return
         ctx = Ctx(
             user_id=user_id,
             channel=channel,
@@ -196,12 +249,16 @@ async def handle_message(user_id: int, text: str, channel: Channel, *, source: s
             person=result.get("person"),
             when=result.get("when"),
             source=source,
+            files=files,
         )
 
         # is_enabled as well as membership: all_intents() already stops
         # offering a disabled skill, but a model can emit an intent it was
         # never offered. Treat that as unknown so it falls through to chat.
-        if intent in registry.INTENT_HANDLERS and registry.is_enabled(registry.INTENT_HANDLERS[intent]):
+        # "chat" itself is excluded even if it were ever a table key (it
+        # isn't, in production -- no skill claims it): it is the classifier's
+        # own fallback, not a plugin intent, and belongs in the chat branch.
+        if intent != "chat" and intent in registry.INTENT_HANDLERS and registry.is_enabled(registry.INTENT_HANDLERS[intent]):
             if source == "voice" and intent in registry.destructive_intents():
                 # Transcription mis-hears and the skills fuzzy-match; between
                 # them "remove milk" can become "clear the list". Ask first.

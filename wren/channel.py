@@ -37,6 +37,18 @@ class Channel(Protocol):
 
 
 @dataclass
+class Inbound:
+    """A file a surface received with a message. The mirror of send_file.
+
+    `mime` is whatever the surface declared; the notes store re-sniffs the
+    bytes and stores what they actually are."""
+
+    filename: str
+    mime: str
+    data: bytes
+
+
+@dataclass
 class Ctx:
     """Everything a plugin handler needs. Replaces the old
     (message, client, user_id, content, tags, person, when) argument list."""
@@ -53,6 +65,8 @@ class Ctx:
     # therefore mis-heard sometimes; core asks before acting on anything
     # destructive when this is "voice". Skills may read it; none must.
     source: str = "text"
+    # Files that arrived with the words. Only the notes skill reads these.
+    files: list[Inbound] = field(default_factory=list)
 
 
 class CollectingChannel:
