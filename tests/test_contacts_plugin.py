@@ -150,3 +150,13 @@ def test_list_contacts_shows_each_ones_surfaces():
     ch = CollectingChannel()
     asyncio.run(contacts_plugin.handle("list_contacts", Ctx(user_id=1, channel=ch)))
     assert ch.sent == ["hubby (discord, telegram), kevin (discord)"]
+
+
+def test_undo_remove_contact_brings_them_back_on_every_surface():
+    contacts.add("hubby", 222); contacts.set_id("hubby", "telegram", 42)
+    ctx = Ctx(user_id=1, channel=CollectingChannel(), person="hubby")
+    asyncio.run(contacts_plugin.handle("remove_contact", ctx))
+    assert contacts.all() == {}
+    asyncio.run(contacts_plugin.UNDO["remove_contact"](ctx))
+    assert contacts.all() == {"hubby": 222} and contacts.surface_id("telegram", 222) == 42
+    _assert_flourished(ctx.channel.sent[-1], "Added hubby back.")

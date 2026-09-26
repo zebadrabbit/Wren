@@ -645,3 +645,23 @@ def test_how_long_is_left_shows_minutes_remaining():
     asyncio.run(reminder_plugin.handle("recall_reminders", Ctx(user_id=1, channel=ch, content="", text="how long is left on the timer")))
     assert ch.sent == ["[in 12 min] 20 minute timer is up"]
     assert ch.cards[0]["data"]["reminders"][0]["local"] == "in 12 min"
+
+
+# --- undo --------------------------------------------------------------------
+
+def test_undo_cancel_restores_the_reminder():
+    reminders.save(1, "call mum", _future_iso())
+    ctx = Ctx(user_id=1, channel=CollectingChannel(), content="mum", text="cancel the mum reminder")
+    asyncio.run(reminder_plugin.handle("cancel_reminder", ctx))
+    assert reminders.pending(1) == []
+    asyncio.run(reminder_plugin.UNDO["cancel_reminder"](ctx))
+    assert [r["content"] for r in reminders.pending(1)] == ["call mum"]
+    _assert_flourished(ctx.channel.sent[-1], "Restored: call mum.")
+
+def test_undo_cancel_all_restores_them_all():
+    reminders.save(1, "a", _future_iso()); reminders.save(1, "b", _future_iso())
+    ctx = Ctx(user_id=1, channel=CollectingChannel(), content="all", text="cancel all my reminders")
+    asyncio.run(reminder_plugin.handle("cancel_reminder", ctx))
+    asyncio.run(reminder_plugin.UNDO["cancel_reminder"](ctx))
+    assert sorted(r["content"] for r in reminders.pending(1)) == ["a", "b"]
+    _assert_flourished(ctx.channel.sent[-1], "Restored 2 reminders.")

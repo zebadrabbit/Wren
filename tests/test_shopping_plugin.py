@@ -260,3 +260,30 @@ def test_add_from_a_photo_skips_what_is_already_on_the_list(monkeypatch):
         user_id=1, channel=ch, content="these", text="add these", files=[_photo()])))
     _assert_flourished(ch.sent[-1], "Added eggs.")
     assert [i["item"] for i in shopping.active_items()] == ["milk", "eggs"]
+
+
+# --- undo --------------------------------------------------------------------
+
+def _run(intent, **kw):
+    ch = CollectingChannel()
+    asyncio.run(shopping_plugin.handle(intent, Ctx(user_id=1, channel=ch, **kw)))
+    return ch
+
+def test_undo_remove_puts_the_item_back_on_its_list():
+    shopping.add("tent", "owner", list_name="packing")
+    ctx = Ctx(user_id=1, channel=CollectingChannel(), content="tent", text="take the tent off the packing list")
+    asyncio.run(shopping_plugin.handle("remove_shopping_item", ctx))
+    assert shopping.active_items(list_name="packing") == []
+    asyncio.run(shopping_plugin.UNDO["remove_shopping_item"](ctx))
+    assert [i["item"] for i in shopping.active_items(list_name="packing")] == ["tent"]
+    _assert_flourished(ctx.channel.sent[-1], "Put tent back.")
+
+def test_undo_clear_restores_exactly_what_the_clear_removed():
+    shopping.add("old", "owner"); shopping.remove("old")          # removed earlier, stays removed
+    shopping.add("milk", "owner"); shopping.add("eggs", "owner")
+    ctx = Ctx(user_id=1, channel=CollectingChannel(), text="clear the list")
+    asyncio.run(shopping_plugin.handle("clear_shopping", ctx))
+    assert shopping.active_items() == []
+    asyncio.run(shopping_plugin.UNDO["clear_shopping"](ctx))
+    assert sorted(i["item"] for i in shopping.active_items()) == ["eggs", "milk"]
+    _assert_flourished(ctx.channel.sent[-1], "Put 2 items back.")

@@ -78,3 +78,13 @@ def test_list_pins_owner_isolation():
     ch = CollectingChannel()
     asyncio.run(pins_plugin.handle("list_pins", Ctx(user_id=1, channel=ch, content="")))
     assert ch.sent == ["📌 my pin"]
+
+
+def test_undo_unpin_pins_it_again():
+    pins.save(1, "wifi password is 12345")
+    ctx = Ctx(user_id=1, channel=CollectingChannel(), content="wifi")
+    asyncio.run(pins_plugin.handle("unpin_note", ctx))
+    assert pins.all(1) == []
+    asyncio.run(pins_plugin.UNDO["unpin_note"](ctx))
+    assert [p["content"] for p in pins.all(1)] == ["wifi password is 12345"]
+    assert ctx.channel.sent[-1].startswith("Pinned again: wifi password is 12345")

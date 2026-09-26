@@ -65,6 +65,17 @@ def set_id(alias: str, surface: str, surface_id: int) -> bool:
         return cur.rowcount > 0
 
 
+def get(alias: str) -> dict | None:
+    """One contact's row: alias and the id on each surface (None where unset)."""
+    with db.conn() as con:
+        row = con.execute(
+            f"SELECT alias, {', '.join(_col(s) for s in SURFACES)} FROM contacts WHERE alias=?",
+            (alias.strip().lower(),)).fetchone()
+    if not row:
+        return None
+    return {"alias": row[0], **{s: (int(v) if v is not None else None) for s, v in zip(SURFACES, row[1:])}}
+
+
 def remove(alias: str) -> bool:
     with db.conn() as con:
         cur = con.execute("DELETE FROM contacts WHERE alias=?", (alias.strip().lower(),))

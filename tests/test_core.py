@@ -670,3 +670,92 @@ def test_the_answer_to_what_is_this_can_itself_be_a_question(detected, notes_han
     assert ch.sent == ["What is this?"]
     asyncio.run(core.handle_message(OWNER, "what's in it?", ch))
     assert ch.sent[-1] == "A red mug on a desk." and notes_handler == []
+
+
+# --- undo: "undo that" after a typed destructive intent -----------------------
+# Checked before the classifier, like yes/no: a bare "undo" handed to a 7B
+# model with history becomes some other intent. Skills declare UNDO, the
+# inverse of each destructive intent; core remembers the last one it ran.
+
+@pytest.fixture
+def undoable(monkeypatch):
+    seen = []
+    class FakeShopping:
+        INTENTS = ["remove_shopping_item"]
+        DESTRUCTIVE = ["remove_shopping_item"]
+        @staticmethod
+        async def handle(intent, ctx):
+            seen.append(("do", intent, ctx.content)); await ctx.channel.send("removed")
+        @staticmethod
+        async def _undo(ctx):
+            seen.append(("undo", ctx.content)); await ctx.channel.send("put back")
+        UNDO = {"remove_shopping_item": _undo}
+    monkeypatch.setattr(registry, "INTENT_HANDLERS", {"remove_shopping_item": FakeShopping})
+    monkeypatch.setattr(registry, "PLUGINS", [FakeShopping])
+    monkeypatch.setattr(registry, "is_enabled", lambda p: True)
+    monkeypatch.setattr(core, "_last_done", {})
+    monkeypatch.setattr(core, "_pending", {})
+    return seen
+
+def test_undo_reverses_the_last_destructive_intent_without_the_classifier(detected, undoable):
+    calls = detected(intent="remove_shopping_item", content="milk")
+    ch = CollectingChannel()
+    asyncio.run(core.handle_message(OWNER, "I've got the milk", ch))
+    asyncio.run(core.handle_message(OWNER, "undo that", ch))
+    assert undoable == [("do", "remove_shopping_item", "milk"), ("undo", "milk")]
+    assert ch.sent == ["removed", "put back"]
+    assert len(calls) == 1          # "undo that" never reached the model
+
+@pytest.mark.parametrize("phrase", ["undo", "Undo that.", "put it back", "never mind, put that back", "revert that"])
+def test_undo_phrasings(detected, undoable, phrase):
+    detected(intent="remove_shopping_item", content="milk")
+    ch = CollectingChannel()
+    asyncio.run(core.handle_message(OWNER, "I've got the milk", ch))
+    asyncio.run(core.handle_message(OWNER, phrase, ch))
+    assert ch.sent[-1] == "put back"
+
+def test_undo_works_once(detected, undoable):
+    detected(intent="remove_shopping_item", content="milk")
+    ch = CollectingChannel()
+    asyncio.run(core.handle_message(OWNER, "I've got the milk", ch))
+    asyncio.run(core.handle_message(OWNER, "undo", ch))
+    asyncio.run(core.handle_message(OWNER, "undo", ch))
+    assert ch.sent[-1] == "Nothing to undo."
+
+def test_undo_with_nothing_done_says_so(detected, undoable):
+    calls = detected(intent="chat", content="x")
+    ch = CollectingChannel()
+    asyncio.run(core.handle_message(OWNER, "undo that", ch))
+    assert ch.sent == ["Nothing to undo."] and calls == []
+
+def test_undo_expires(detected, undoable, monkeypatch):
+    monkeypatch.setattr(core, "_UNDO_TTL", -1.0)     # the window closes at once
+    detected(intent="remove_shopping_item", content="milk")
+    ch = CollectingChannel()
+    asyncio.run(core.handle_message(OWNER, "I've got the milk", ch))
+    asyncio.run(core.handle_message(OWNER, "undo", ch))
+    assert ch.sent[-1] == "Nothing to undo."
+
+def test_a_destructive_intent_with_no_inverse_cannot_be_undone(detected, undoable, monkeypatch):
+    monkeypatch.setattr(registry.INTENT_HANDLERS["remove_shopping_item"], "UNDO", {})
+    detected(intent="remove_shopping_item", content="milk")
+    ch = CollectingChannel()
+    asyncio.run(core.handle_message(OWNER, "I've got the milk", ch))
+    asyncio.run(core.handle_message(OWNER, "undo", ch))
+    assert ch.sent[-1] == "I can't undo that one."
+
+def test_a_voice_confirmed_intent_can_be_undone_too(detected, undoable):
+    detected(intent="remove_shopping_item", content="milk")
+    ch = CollectingChannel()
+    asyncio.run(core.handle_message(OWNER, "I've got the milk", ch, source="voice"))
+    asyncio.run(core.handle_message(OWNER, "yes", ch, source="voice"))
+    asyncio.run(core.handle_message(OWNER, "undo", ch, source="voice"))
+    assert ch.sent[-1] == "put back"
+
+def test_undo_is_per_person(detected, undoable, monkeypatch):
+    monkeypatch.setattr(config, "id_to_name", lambda: {OWNER: "owner", 2: "hubby"})
+    detected(intent="remove_shopping_item", content="milk")
+    ch = CollectingChannel()
+    asyncio.run(core.handle_message(OWNER, "I've got the milk", ch))
+    asyncio.run(core.handle_message(2, "undo", ch))
+    assert ch.sent[-1] == "Nothing to undo."

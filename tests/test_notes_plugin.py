@@ -452,3 +452,13 @@ def test_recall_with_a_question_sends_files_only_for_the_notes_that_matched():
         asyncio.run(notes_plugin.handle("recall_notes", Ctx(user_id=1, channel=ch, content="where is the tyre receipt")))
     assert ch.files == [(JPEG, "receipt.jpg")]
     assert [r["source"] for r in mock_recall.call_args[0][0]] == ["note"]
+
+
+def test_undo_discard_idea_saves_it_again():
+    notes.save(1, "build a treehouse", ["idea"])
+    ctx = Ctx(user_id=1, channel=CollectingChannel(), content="treehouse")
+    asyncio.run(notes_plugin.handle("discard_idea", ctx))
+    assert notes.search(1, tags=["idea"]) == []
+    asyncio.run(notes_plugin.UNDO["discard_idea"](ctx))
+    assert [n["content"] for n in notes.search(1, tags=["idea"])] == ["build a treehouse"]
+    _assert_flourished(ctx.channel.sent[-1], "Kept the idea after all: build a treehouse.")

@@ -204,6 +204,22 @@ def for_prompt(user_id: int, text: str) -> list[str]:
     picked = [r for score, r in scored[:config.MEMORY_TOP_K] if score >= _INJECT_FLOOR]
     return [r["fact"] for r in core + picked]
 
+_last_forgotten: dict[int, tuple[str, str]] = {}
+
+
+async def _undo_forget(ctx: Ctx) -> None:
+    kept = _last_forgotten.pop(ctx.user_id, None)
+    if kept is None:
+        await ctx.channel.send("Nothing to remember back.")
+        return
+    category, fact = kept
+    memories.save(ctx.user_id, category, fact)
+    await ctx.channel.send(flourish.flourish(f"Remembered again: {fact}."))
+
+
+UNDO = {"forget_memory": _undo_forget}
+
+
 async def handle(intent: str, ctx: Ctx) -> None:
     if intent == "recall_memories":
         rows = memories.all_for(ctx.user_id)
@@ -229,6 +245,7 @@ async def handle(intent: str, ctx: Ctx) -> None:
             await ctx.channel.send(f"Found more than one match, be more specific.\n{listing}")
         else:
             memories.forget(matches[0]["id"])
+            _last_forgotten[ctx.user_id] = (matches[0]["category"], matches[0]["fact"])
             await ctx.channel.send(flourish.flourish(f"Forgotten: {matches[0]['fact']}."))
 
 async def start() -> None:

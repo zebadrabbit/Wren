@@ -107,6 +107,17 @@ def file_intents() -> set[str]:
             for intent in getattr(plugin, "ACCEPTS_FILES", [])}
 
 
+def undo_for(intent: str):
+    """The inverse of a destructive intent, declared by its skill as
+    UNDO = {intent: async fn(ctx)}; None when the skill offers none. Core
+    runs it on "undo that" with the Ctx the original intent ran with."""
+    for plugin in PLUGINS:
+        fn = getattr(plugin, "UNDO", {}).get(intent)
+        if fn:
+            return fn
+    return None
+
+
 def confirm_phrase(intent: str) -> str:
     """How to word "do you want me to …?" for this intent, from the skill."""
     for plugin in PLUGINS:

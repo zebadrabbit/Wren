@@ -136,6 +136,21 @@ def _take_parked(user_id: int) -> tuple[list[Inbound], bool] | None:
     return files, deadline > time.monotonic()
 
 
+# The last destructive intent core ran for each person, so "undo that" can
+# reverse it: user_id -> (intent, ctx, expires_at). Process-local like the
+# rest; ten minutes is the window in which "undo" still means that thing.
+_last_done: dict[int, tuple[str, Ctx, float]] = {}
+_UNDO_TTL = 600.0
+_UNDO = re.compile(
+    r"^(?:undo(?:\s+(?:that|it|the last one))?|revert(?:\s+that)?"
+    r"|(?:never\s*mind,?\s+)?put\s+(?:it|that|them)\s+back)[.!]?$", re.I)
+
+
+def _remember_done(user_id: int, intent: str, ctx: Ctx) -> None:
+    if intent in registry.destructive_intents():
+        _last_done[user_id] = (intent, ctx, time.monotonic() + _UNDO_TTL)
+
+
 def _take_pending(user_id: int):
     """The unexpired question for this user, removed. Answered or not, one
     turn is all it gets: asking again is nagging."""
@@ -215,12 +230,35 @@ async def handle_message(user_id: int, text: str, channel: Channel, *, source: s
                     await channel.send("That skill is switched off.")
                 else:
                     await plugin.handle(intent, ctx)
+                    _remember_done(user_id, intent, ctx)
                 await channel.ack("done")
             except Exception as e:
                 logging.error(f"Error handling confirmation from {user_id}: {e}")
                 await channel.send("Something went wrong, try again.")
                 await channel.ack("error")
             return
+
+    # "undo that": also before the classifier, and for the same reason as
+    # yes/no. Only reverses what core itself ran; a bare "put the milk back"
+    # with nothing to undo is still the restore intent, via the model.
+    if not files and _UNDO.match(text):
+        entry = _last_done.pop(user_id, None)
+        if entry is None or entry[2] < time.monotonic():
+            await channel.send("Nothing to undo.")
+        else:
+            intent, ctx, _ = entry
+            undo = registry.undo_for(intent)
+            if undo is None:
+                await channel.send("I can't undo that one.")
+            else:
+                ctx.channel = channel     # reply where the undo came from
+                try:
+                    await undo(ctx)
+                except Exception as e:
+                    logging.error(f"Error undoing {intent} for {user_id}: {e}")
+                    await channel.send("Something went wrong, try again.")
+        await channel.ack("done")
+        return
 
     if files:
         # a new photo, captioned or not, supersedes a parked one: the parked
@@ -308,6 +346,7 @@ async def handle_message(user_id: int, text: str, channel: Channel, *, source: s
                 _pending[user_id] = (intent, ctx, time.monotonic() + _CONFIRM_TTL)
             else:
                 await registry.INTENT_HANDLERS[intent].handle(intent, ctx)
+                _remember_done(user_id, intent, ctx)
 
         elif intent == "help":
             await channel.send(HELP_TEXT)

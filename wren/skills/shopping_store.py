@@ -81,8 +81,29 @@ def clear(list_name: str = "shopping") -> int:
     mistaken clear is recoverable with one UPDATE).
     """
     with db.conn() as con:
-        cur = con.execute("UPDATE shopping_items SET status='removed' WHERE status='active' AND list=?",
-                          (list_name,))
+        ids = [r[0] for r in con.execute(
+            "SELECT id FROM shopping_items WHERE status='active' AND list=?", (list_name,))]
+        con.execute("UPDATE shopping_items SET status='removed' WHERE status='active' AND list=?",
+                    (list_name,))
+    # ponytail: process-local, per list -- "undo" after a clear has a ten
+    # minute window in core anyway, and a restart is longer than that
+    _last_cleared[list_name] = ids
+    return len(ids)
+
+
+_last_cleared: dict[str, list[int]] = {}
+
+
+def restore_cleared(list_name: str = "shopping") -> int:
+    """Undo the most recent clear of this list: exactly the rows it removed,
+    not everything ever removed. Returns how many came back."""
+    ids = _last_cleared.pop(list_name, [])
+    if not ids:
+        return 0
+    with db.conn() as con:
+        cur = con.execute(
+            f"UPDATE shopping_items SET status='active' WHERE status='removed' AND id IN ({','.join('?' * len(ids))})",
+            ids)
         return cur.rowcount
 
 def active_items(list_name: str = "shopping") -> list[dict]:

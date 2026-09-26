@@ -338,6 +338,12 @@ a shared bearer token (one `WREN_TOKENS` entry used by a kitchen device),
 everyone using it is the same "user" as far as Wren is concerned, so
 anyone's "yes" answers anyone's pending question.
 
+Typed or spoken, the last destructive thing Wren did can be taken back for
+ten minutes with "undo that" (also "undo", "put it back", "revert that"):
+an item or a whole cleared list goes back on, a cancelled reminder is
+pending again, a discarded idea, an unpinned note, a forgotten fact or a
+removed contact comes back. "Nothing to undo." otherwise.
+
 ## LLM providers and fallback
 
 Wren talks to an LLM for intent detection and replies. Supported providers:

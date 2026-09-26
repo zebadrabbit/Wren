@@ -23,6 +23,25 @@ def _default_surface() -> str:
                 contacts.SURFACES[0])
 
 
+# remove_contact deletes the row, so "undo that" re-adds it, every surface id included
+_last_removed: dict[int, dict] = {}
+
+
+async def _undo_remove(ctx: Ctx) -> None:
+    row = _last_removed.pop(ctx.user_id, None)
+    if row is None:
+        await ctx.channel.send("Nothing to add back.")
+        return
+    ids = [(s, row[s]) for s in contacts.SURFACES if row.get(s) is not None]
+    contacts.add(row["alias"], ids[0][1], surface=ids[0][0])
+    for surface, sid in ids[1:]:
+        contacts.set_id(row["alias"], surface, sid)
+    await ctx.channel.send(flourish.flourish(f"Added {row['alias']} back."))
+
+
+UNDO = {"remove_contact": _undo_remove}
+
+
 async def handle(intent: str, ctx: Ctx) -> None:
     if ctx.user_id != config.WHITELIST["owner"]:
         await ctx.channel.send("Only the owner can manage contacts.")
@@ -59,7 +78,9 @@ async def handle(intent: str, ctx: Ctx) -> None:
 
     elif intent == "remove_contact":
         alias = (ctx.person or "").strip().lower()
+        row = contacts.get(alias)
         if contacts.remove(alias):
+            _last_removed[ctx.user_id] = row
             await ctx.channel.send(flourish.flourish(f"Removed {alias}."))
         else:
             await ctx.channel.send(f"No contact named {alias}.")

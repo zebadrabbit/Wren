@@ -12,6 +12,21 @@ PROMPT_GUIDELINES = """- pin_note: user wants to pin an important note (e.g. "pi
 - list_pins: user wants to see what's currently pinned"""
 
 
+_last_unpinned: dict[int, str] = {}
+
+
+async def _undo_unpin(ctx: Ctx) -> None:
+    content = _last_unpinned.pop(ctx.user_id, None)
+    if content is None:
+        await ctx.channel.send("Nothing to pin back.")
+        return
+    pins.save(ctx.user_id, content)
+    await ctx.channel.send(flourish.flourish(f"Pinned again: {content}"))
+
+
+UNDO = {"unpin_note": _undo_unpin}
+
+
 async def handle(intent: str, ctx: Ctx) -> None:
     if intent == "pin_note":
         if not ctx.content.strip():
@@ -32,6 +47,7 @@ async def handle(intent: str, ctx: Ctx) -> None:
             await ctx.channel.send(f"Found more than one match, be more specific.\n{listing}")
         else:
             pins.delete(matches[0]["id"])
+            _last_unpinned[ctx.user_id] = matches[0]["content"]
             await ctx.channel.send(flourish.flourish(f"Unpinned: {matches[0]['content']}"))
 
     elif intent == "list_pins":

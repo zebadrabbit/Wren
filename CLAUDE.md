@@ -43,6 +43,10 @@ Run with `python3 -m wren.run`. Full architecture doc: `README.md`
    files sent alongside the words, declare `ACCEPTS_FILES = [...]`; a
    captioned photo whose intent is not in that set is a note, or, if the
    caption is a question, a question about the picture (`brain.describe`).
+   If a destructive intent can be reversed, declare `UNDO = {intent: async
+   fn(ctx)}`; core runs it on a typed "undo that" within ten minutes of the
+   intent, with the same `Ctx`. Skills that need to know *what* was deleted
+   keep it themselves (see `shopping_store._last_cleared`).
 5. **Adding a communication plugin**: new file in `wren/communication/`,
    then add its name to `COMMUNICATION_PLUGINS` in `.env`. `run.py` imports
    `wren.communication.<name>_plugin` dynamically — the module name must be
@@ -101,7 +105,7 @@ Module path renames (for grep/context when reading old plans/specs):
 ```bash
 source venv/bin/activate
 pip install -r requirements.txt
-pytest -q                        # 1169 passed as of 2026-09-26
+pytest -q                        # 1190 passed as of 2026-09-26
 python3 -m wren.run              # needs .env; see .env.example
 ```
 

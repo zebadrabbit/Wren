@@ -113,6 +113,22 @@ def _build_export(user_id: int) -> str | None:
         lines.append("_None._")
     return "\n".join(lines) + "\n"
 
+# discard_idea is a real DELETE, so "undo that" re-saves the text it kept
+_last_discarded: dict[int, str] = {}
+
+
+async def _undo_discard(ctx: Ctx) -> None:
+    content = _last_discarded.pop(ctx.user_id, None)
+    if content is None:
+        await ctx.channel.send("Nothing to bring back.")
+        return
+    notes.save(ctx.user_id, content, ["idea"])
+    await ctx.channel.send(flourish.flourish(f"Kept the idea after all: {content}."))
+
+
+UNDO = {"discard_idea": _undo_discard}
+
+
 async def handle(intent: str, ctx: Ctx) -> None:
     if intent == "save_note":
         if not ctx.files:
@@ -214,6 +230,7 @@ async def handle(intent: str, ctx: Ctx) -> None:
                 await ctx.channel.send(f"Found more than one match, be more specific.\n{listing}")
             else:
                 notes.delete(matches[0]["id"])
+                _last_discarded[ctx.user_id] = matches[0]["content"]
                 await ctx.channel.send(flourish.flourish(f"Discarded: {matches[0]['content']}."))
 
     elif intent == "expand_idea":

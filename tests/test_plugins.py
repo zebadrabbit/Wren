@@ -265,3 +265,11 @@ def test_file_intents_are_declared_by_the_skills_that_take_files():
         assert "add_shopping_item" not in registry.file_intents()
     finally:
         registry.set_enabled(shopping_skill, True)
+
+
+def test_undo_for_finds_the_inverse_a_skill_declares():
+    from wren.skills import shopping_skill, reminder_skill, notes_skill, pins_skill, memory_skill, contacts_skill
+    for intent in ("remove_shopping_item", "clear_shopping", "cancel_reminder", "discard_idea",
+                   "unpin_note", "forget_memory", "remove_contact"):
+        assert callable(registry.undo_for(intent)), intent
+    assert registry.undo_for("save_note") is None

@@ -309,7 +309,13 @@ Household Gaps") holds the state; this is the order and the why.
    timer" is parsed in the reminder skill (no content needed) and fires "20
    minute timer is up"; any reminder due within the hour reads back as "in N
    min", so "how long is left on the timer" is recall_reminders.
-9. **Undo for typed messages.** 10. **Gmail digest / sender allowlist.**
+9. ~~**Undo for typed messages.**~~ Landed 2026-09-26: skills declare
+   `UNDO = {intent: async fn(ctx)}`; core remembers the last destructive
+   intent per person for ten minutes and runs the inverse on "undo that" /
+   "put it back" / "revert that", before the classifier. Inverses for
+   remove and clear (exactly the rows the clear removed), cancel (one or
+   all), discard idea, unpin, forget, remove contact (every surface id).
+10. **Gmail digest / sender allowlist.**
 
 ## Roadmap 2026-08-26 — "Jarvis, not Alexa"
 

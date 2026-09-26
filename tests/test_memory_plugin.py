@@ -278,3 +278,14 @@ def test_forget_without_content_asks():
     ch = CollectingChannel()
     asyncio.run(memory_plugin.handle("forget_memory", Ctx(user_id=1, channel=ch, content="")))
     assert ch.sent == ["Which one should I forget?"]
+
+
+def test_undo_forget_remembers_it_again():
+    memory.save(1, "preference", "dislikes cilantro")
+    ctx = Ctx(user_id=1, channel=CollectingChannel(), content="cilantro")
+    asyncio.run(memory_plugin.handle("forget_memory", ctx))
+    assert memory.all_for(1) == []
+    asyncio.run(memory_plugin.UNDO["forget_memory"](ctx))
+    rows = memory.all_for(1)
+    assert [(r["category"], r["fact"]) for r in rows] == [("preference", "dislikes cilantro")]
+    assert ctx.channel.sent[-1].startswith("Remembered again: dislikes cilantro")

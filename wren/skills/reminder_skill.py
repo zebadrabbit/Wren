@@ -179,6 +179,26 @@ def _resolve_reminder(user_id: int, phrase: str) -> list[dict]:
         matches = items
     return matches
 
+# what the last cancel cancelled, per person, for "undo that" (core keeps the
+# ten-minute window; this just remembers which rows)
+_last_cancelled: dict[int, list[int]] = {}
+
+
+async def _undo_cancel(ctx: Ctx) -> None:
+    ids = _last_cancelled.pop(ctx.user_id, [])
+    n = reminders.restore(ids)
+    if not n:
+        await ctx.channel.send("Nothing to restore.")
+    elif n == 1:
+        row = next(r for r in reminders.pending(ctx.user_id) if r["id"] == ids[0])
+        await ctx.channel.send(flourish.flourish(f"Restored: {row['content']}."))
+    else:
+        await ctx.channel.send(flourish.flourish(f"Restored {n} reminders."))
+
+
+UNDO = {"cancel_reminder": _undo_cancel}
+
+
 async def handle(intent: str, ctx: Ctx) -> None:
     if intent == "set_reminder":
         via = _parse_via(ctx.text)
@@ -231,7 +251,9 @@ async def handle(intent: str, ctx: Ctx) -> None:
 
     elif intent == "cancel_reminder":
         if _means_all(ctx):
-            count = reminders.cancel_all(ctx.user_id)
+            ids = reminders.cancel_all(ctx.user_id)
+            count = len(ids)
+            _last_cancelled[ctx.user_id] = ids
             await ctx.channel.send(
                 flourish.flourish(f"Cancelled {count} reminder{'' if count == 1 else 's'}.")
                 if count else "No reminders to cancel.")
@@ -252,6 +274,7 @@ async def handle(intent: str, ctx: Ctx) -> None:
                 await ctx.channel.send(f"Found more than one match, be more specific.\n{listing}")
             else:
                 reminders.cancel(matches[0]["id"])
+                _last_cancelled[ctx.user_id] = [matches[0]["id"]]
                 await ctx.channel.send(flourish.flourish(f"Cancelled: {matches[0]['content']}."))
 
 async def start() -> None:

@@ -67,12 +67,27 @@ def cancel(reminder_id: int) -> bool:
         )
         return cur.rowcount > 0
 
-def cancel_all(owner_id: int) -> int:
+def cancel_all(owner_id: int) -> list[int]:
+    """Cancel every pending reminder; returns their ids (the caller counts,
+    and undo needs exactly these back, not every cancelled row ever)."""
     with db.conn() as con:
-        cur = con.execute(
+        ids = [r[0] for r in con.execute(
+            "SELECT id FROM reminders WHERE owner_id=? AND status='pending'", (str(owner_id),))]
+        con.execute(
             "UPDATE reminders SET status='cancelled' WHERE owner_id=? AND status='pending'",
             (str(owner_id),),
         )
+    return ids
+
+
+def restore(ids: list[int]) -> int:
+    """Undo a cancel: these rows back to pending. Returns how many."""
+    if not ids:
+        return 0
+    with db.conn() as con:
+        cur = con.execute(
+            f"UPDATE reminders SET status='pending' WHERE status='cancelled' AND id IN ({','.join('?' * len(ids))})",
+            ids)
         return cur.rowcount
 
 def due(now_iso: str) -> list[dict]:

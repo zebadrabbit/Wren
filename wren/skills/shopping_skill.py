@@ -52,6 +52,25 @@ def _on(name: str) -> str:
     """The suffix that names a list in a reply, empty for the default one."""
     return "" if name == "shopping" else f" the {name} list"
 
+async def _undo_remove(ctx: Ctx) -> None:
+    lst = _list_name(ctx)
+    if shopping.restore(ctx.content, list_name=lst):
+        await ctx.channel.send(flourish.flourish(f"Put {ctx.content} back."))
+    else:
+        await ctx.channel.send(f"{ctx.content} is already back on the list.")
+
+
+async def _undo_clear(ctx: Ctx) -> None:
+    lst = _list_name(ctx)
+    n = shopping.restore_cleared(lst)
+    await ctx.channel.send(flourish.flourish(f"Put {n} item{'' if n == 1 else 's'} back.") if n
+                           else "Nothing to put back.")
+
+
+# "undo that" after one of these runs the inverse with the same Ctx (core)
+UNDO = {"remove_shopping_item": _undo_remove, "clear_shopping": _undo_clear}
+
+
 async def handle(intent: str, ctx: Ctx) -> None:
     lst = _list_name(ctx)
     if intent == "add_shopping_item" and ctx.files:
