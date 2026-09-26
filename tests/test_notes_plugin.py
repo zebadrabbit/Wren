@@ -369,3 +369,10 @@ def test_discard_idea_with_an_attachment_removes_it_too():
     ch = CollectingChannel()
     asyncio.run(notes_plugin.handle("discard_idea", Ctx(user_id=1, channel=ch, content="kayak")))
     assert notes.attachment(att) is None
+
+
+def test_save_reply_classifies_by_the_sniffed_type_not_the_declared_one():
+    ch = CollectingChannel()
+    lied = Inbound(filename="blob", mime="application/octet-stream", data=JPEG)
+    asyncio.run(notes_plugin.handle("save_note", Ctx(user_id=1, channel=ch, content="x", files=[lied])))
+    assert ch.sent == ["Saved, 1 image."]

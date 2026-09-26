@@ -4,6 +4,7 @@ from ..channel import Ctx
 from . import notes_store as notes
 from .. import brain
 from .. import config
+from .. import filetypes
 from .. import flourish
 
 INTENTS = ["save_note", "recall_notes", "save_idea", "recall_ideas", "discard_idea", "expand_idea", "export_notes"]
@@ -23,7 +24,6 @@ PROMPT_GUIDELINES = """- save_note: user is capturing something for later (groce
 def _describe(atts: list) -> str:
     """"1 image" / "3 images" / "2 files" for a list of attachment rows or
     Inbound records -- anything with a .mime or ["mime"]."""
-    from .. import filetypes
     mimes = [a["mime"] if isinstance(a, dict) else a.mime for a in atts]
     n = len(mimes)
     if all(m in filetypes.IMAGE_MIMES for m in mimes):
@@ -91,7 +91,7 @@ async def handle(intent: str, ctx: Ctx) -> None:
         for f in ctx.files:
             try:
                 notes.attach(note_id, f.filename, f.mime, f.data)
-                kept.append(f)
+                kept.append({"mime": filetypes.sniff(f.data)})
             except ValueError as e:
                 skipped.append(f"Skipped {f.filename}: {_REFUSALS.get(str(e), str(e))}")
         if not kept and not ctx.content.strip():
