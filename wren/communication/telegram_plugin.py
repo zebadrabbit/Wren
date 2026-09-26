@@ -295,11 +295,19 @@ async def _poll_once(offset: int | None) -> int | None:
                     continue
                 try:
                     data = await _fetch_file(want["file_id"])
-                except (aiohttp.ClientError, TelegramError, KeyError, TypeError) as e:
-                    # KeyError/TypeError: getFile answered with the wrong shape
-                    # (missing "file_path", or not even a dict) -- still a
-                    # failed fetch from the caller's point of view, not a bug
-                    # to fall through to the outer handler and go silent.
+                except Exception as e:
+                    # Broad on purpose: aiohttp.ClientError/TelegramError are
+                    # the expected transport failures, KeyError/TypeError cover
+                    # getFile answering with the wrong shape (missing
+                    # "file_path", or not even a dict), and asyncio.TimeoutError
+                    # (what ClientTimeout raises -- not an aiohttp.ClientError
+                    # in every aiohttp version) plus plain OSError round out
+                    # the ways a slow or interrupted download can fail. Every
+                    # one of these is just "couldn't fetch" from the user's
+                    # side, and letting any of them fall through to the outer
+                    # handler means the user gets nothing at all instead of
+                    # this reply. _download already scrubs the bot token out
+                    # of its own exceptions, so logging e here is safe.
                     logging.warning(f"telegram: file download failed: {e}")
                     await _send_text(user_id, "Couldn't fetch that photo, try again.")
                     continue

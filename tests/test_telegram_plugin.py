@@ -630,6 +630,42 @@ def test_malformed_getfile_response_is_reported_not_swallowed():
     handle.assert_not_called()
 
 
+def test_download_timeout_is_reported_not_swallowed():
+    api = AsyncMock(return_value=[_photo_update(caption=None)])
+    sent = AsyncMock()
+    with patch.object(telegram_plugin, "_api", new=api), \
+         patch.object(telegram_plugin, "_fetch_file", new=AsyncMock(side_effect=asyncio.TimeoutError())), \
+         patch.object(telegram_plugin, "_send_text", new=sent), \
+         patch.object(core, "handle_message", new=AsyncMock()) as handle:
+        assert asyncio.run(telegram_plugin._poll_once(None)) == 2
+    sent.assert_awaited_once_with(42, "Couldn't fetch that photo, try again.")
+    handle.assert_not_called()
+
+
+def test_download_error_is_scrubbed_of_the_bot_token(monkeypatch, caplog):
+    # _download's scrub mirrors _api's; this is its own regression test.
+    # Goes through the REAL _download (session.get is what raises) so the
+    # assertion actually exercises _download's own try/except, not a fake
+    # that bypasses it.
+    monkeypatch.setattr(config, "TELEGRAM_TOKEN", "SECRET-TOKEN")
+
+    class _FakeSession:
+        def __init__(self, *a, **kw): pass
+        def get(self, url):
+            raise aiohttp.ClientError(f"Cannot connect to host {url}")
+        async def __aenter__(self): return self
+        async def __aexit__(self, *exc): return False
+
+    api = AsyncMock(side_effect=[[_photo_update(caption=None)], {"file_path": "x"}])
+    with patch.object(telegram_plugin, "_api", new=api), \
+         patch.object(aiohttp, "ClientSession", _FakeSession), \
+         patch.object(telegram_plugin, "_send_text", new=AsyncMock()), \
+         patch.object(core, "handle_message", new=AsyncMock()), \
+         caplog.at_level(logging.WARNING):
+        asyncio.run(telegram_plugin._poll_once(None))
+    assert "SECRET-TOKEN" not in caplog.text
+
+
 def test_sticker_is_still_skipped():
     assert telegram_plugin._incoming(_update(text=None, sticker={"file_id": "s"})) is None
 
