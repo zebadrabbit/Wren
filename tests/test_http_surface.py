@@ -432,3 +432,28 @@ def test_urlencoded_text_field_without_files_still_works(monkeypatch):
     monkeypatch.setattr(core, "handle_message", fake)
     status, _ = call("post", "/message", token="good-token", data={"text": "from a form"})
     assert status == 200 and seen["text"] == "from a form"
+
+
+def test_multipart_photo_end_to_end_saves_a_note_with_the_image(monkeypatch):
+    # Real core, real notes skill, real store; only the classifier is faked.
+    from wren import brain, contacts, settings
+    from wren.skills import notes_store
+    contacts.init_db(); settings.init_db(); notes_store.init_db()
+    monkeypatch.setattr(brain, "detect_intent", lambda *a, **k: {
+        "intent": "chat", "content": "", "tags": ["receipt"], "person": None})
+    status, body = call("post", "/message", token="good-token", data=_multipart("tyre place", ("r.jpg", JPEG)))
+    assert status == 200 and body["replies"] == ["Saved, 1 image."]
+    note = notes_store.list_recent(1)[0]
+    assert note["content"] == "tyre place" and note["tags"] == "receipt"
+    assert [a["mime"] for a in notes_store.attachments(note["id"])] == ["image/jpeg"]
+
+
+def test_multipart_photo_in_a_dry_run_leaves_no_note(monkeypatch):
+    from wren import brain, contacts, settings
+    from wren.skills import notes_store
+    contacts.init_db(); settings.init_db(); notes_store.init_db()
+    monkeypatch.setattr(brain, "detect_intent", lambda *a, **k: {
+        "intent": "chat", "content": "", "tags": [], "person": None})
+    status, body = call("post", "/message?dry_run=1", token="good-token", data=_multipart("tyre place", ("r.jpg", JPEG)))
+    assert status == 200 and body["replies"] == ["Saved, 1 image."] and body["dry_run"] is True
+    assert notes_store.list_recent(1) == []
