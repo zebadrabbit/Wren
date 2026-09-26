@@ -255,10 +255,7 @@ async def handle_message(user_id: int, text: str, channel: Channel, *, source: s
         # is_enabled as well as membership: all_intents() already stops
         # offering a disabled skill, but a model can emit an intent it was
         # never offered. Treat that as unknown so it falls through to chat.
-        # "chat" itself is excluded even if it were ever a table key (it
-        # isn't, in production -- no skill claims it): it is the classifier's
-        # own fallback, not a plugin intent, and belongs in the chat branch.
-        if intent != "chat" and intent in registry.INTENT_HANDLERS and registry.is_enabled(registry.INTENT_HANDLERS[intent]):
+        if intent in registry.INTENT_HANDLERS and registry.is_enabled(registry.INTENT_HANDLERS[intent]):
             if source == "voice" and intent in registry.destructive_intents():
                 # Transcription mis-hears and the skills fuzzy-match; between
                 # them "remove milk" can become "clear the list". Ask first.

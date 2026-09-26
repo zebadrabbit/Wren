@@ -509,7 +509,7 @@ def notes_handler(monkeypatch):
         async def handle(intent, ctx):
             seen.append((intent, ctx))
             await ctx.channel.send("saved")
-    monkeypatch.setattr(registry, "INTENT_HANDLERS", {"save_note": FakeNotes, "chat": None})
+    monkeypatch.setattr(registry, "INTENT_HANDLERS", {"save_note": FakeNotes})
     monkeypatch.setattr(registry, "is_enabled", lambda p: True)
     monkeypatch.setattr(core, "_pending_files", {})
     return seen
