@@ -315,7 +315,10 @@ Household Gaps") holds the state; this is the order and the why.
    "put it back" / "revert that", before the classifier. Inverses for
    remove and clear (exactly the rows the clear removed), cancel (one or
    all), discard idea, unpin, forget, remove contact (every surface id).
-10. **Gmail digest / sender allowlist.**
+10. ~~**Gmail digest / sender allowlist.**~~ Landed 2026-09-26: `EMAIL_WATCH`
+    was already the allowlist; `EMAIL_DIGEST=on` (settable, Watchers group)
+    queues a watched sender's mail for a day (`gmail_state`) instead of
+    pushing it, and the briefing lists it under "Email:", five at most.
 
 ## Roadmap 2026-08-26 — "Jarvis, not Alexa"
 

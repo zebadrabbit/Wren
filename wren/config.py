@@ -126,6 +126,21 @@ EMAIL_POLL_SECONDS = int(os.environ.get("EMAIL_POLL_SECONDS", "60"))
 EMAIL_WATCH: dict[str, str] = _parse_email_watch(os.environ.get("EMAIL_WATCH", ""))
 
 
+def _coerce_onoff(raw: str) -> bool:
+    """A panel-friendly boolean: on/off (also 1/0, true/false, yes/no)."""
+    word = (raw or "").strip().lower()
+    if word in ("on", "1", "true", "yes"):
+        return True
+    if word in ("off", "0", "false", "no", ""):
+        return False
+    raise ValueError(f"{raw!r} is not on or off")
+
+
+# on: watched senders' mail is folded into the daily briefing instead of
+# pushed as it arrives (wren/communication/gmail_state.py)
+EMAIL_DIGEST: bool = _coerce_onoff(os.environ.get("EMAIL_DIGEST", "off"))
+
+
 def _parse_github_watch(raw: str) -> list[str]:
     return [r.strip() for r in raw.split(",") if r.strip()]
 
@@ -298,6 +313,7 @@ SETTABLE = {
     "FIRECRAWL_URL":         Setting(str.strip),
     "GITHUB_WATCH":          Setting(_parse_github_watch, serialize=_serialize_github_watch),
     "EMAIL_WATCH":           Setting(_parse_email_watch, serialize=_serialize_email_watch),
+    "EMAIL_DIGEST":          Setting(_coerce_onoff, serialize=lambda v: "on" if v else "off"),
     "NOTIFY_VIA":            Setting(_coerce_notify_via, boot_coerce=str.strip),
 
     "MEMORY_SWEEP_SECONDS":   Setting(_coerce_poll_seconds),

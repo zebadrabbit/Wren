@@ -350,3 +350,14 @@ def test_set_override_validates_but_neither_persists_nor_applies_in_a_dry_run(mo
             config.set_override("WEATHER_LAT", "95")
     assert config.WEATHER_LAT is None
     assert settings.get("WEATHER_LAT") is None
+
+
+@pytest.mark.parametrize("raw,expected", [("on", True), ("ON", True), ("1", True), ("true", True), ("yes", True),
+                                          ("off", False), ("0", False), ("false", False), ("no", False), ("", False)])
+def test_email_digest_is_an_on_off_setting(raw, expected):
+    assert config.SETTABLE["EMAIL_DIGEST"].coerce(raw) is expected
+    assert config.SETTABLE["EMAIL_DIGEST"].serialize(expected) == ("on" if expected else "off")
+
+def test_email_digest_rejects_other_words():
+    with pytest.raises(ValueError):
+        config.SETTABLE["EMAIL_DIGEST"].coerce("maybe")

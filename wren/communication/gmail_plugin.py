@@ -5,6 +5,7 @@ import imaplib
 import logging
 from .. import config
 from .. import router
+from . import gmail_state
 
 PLUGIN_NAME = "Gmail (IMAP) Watcher"
 ROLE = "input"   # input-only: watches an inbox, never sends; notify a chat plugin via router.notify_name
@@ -39,7 +40,11 @@ async def _poll_once(imap_conn) -> None:
         contact = config.EMAIL_WATCH.get(sender)
         if contact:
             subject = msg.get("Subject", "(no subject)")
-            await router.notify_name(contact, f"Email from {sender}: {subject}")
+            if config.EMAIL_DIGEST:
+                # one line in tomorrow's briefing, not a ping now
+                gmail_state.add(contact, sender, subject)
+            else:
+                await router.notify_name(contact, f"Email from {sender}: {subject}")
         imap_conn.store(num, "+FLAGS", "\\Seen")
 
 async def start() -> None:

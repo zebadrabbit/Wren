@@ -4,6 +4,10 @@ from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from .. import config
+from ..communication import gmail_state
+
+# subjects in the briefing before "…and N more": a digest, not the inbox
+_DIGEST_CAP = 5
 from .. import router
 from ..channel import Ctx
 from . import calendar_skill
@@ -78,6 +82,17 @@ def compose(user_id: int) -> str:
             lines.extend(due)
         else:
             empties.append("no reminders")
+
+    if config.EMAIL_DIGEST:
+        # the watcher's last day of watched mail, by this person's alias
+        # (EMAIL_WATCH maps senders to aliases, not ids)
+        alias = config.id_to_name().get(user_id)
+        mail = gmail_state.recent(alias) if alias else []
+        if mail:
+            lines.append("Email:")
+            lines.extend(f"  {m['sender']} — {m['subject']}" for m in mail[:_DIGEST_CAP])
+            if len(mail) > _DIGEST_CAP:
+                lines.append(f"  …and {len(mail) - _DIGEST_CAP} more.")
 
     if registry.is_enabled(shopping_skill):
         n = len(shopping.active_items())

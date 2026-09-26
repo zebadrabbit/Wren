@@ -539,6 +539,12 @@ unset (or drop `gmail` from `COMMUNICATION_PLUGINS`) to disable — nothing
 else about the bot depends on it. Despite the name this is plain IMAP, so
 any provider works, Gmail included.
 
+`EMAIL_WATCH` is the allowlist: mail from anyone not on it is never
+mentioned. With `EMAIL_DIGEST=on` (also in the plugins panel) a watched
+sender's mail is not pushed as it arrives either; the daily briefing lists
+the last day's under "Email:", five at most, and that is the only place it
+appears.
+
 ## GitHub repo activity watcher (optional)
 
 Add `github` to `COMMUNICATION_PLUGINS` and set

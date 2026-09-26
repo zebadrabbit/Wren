@@ -257,3 +257,49 @@ def test_start_does_nothing_when_the_skill_is_disabled_in_the_panel(monkeypatch)
         registry.set_enabled(briefing_skill, True)
     notify.assert_not_called()
     assert briefing_skill._last_sent is None
+
+
+# --- email digest ------------------------------------------------------------
+
+def test_briefing_lists_the_last_days_watched_mail_when_digest_is_on(monkeypatch):
+    from wren.communication import gmail_state
+    gmail_state.init_db()
+    monkeypatch.setattr(config, "EMAIL_DIGEST", True)
+    monkeypatch.setattr(config, "id_to_name", lambda: {1: "owner"})
+    gmail_state.add("owner", "alice@example.com", "Invoice 42")
+    gmail_state.add("owner", "school@example.org", "Picture day")
+    gmail_state.add("hubby", "bob@example.com", "Not yours")
+    with patch.object(weather_skill, "summary", return_value="72°F and clear."), \
+         patch.object(calendar_skill, "events_between", return_value=[]):
+        text = briefing_skill.compose(1)
+    assert "Email:\n  school@example.org — Picture day\n  alice@example.com — Invoice 42" in text
+    assert "Not yours" not in text
+
+
+def test_briefing_caps_the_digest_at_five(monkeypatch):
+    from wren.communication import gmail_state
+    gmail_state.init_db()
+    monkeypatch.setattr(config, "EMAIL_DIGEST", True)
+    monkeypatch.setattr(config, "id_to_name", lambda: {1: "owner"})
+    for i in range(8):
+        gmail_state.add("owner", f"s{i}@example.com", f"Subject {i}")
+    with patch.object(weather_skill, "summary", return_value="x"), \
+         patch.object(calendar_skill, "events_between", return_value=[]):
+        text = briefing_skill.compose(1)
+    assert text.count("@example.com — ") == 5 and "  …and 3 more." in text
+
+
+def test_briefing_says_nothing_about_email_when_digest_is_off_or_empty(monkeypatch):
+    from wren.communication import gmail_state
+    gmail_state.init_db()
+    monkeypatch.setattr(config, "EMAIL_DIGEST", False)
+    monkeypatch.setattr(config, "id_to_name", lambda: {1: "owner"})
+    gmail_state.add("owner", "alice@example.com", "Invoice 42")
+    with patch.object(weather_skill, "summary", return_value="x"), \
+         patch.object(calendar_skill, "events_between", return_value=[]):
+        assert "Email" not in briefing_skill.compose(1)
+    monkeypatch.setattr(config, "EMAIL_DIGEST", True)
+    monkeypatch.setattr(config, "id_to_name", lambda: {2: "hubby"})
+    with patch.object(weather_skill, "summary", return_value="x"), \
+         patch.object(calendar_skill, "events_between", return_value=[]):
+        assert "Email" not in briefing_skill.compose(2)

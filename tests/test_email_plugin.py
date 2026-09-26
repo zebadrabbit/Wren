@@ -66,3 +66,18 @@ def test_start_returns_immediately_when_email_watch_empty(monkeypatch):
     monkeypatch.setattr(email_plugin, "_connect", _fail_connect)
 
     asyncio.run(asyncio.wait_for(email_plugin.start(), timeout=1))
+
+
+def test_digest_mode_queues_instead_of_notifying(monkeypatch, tmp_path):
+    from wren.communication import gmail_state
+    monkeypatch.setenv("WREN_DB", str(tmp_path / "wren.db")); gmail_state.init_db()
+    monkeypatch.setattr(config, "EMAIL_WATCH", {"alice@example.com": "owner"})
+    monkeypatch.setattr(config, "EMAIL_DIGEST", True)
+    imap_conn = MagicMock()
+    imap_conn.search.return_value = ("OK", [b"1"])
+    imap_conn.fetch.return_value = ("OK", [(b"1 (RFC822 {size})", _raw_email("alice@example.com", "Hello"))])
+    with patch.object(router, "notify_name", new=AsyncMock()) as mock_notify:
+        asyncio.run(email_plugin._poll_once(imap_conn))
+    mock_notify.assert_not_awaited()
+    imap_conn.store.assert_called_once_with(b"1", "+FLAGS", "\\Seen")
+    assert [(r["sender"], r["subject"]) for r in gmail_state.recent("owner")] == [("alice@example.com", "Hello")]

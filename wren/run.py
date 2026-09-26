@@ -6,6 +6,7 @@ from . import config
 from . import contacts
 from . import conversations
 from .communication import github_state
+from .communication import gmail_state
 from .skills import memory_store as memory
 from .skills import notes_store as notes
 from .skills import pins_store as pins
@@ -17,7 +18,7 @@ from . import settings
 logging.basicConfig(level=logging.INFO)
 logging.getLogger("httpx").setLevel(logging.WARNING)  # its INFO line prints the full request URL, and CALENDAR_URLS is a secret
 
-_STORAGE = (notes, shopping, reminders, contacts, github_state, pins, conversations, settings, memory)
+_STORAGE = (notes, shopping, reminders, contacts, github_state, gmail_state, pins, conversations, settings, memory)
 
 
 def init_dbs() -> None:
