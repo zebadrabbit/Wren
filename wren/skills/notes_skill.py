@@ -19,6 +19,43 @@ PROMPT_GUIDELINES = """- save_note: user is capturing something for later (groce
 - expand_idea: user wants Wren to elaborate/brainstorm further on a previously saved idea; content is a short phrase identifying which idea, not the full idea text
 - export_notes: user wants their notes/ideas as a downloadable file to use elsewhere (e.g. "send my notes as a file", "export my ideas so I can paste them into X")"""
 
+
+def _describe(atts: list) -> str:
+    """"1 image" / "3 images" / "2 files" for a list of attachment rows or
+    Inbound records -- anything with a .mime or ["mime"]."""
+    from .. import filetypes
+    mimes = [a["mime"] if isinstance(a, dict) else a.mime for a in atts]
+    n = len(mimes)
+    if all(m in filetypes.IMAGE_MIMES for m in mimes):
+        return f"{n} image" + ("" if n == 1 else "s")
+    return f"{n} file" + ("" if n == 1 else "s")
+
+
+def _marker(note_id: int) -> str:
+    atts = notes.attachments(note_id)
+    return f" ({_describe(atts)})" if atts else ""
+
+
+async def _send_attachments(ctx: Ctx, note_ids: list[int]) -> None:
+    """Send the files of these notes, in note order, stopping at the cap."""
+    sent = 0
+    for note_id in note_ids:
+        for meta in notes.attachments(note_id):
+            if sent >= notes.MAX_FILES_PER_REPLY:
+                return
+            row = notes.attachment(meta["id"])
+            if row is None:
+                continue
+            await ctx.channel.send_file(row["data"], row["filename"])
+            sent += 1
+
+
+_REFUSALS = {
+    "too big": "That's too big, 10 MB max.",
+    "unsupported type": "I can keep images and PDFs, not that.",
+}
+
+
 def _build_export(user_id: int) -> str | None:
     all_notes = notes.search(user_id)
     plain = [n for n in all_notes if "idea" not in n["tags"].split(",")]
@@ -31,7 +68,7 @@ def _build_export(user_id: int) -> str | None:
     if plain:
         for n in plain:
             tag_suffix = f" (tags: {n['tags']})" if n["tags"] else ""
-            lines.append(f"- [{n['created_at'][:10]}] {n['content']}{tag_suffix}")
+            lines.append(f"- [{n['created_at'][:10]}] {n['content']}{_marker(n['id'])}{tag_suffix}")
     else:
         lines.append("_None._")
     lines.append("")
@@ -45,8 +82,26 @@ def _build_export(user_id: int) -> str | None:
 
 async def handle(intent: str, ctx: Ctx) -> None:
     if intent == "save_note":
-        notes.save(ctx.user_id, ctx.content, ctx.tags)
-        await ctx.channel.send(flourish.flourish("Saved."))
+        if not ctx.files:
+            notes.save(ctx.user_id, ctx.content, ctx.tags)
+            await ctx.channel.send(flourish.flourish("Saved."))
+            return
+        note_id = notes.save(ctx.user_id, ctx.content, ctx.tags)
+        kept, skipped = [], []
+        for f in ctx.files:
+            try:
+                notes.attach(note_id, f.filename, f.mime, f.data)
+                kept.append(f)
+            except ValueError as e:
+                skipped.append(f"Skipped {f.filename}: {_REFUSALS.get(str(e), str(e))}")
+        if not kept and not ctx.content.strip():
+            # every file refused and nothing to say: a note with no body and
+            # no file is not worth keeping
+            notes.delete(note_id)
+            await ctx.channel.send(" ".join(skipped))
+            return
+        parts = ([f"Saved, {_describe(kept)}."] if kept else []) + skipped
+        await ctx.channel.send(" ".join(parts))
 
     elif intent == "recall_notes":
         matches = notes.search(ctx.user_id, tags=ctx.tags if ctx.tags else None)
@@ -64,14 +119,17 @@ async def handle(intent: str, ctx: Ctx) -> None:
             else:
                 summary = brain.recall(matches, ctx.content)
                 await ctx.channel.send(summary)
+                await _send_attachments(ctx, [n["id"] for n in matches])
         else:
             rows = [{"content": n["content"],
                      "tags": [t for t in n["tags"].split(",") if t],
-                     "created_at": n["created_at"]}
+                     "created_at": n["created_at"],
+                     "files": [{"id": a["id"], "filename": a["filename"], "mime": a["mime"]}
+                               for a in notes.attachments(n["id"])]}
                     for n in matches]
             if rows:
                 text = "\n".join(
-                    f"[{n['created_at'][:10]}] {n['content']}"
+                    f"[{n['created_at'][:10]}] {n['content']}{_marker(n['id'])}"
                     + (f" (tags: {n['tags']})" if n["tags"] else "")
                     for n in matches)
             else:
@@ -85,6 +143,7 @@ async def handle(intent: str, ctx: Ctx) -> None:
                 # re-renders later; content stays empty for the reason above
                 params={"content": "", "tags": list(ctx.tags or [])},
             )
+            await _send_attachments(ctx, [n["id"] for n in matches])
 
     elif intent == "save_idea":
         if not ctx.content.strip():

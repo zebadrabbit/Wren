@@ -272,3 +272,100 @@ def test_no_notes_and_no_ideas_still_emit_cards():
     asyncio.run(notes_plugin.handle("recall_ideas", Ctx(user_id=1, channel=ch2)))
     assert ch2.cards[0]["data"]["ideas"] == []
     assert ch2.sent == ["No ideas saved."]
+
+
+# ── attachments ───────────────────────────────────────────────────────────
+
+from wren.channel import Inbound
+
+JPEG = b"\xff\xd8\xff\xe0" + b"\0" * 32
+PDF = b"%PDF-1.7\n" + b"\0" * 32
+
+
+def _img(name="a.jpg"):
+    return Inbound(filename=name, mime="image/jpeg", data=JPEG)
+
+
+def test_save_note_with_one_image_reports_it_and_stores_it():
+    ch = CollectingChannel()
+    asyncio.run(notes_plugin.handle("save_note", Ctx(user_id=1, channel=ch, content="tyre receipt", files=[_img()])))
+    assert ch.sent == ["Saved, 1 image."]
+    note = notes.list_recent(1)[0]
+    assert [a["filename"] for a in notes.attachments(note["id"])] == ["a.jpg"]
+
+
+def test_save_note_counts_mixed_files_as_files():
+    ch = CollectingChannel()
+    files = [_img(), Inbound(filename="manual.pdf", mime="application/pdf", data=PDF)]
+    asyncio.run(notes_plugin.handle("save_note", Ctx(user_id=1, channel=ch, content="dishwasher", files=files)))
+    assert ch.sent == ["Saved, 2 files."]
+
+
+def test_save_note_keeps_the_good_files_and_names_the_refused_one():
+    ch = CollectingChannel()
+    files = [_img(), Inbound(filename="evil.jpg", mime="image/jpeg", data=b"MZ\x90\x00" + b"\0" * 32)]
+    asyncio.run(notes_plugin.handle("save_note", Ctx(user_id=1, channel=ch, content="hm", files=files)))
+    assert ch.sent == ["Saved, 1 image. Skipped evil.jpg: I can keep images and PDFs, not that."]
+    note = notes.list_recent(1)[0]
+    assert len(notes.attachments(note["id"])) == 1
+
+
+def test_save_note_with_only_refused_files_and_no_caption_saves_nothing():
+    ch = CollectingChannel()
+    files = [Inbound(filename="evil.jpg", mime="image/jpeg", data=b"MZ\x90\x00" + b"\0" * 32)]
+    asyncio.run(notes_plugin.handle("save_note", Ctx(user_id=1, channel=ch, content="", files=files)))
+    assert ch.sent == ["Skipped evil.jpg: I can keep images and PDFs, not that."]
+    assert notes.list_recent(1) == []
+
+
+def test_recall_card_marks_attached_notes_and_sends_the_files():
+    note_id = notes.save(1, "tyre receipt", [])
+    notes.attach(note_id, "receipt.jpg", "image/jpeg", JPEG)
+    notes.save(1, "plain note", [])
+    ch = CollectingChannel()
+    asyncio.run(notes_plugin.handle("recall_notes", Ctx(user_id=1, channel=ch, content="")))
+    card = ch.cards[0]
+    assert card["kind"] == "notes"
+    by_content = {r["content"]: r for r in card["data"]["notes"]}
+    assert by_content["tyre receipt"]["files"] == [{"id": 1, "filename": "receipt.jpg", "mime": "image/jpeg"}]
+    assert by_content["plain note"]["files"] == []
+    assert "tyre receipt (1 image)" in ch.sent[0]
+    assert "plain note" in ch.sent[0] and "plain note (" not in ch.sent[0]
+    assert ch.files == [(JPEG, "receipt.jpg")]
+
+
+def test_recall_sends_at_most_five_files_across_the_reply():
+    for i in range(7):
+        note_id = notes.save(1, f"n{i}", [])
+        notes.attach(note_id, f"{i}.jpg", "image/jpeg", JPEG)
+    ch = CollectingChannel()
+    asyncio.run(notes_plugin.handle("recall_notes", Ctx(user_id=1, channel=ch, content="")))
+    assert len(ch.files) == 5
+
+
+def test_recall_with_a_question_sends_the_matching_notes_files_too():
+    note_id = notes.save(1, "tyre receipt", [])
+    notes.attach(note_id, "receipt.jpg", "image/jpeg", JPEG)
+    ch = CollectingChannel()
+    with patch.object(brain, "recall", return_value="You paid the tyre place."):
+        asyncio.run(notes_plugin.handle("recall_notes", Ctx(user_id=1, channel=ch, content="what did I pay")))
+    assert ch.sent == ["You paid the tyre place."]
+    assert ch.files == [(JPEG, "receipt.jpg")]
+
+
+def test_export_marks_attached_notes():
+    note_id = notes.save(1, "tyre receipt", [])
+    notes.attach(note_id, "a.pdf", "application/pdf", PDF)
+    notes.attach(note_id, "b.pdf", "application/pdf", PDF)
+    ch = CollectingChannel()
+    asyncio.run(notes_plugin.handle("export_notes", Ctx(user_id=1, channel=ch)))
+    text = ch.files[0][0].decode()
+    assert "tyre receipt (2 files)" in text
+
+
+def test_discard_idea_with_an_attachment_removes_it_too():
+    note_id = notes.save(1, "kayak", ["idea"])
+    att = notes.attach(note_id, "k.jpg", "image/jpeg", JPEG)
+    ch = CollectingChannel()
+    asyncio.run(notes_plugin.handle("discard_idea", Ctx(user_id=1, channel=ch, content="kayak")))
+    assert notes.attachment(att) is None
