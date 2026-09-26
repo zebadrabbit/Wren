@@ -538,3 +538,96 @@ def test_shared_location_becomes_a_set_location_message():
         asyncio.run(telegram_plugin._poll_once(None))
     _user_id, text, _channel = handle.await_args.args
     assert text == "my location is 36.4814, -94.2733"
+
+
+# ── inbound files ─────────────────────────────────────────────────────────
+
+JPEG = b"\xff\xd8\xff\xe0" + b"\0" * 32
+
+
+def _photo_update(caption="tyre receipt", size=1234, **extra):
+    return _update(text=None, caption=caption,
+                   photo=[{"file_id": "small", "file_size": 100},
+                          {"file_id": "big", "file_size": size}], **extra)
+
+
+def test_incoming_photo_wants_the_largest_size_and_uses_the_caption():
+    user_id, text, wanted = telegram_plugin._incoming(_photo_update())
+    assert (user_id, text) == (42, "tyre receipt")
+    assert wanted == [{"file_id": "big", "filename": "photo.jpg", "mime": "image/jpeg", "file_size": 1234}]
+
+
+def test_incoming_document_of_an_accepted_type_is_wanted_video_is_not():
+    doc = _update(text=None, caption="manual",
+                  document={"file_id": "d1", "file_name": "manual.pdf", "mime_type": "application/pdf", "file_size": 5})
+    _u, text, wanted = telegram_plugin._incoming(doc)
+    assert text == "manual"
+    assert wanted == [{"file_id": "d1", "filename": "manual.pdf", "mime": "application/pdf", "file_size": 5}]
+    vid = _update(text=None, document={"file_id": "v", "file_name": "x.mp4", "mime_type": "video/mp4"})
+    assert telegram_plugin._incoming(vid) is None
+
+
+def test_incoming_plain_text_has_no_files():
+    assert telegram_plugin._incoming(_update(text="hi")) == (42, "hi", [])
+
+
+def test_uncaptioned_photo_is_still_incoming_with_empty_text():
+    _u, text, wanted = telegram_plugin._incoming(_photo_update(caption=None))
+    assert text == "" and len(wanted) == 1
+
+
+def test_poll_downloads_the_photo_and_hands_core_an_inbound():
+    api = AsyncMock(side_effect=[[_photo_update()], {"file_path": "photos/1.jpg"}])
+    with patch.object(telegram_plugin, "_api", new=api), \
+         patch.object(telegram_plugin, "_download", new=AsyncMock(return_value=JPEG)) as dl, \
+         patch.object(core, "handle_message", new=AsyncMock()) as handle:
+        asyncio.run(telegram_plugin._poll_once(None))
+    assert api.await_args_list[1].args == ("getFile",)
+    assert api.await_args_list[1].kwargs == {"data": {"file_id": "big"}}
+    dl.assert_awaited_once_with("photos/1.jpg")
+    _user, text, _channel = handle.await_args.args
+    files = handle.await_args.kwargs["files"]
+    assert text == "tyre receipt"
+    assert [(f.filename, f.mime, f.data) for f in files] == [("photo.jpg", "image/jpeg", JPEG)]
+
+
+def test_oversize_photo_is_refused_before_any_download():
+    # No caption either, so there is nothing left to hand core; a caption
+    # would still reach core with files=[] (see the failed-download test).
+    from wren import filetypes
+    api = AsyncMock(return_value=[_photo_update(caption=None, size=filetypes.MAX_BYTES + 1)])
+    sent = AsyncMock()
+    with patch.object(telegram_plugin, "_api", new=api), \
+         patch.object(telegram_plugin, "_download", new=AsyncMock()) as dl, \
+         patch.object(telegram_plugin, "_send_text", new=sent), \
+         patch.object(core, "handle_message", new=AsyncMock()) as handle:
+        asyncio.run(telegram_plugin._poll_once(None))
+    dl.assert_not_called()
+    sent.assert_awaited_once_with(42, "That's too big, 10 MB max.")
+    handle.assert_not_called()                 # nothing left to hand over
+
+
+def test_failed_download_is_reported_and_the_caption_still_reaches_core():
+    api = AsyncMock(side_effect=[[_photo_update()], aiohttp.ClientError("boom")])
+    sent = AsyncMock()
+    with patch.object(telegram_plugin, "_api", new=api), \
+         patch.object(telegram_plugin, "_send_text", new=sent), \
+         patch.object(core, "handle_message", new=AsyncMock()) as handle:
+        asyncio.run(telegram_plugin._poll_once(None))
+    sent.assert_awaited_once_with(42, "Couldn't fetch that photo, try again.")
+    _user, text, _channel = handle.await_args.args
+    assert text == "tyre receipt" and handle.await_args.kwargs["files"] == []
+
+
+def test_sticker_is_still_skipped():
+    assert telegram_plugin._incoming(_update(text=None, sticker={"file_id": "s"})) is None
+
+
+def test_send_file_posts_a_photo_for_image_bytes_and_a_document_otherwise():
+    api = AsyncMock(return_value={})
+    with patch.object(telegram_plugin, "_api", new=api):
+        asyncio.run(telegram_plugin.TelegramChannel(42).send_file(JPEG, "a.jpg"))
+        asyncio.run(telegram_plugin.TelegramChannel(42).send_file(b"%PDF-1.7\n", "a.pdf"))
+    assert api.await_args_list[0].args == ("sendPhoto",)
+    assert _form_fields(api.await_args_list[0].kwargs["data"])["photo"] == JPEG
+    assert api.await_args_list[1].args == ("sendDocument",)

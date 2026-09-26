@@ -19,7 +19,9 @@ import aiohttp
 
 from .. import config
 from .. import core
+from .. import filetypes
 from .. import router
+from ..channel import Inbound
 from . import chunking
 
 ROLE = "chat"          # "chat" | "input" | "output"
@@ -103,6 +105,28 @@ async def _api(method: str, *, data=None):
     return body.get("result")
 
 
+async def _download(file_path: str) -> bytes:
+    """GET a file Telegram has told us the path of (via getFile). Same
+    timeout and the same token scrubbing as _api, for the same reason."""
+    url = f"{API_ROOT}/file/bot{config.TELEGRAM_TOKEN}/{file_path}"
+    client_timeout = aiohttp.ClientTimeout(total=_CLIENT_TIMEOUT_SECONDS)
+    try:
+        async with aiohttp.ClientSession(timeout=client_timeout) as session:
+            async with session.get(url) as resp:
+                resp.raise_for_status()
+                return await resp.read()
+    except aiohttp.ClientError as e:
+        detail = str(e)
+        if config.TELEGRAM_TOKEN:
+            detail = detail.replace(config.TELEGRAM_TOKEN, "<token>")
+        raise aiohttp.ClientError(f"{type(e).__name__}: {detail}") from None
+
+
+async def _fetch_file(file_id: str) -> bytes:
+    info = await _api("getFile", data={"file_id": file_id})
+    return await _download(info["file_path"])
+
+
 def _chunks(text: str) -> list[str]:
     """`text` split into pieces Telegram will accept, longest-first.
 
@@ -160,6 +184,11 @@ class TelegramChannel:
     async def send_file(self, data: bytes, filename: str) -> None:
         form = aiohttp.FormData()
         form.add_field("chat_id", str(self._chat_id))
+        if filetypes.sniff(data) in filetypes.IMAGE_MIMES:
+            # a photo shows inline; a document is a download
+            form.add_field("photo", data, filename=filename, content_type="application/octet-stream")
+            await _api("sendPhoto", data=form)
+            return
         form.add_field("document", data, filename=filename,
                        content_type="application/octet-stream")
         await _api("sendDocument", data=form)
@@ -198,32 +227,45 @@ class TelegramChannel:
             logging.warning(f"telegram sendChatAction failed: {e}")
 
 
-def _incoming(update: dict) -> tuple[int, str] | None:
-    """(user_id, text) for an update Wren should act on, else None.
+def _incoming(update: dict) -> tuple[int, str, list[dict]] | None:
+    """(user_id, text, wanted_files) for an update Wren should act on, else None.
 
     Everything else is skipped in one place: edited messages and channel posts
     arrive under different keys than "message", groups are filtered the way
-    discord_plugin filters to DMs, and photos/stickers/voice notes simply have
-    no "text". A shared location is the one non-text message that is acted on.
+    discord_plugin filters to DMs, and stickers/voice notes/video have neither
+    "text" nor an accepted file. A photo, or a document of an accepted type,
+    is the one non-text message that is acted on; its caption is the text.
+    `wanted_files` are descriptors -- downloading is async and happens in
+    _poll_once, so this stays a pure function.
     """
     message = update.get("message")
     if not isinstance(message, dict):
         return None
     if (message.get("chat") or {}).get("type") != "private":
         return None
-    text = message.get("text")
+    user_id = (message.get("from") or {}).get("id")
+    if user_id is None:
+        return None
+    wanted: list[dict] = []
+    photo = message.get("photo")
+    if isinstance(photo, list) and photo:
+        largest = photo[-1]                      # Telegram orders sizes ascending
+        wanted.append({"file_id": largest.get("file_id"), "filename": "photo.jpg",
+                       "mime": "image/jpeg", "file_size": largest.get("file_size")})
+    doc = message.get("document")
+    if isinstance(doc, dict) and doc.get("mime_type") in filetypes.ACCEPTED:
+        wanted.append({"file_id": doc.get("file_id"), "filename": doc.get("file_name") or "file",
+                       "mime": doc["mime_type"], "file_size": doc.get("file_size")})
+    text = message.get("text") or message.get("caption") or ""
     location = message.get("location")
-    if not text and isinstance(location, dict):
+    if not text and not wanted and isinstance(location, dict):
         # The paperclip "Location" share is how a phone hands over its GPS fix.
         # Rendered as the words a user would type so weather_skill.set_location
         # stays the only write path -- translation, not domain logic.
         text = f"my location is {location.get('latitude')}, {location.get('longitude')}"
-    if not text:
+    if not text and not wanted:
         return None
-    user_id = (message.get("from") or {}).get("id")
-    if user_id is None:
-        return None
-    return user_id, text
+    return user_id, text, wanted
 
 
 async def _poll_once(offset: int | None) -> int | None:
@@ -243,8 +285,23 @@ async def _poll_once(offset: int | None) -> int | None:
         parsed = _incoming(update)
         if parsed is None:
             continue
-        user_id, text = parsed
+        user_id, text, wanted = parsed
         try:
+            files: list[Inbound] = []
+            for want in wanted:
+                size = want.get("file_size")
+                if size is not None and size > filetypes.MAX_BYTES:
+                    await _send_text(user_id, "That's too big, 10 MB max.")
+                    continue
+                try:
+                    data = await _fetch_file(want["file_id"])
+                except (aiohttp.ClientError, TelegramError, KeyError) as e:
+                    logging.warning(f"telegram: file download failed: {e}")
+                    await _send_text(user_id, "Couldn't fetch that photo, try again.")
+                    continue
+                files.append(Inbound(filename=want["filename"], mime=want["mime"], data=data))
+            if not text and not files:
+                continue                         # every file refused, nothing to say
             # Two different ids on purpose: core gets the Wren user id (see
             # _wren_user_id), the channel keeps the raw Telegram chat id it has
             # to answer into. In a private chat the chat id IS the user id, so
@@ -257,7 +314,8 @@ async def _poll_once(offset: int | None) -> int | None:
             # A task would be more responsive but needs a strong reference kept
             # somewhere (fire-and-forget tasks can be garbage collected
             # mid-flight) and lets two replies interleave in one chat.
-            await core.handle_message(_wren_user_id(user_id), text, TelegramChannel(user_id))
+            await core.handle_message(_wren_user_id(user_id), text, TelegramChannel(user_id),
+                                      files=files)
         except Exception as e:
             # Never log the body — Telegram DMs are as private as reminders
             # (see http_plugin.notify).
