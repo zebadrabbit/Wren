@@ -4,6 +4,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from openai import OpenAI
 from . import config
+from . import providers
 
 _SYSTEM = """You are Wren, a private personal assistant. You are short, structured, and ready. No filler, no affirmations.
 
@@ -77,6 +78,18 @@ def _complete(messages: list[dict], temperature: float, max_tokens: int = 400,
     last_exc: Exception | None = None
     attempts = [{"response_format": {"type": "json_object"}}, {}] if json_mode else [{}]
     for provider in config.LLM_CHAIN:
+        if provider["name"] == "ollama":
+            # native endpoint, thinking off -- see providers.ollama_chat for why
+            # the OpenAI-shaped path below is not enough for Ollama
+            try:
+                content, usage = providers.ollama_chat(provider, messages, temperature, max_tokens, json_mode)
+                _count(usage)
+                _last_provider = provider
+                return content.strip()
+            except Exception as e:
+                logging.warning(f"LLM provider 'ollama' failed: {e}")
+                last_exc = e
+            continue
         for extra in attempts:
             try:
                 client = _get_client(provider)
@@ -89,15 +102,19 @@ def _complete(messages: list[dict], temperature: float, max_tokens: int = 400,
                 )
                 usage = getattr(resp, "usage", None)
                 if usage is not None:
-                    _token_usage["prompt"] += usage.prompt_tokens or 0
-                    _token_usage["completion"] += usage.completion_tokens or 0
-                    _token_usage["total"] += usage.total_tokens or 0
+                    _count({"prompt_tokens": usage.prompt_tokens, "completion_tokens": usage.completion_tokens,
+                            "total_tokens": usage.total_tokens})
                 _last_provider = provider
                 return resp.choices[0].message.content.strip()
             except Exception as e:
                 logging.warning(f"LLM provider '{provider['name']}' failed: {e}")
                 last_exc = e
     raise last_exc
+
+def _count(usage: dict) -> None:
+    _token_usage["prompt"] += usage.get("prompt_tokens") or 0
+    _token_usage["completion"] += usage.get("completion_tokens") or 0
+    _token_usage["total"] += usage.get("total_tokens") or 0
 
 def status() -> dict:
     return {

@@ -13,6 +13,17 @@ from wren import brain, config
 from wren import contacts
 
 @pytest.fixture(autouse=True)
+def no_network(monkeypatch):
+    # The ollama provider posts to a real server (providers.ollama_chat), and
+    # the chain in this file names it. A test that wants that path patches
+    # providers.httpx.post or providers.ollama_chat itself; nothing may hit
+    # 192.168.x.x from the suite.
+    from wren import providers as _providers
+    def _refuse(*a, **k):
+        raise AssertionError("test reached the network via providers.httpx.post")
+    monkeypatch.setattr(_providers.httpx, "post", _refuse)
+
+@pytest.fixture(autouse=True)
 def tmp_db(tmp_path, monkeypatch):
     monkeypatch.setenv("WREN_DB", str(tmp_path / "wren.db"))
     contacts.init_db()
@@ -72,18 +83,15 @@ def test_chat_returns_string():
     assert isinstance(result, str)
 
 def test_chat_falls_back_to_second_provider_on_failure():
-    primary = _client_raising(RuntimeError("primary down"))
-    secondary = _client_returning("fallback reply")
-
-    def fake_get_client(provider):
-        return primary if provider["name"] == "lmstudio" else secondary
-
-    with patch.object(brain, "_get_client", side_effect=fake_get_client):
+    # the chain here is lmstudio then ollama; ollama has its own transport
+    with patch.object(brain, "_get_client", return_value=_client_raising(RuntimeError("primary down"))), \
+         patch.object(brain.providers, "ollama_chat", return_value=("fallback reply", {})):
         result = brain.chat("hey")
     assert result == "fallback reply"
 
 def test_chat_raises_when_all_providers_fail():
-    with patch.object(brain, "_get_client", return_value=_client_raising(RuntimeError("down"))):
+    with patch.object(brain, "_get_client", return_value=_client_raising(RuntimeError("down"))), \
+         patch.object(brain.providers, "ollama_chat", side_effect=RuntimeError("down too")):
         with pytest.raises(RuntimeError):
             brain.chat("hey")
 
@@ -334,13 +342,8 @@ def test_complete_updates_last_provider_on_success(monkeypatch):
 
 def test_complete_updates_last_provider_after_fallback(monkeypatch):
     monkeypatch.setattr(brain, "_last_provider", None)
-    primary = _client_raising(RuntimeError("primary down"))
-    secondary = _client_returning("fallback reply")
-
-    def fake_get_client(provider):
-        return primary if provider["name"] == "lmstudio" else secondary
-
-    with patch.object(brain, "_get_client", side_effect=fake_get_client):
+    with patch.object(brain, "_get_client", return_value=_client_raising(RuntimeError("primary down"))), \
+         patch.object(brain.providers, "ollama_chat", return_value=("fallback reply", {})):
         brain.chat("hey")
     assert brain._last_provider["name"] == "ollama"
 
@@ -522,3 +525,73 @@ def test_detect_intent_never_sees_memories():
         brain.detect_intent(1, "hi")
     system = client.chat.completions.create.call_args.kwargs["messages"][0]["content"]
     assert "know about" not in system
+
+
+# --- Ollama speaks its native endpoint, thinking off (2026-09-26) -----------
+# Gemma 4 reasons for a few hundred characters before every answer, and
+# Ollama 0.34 ignores the thinking switch on its OpenAI-compatible endpoint;
+# the classifier's 200-token cap then cuts the JSON off. The native /api/chat
+# honours think=false, so the ollama provider uses it. Everything else keeps
+# the OpenAI-shaped path.
+
+from wren import providers
+
+_OLLAMA = {"name": "ollama", "base_url": "http://h:1/v1", "api_key": "not-needed", "model": "gemma4"}
+
+class _FakeResp:
+    def __init__(self, body, status=200):
+        self._body, self.status_code = body, status
+    def json(self):
+        return self._body
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RuntimeError(f"HTTP {self.status_code}")
+
+def _capture_post(body):
+    calls = []
+    def post(url, json=None, timeout=None):
+        calls.append((url, json))
+        return _FakeResp(body)
+    return calls, post
+
+def test_ollama_uses_the_native_endpoint_with_thinking_off(monkeypatch):
+    monkeypatch.setattr(config, "LLM_CHAIN", [_OLLAMA])
+    monkeypatch.setattr(brain, "_token_usage", {"prompt": 0, "completion": 0, "total": 0})
+    calls, post = _capture_post({"message": {"content": '{"intent": "help"}'},
+                                 "prompt_eval_count": 40, "eval_count": 6})
+    monkeypatch.setattr(providers.httpx, "post", post)
+    with patch.object(brain, "_get_client", side_effect=AssertionError("must not use the OpenAI client")):
+        out = brain._complete([{"role": "user", "content": "help"}], temperature=0.1, max_tokens=200, json_mode=True)
+    assert out == '{"intent": "help"}'
+    url, body = calls[0]
+    assert url == "http://h:1/api/chat"
+    assert body["model"] == "gemma4" and body["stream"] is False and body["think"] is False
+    assert body["format"] == "json"
+    assert body["options"] == {"temperature": 0.1, "num_predict": 200}
+    assert body["messages"] == [{"role": "user", "content": "help"}]
+    assert brain._token_usage == {"prompt": 40, "completion": 6, "total": 46}
+    assert brain._last_provider["name"] == "ollama"
+
+def test_ollama_prose_calls_do_not_force_json(monkeypatch):
+    monkeypatch.setattr(config, "LLM_CHAIN", [_OLLAMA])
+    calls, post = _capture_post({"message": {"content": "Hello."}})
+    monkeypatch.setattr(providers.httpx, "post", post)
+    assert brain._complete([{"role": "user", "content": "hi"}], temperature=0.7) == "Hello."
+    assert "format" not in calls[0][1]
+
+def test_ollama_base_url_without_v1_still_reaches_api_chat(monkeypatch):
+    monkeypatch.setattr(config, "LLM_CHAIN", [dict(_OLLAMA, base_url="http://h:1")])
+    calls, post = _capture_post({"message": {"content": "x"}})
+    monkeypatch.setattr(providers.httpx, "post", post)
+    brain._complete([{"role": "user", "content": "hi"}], temperature=0.7)
+    assert calls[0][0] == "http://h:1/api/chat"
+
+def test_ollama_failure_falls_through_to_the_next_provider(monkeypatch):
+    lmstudio = {"name": "lmstudio", "base_url": "http://l:1/v1", "api_key": "not-needed", "model": "qwen"}
+    monkeypatch.setattr(config, "LLM_CHAIN", [_OLLAMA, lmstudio])
+    def post(url, json=None, timeout=None):
+        return _FakeResp({"error": "model not found"}, status=404)
+    monkeypatch.setattr(providers.httpx, "post", post)
+    with patch.object(brain, "_get_client", return_value=_client_returning("from lmstudio")):
+        assert brain._complete([{"role": "user", "content": "hi"}], temperature=0.7) == "from lmstudio"
+    assert brain._last_provider["name"] == "lmstudio"

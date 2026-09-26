@@ -246,6 +246,21 @@ it is pointed at a model too small to classify intent reliably.
 Worth doing because it reads better daily, not because it wins a comparison
 against the dozen mature self-hosted notes apps.
 
+## Model: Gemma 4 E4B (2026-09-26)
+
+qwen2.5:7b was chosen because it was quick and easy; the purpose grew. A
+thirty-phrase household intent probe (scratch script, offline, live service
+untouched) scored qwen 29/30 at 0.7 s median and Gemma 4 E4B 27/30 at 1.5 s
+through the OpenAI-compatible endpoint — every Gemma miss a JSON cut off by
+its own reasoning, which Ollama 0.34 cannot switch off on that endpoint.
+Through Ollama's native `/api/chat` with `think: false`, Gemma scored 30/30 at
+0.8 s, with cleaner extractions and the right Tuesday where qwen picked a past
+date. So `providers.ollama_chat` speaks the native endpoint (thinking off,
+`format: json` when the classifier asks), every other provider keeps the
+OpenAI-shaped path, and `.env` moved to `gemma4-e4b-32k`. Chat, memory
+extraction and recall were spot-checked on Gemma before the switch. The same
+transport carries images, which is where vision starts.
+
 ## Household gaps — Phase 7 (2026-09-26)
 
 Ten items chosen on 2026-09-26 after asking what a household actually hits,

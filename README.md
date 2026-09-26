@@ -26,6 +26,11 @@ It runs on your hardware and your data stays home. That is a statement about
 where it runs, not a security guarantee — see [Security](#security-expectations)
 for what that does and does not buy you.
 
+The name is a nod to the Wrens of Bletchley Park — the Women's Royal Naval
+Service ratings who ran the Bombe and Colossus machines around the clock and
+whose work stayed behind the scenes for decades. That is the kind of help Wren
+is meant to be: quiet, reliable, doing the hard work in the background.
+
 ## Setup
 
 1. `python3 -m venv venv && source venv/bin/activate`
