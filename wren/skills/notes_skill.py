@@ -36,6 +36,9 @@ def _marker(note_id: int) -> str:
     return f" ({_describe(atts)})" if atts else ""
 
 
+# ponytail: every card render ships the note's files as base64 (five max), so
+# a reopen of a photo-heavy conversation is tens of MB. Fine for a household;
+# the upgrade is GET /api/attachments/{id} with an owner check and lazy <img>.
 async def _send_attachments(ctx: Ctx, note_ids: list[int]) -> None:
     """Send the files of these notes, in note order, stopping at the cap."""
     sent = 0
@@ -100,7 +103,7 @@ async def handle(intent: str, ctx: Ctx) -> None:
             notes.delete(note_id)
             await ctx.channel.send(" ".join(skipped))
             return
-        parts = ([f"Saved, {_describe(kept)}."] if kept else []) + skipped
+        parts = [f"Saved, {_describe(kept)}." if kept else "Saved."] + skipped
         await ctx.channel.send(" ".join(parts))
 
     elif intent == "recall_notes":

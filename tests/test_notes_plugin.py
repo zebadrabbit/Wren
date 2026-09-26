@@ -318,6 +318,14 @@ def test_save_note_with_only_refused_files_and_no_caption_saves_nothing():
     assert notes.list_recent(1) == []
 
 
+def test_save_note_with_only_refused_files_and_a_caption_still_says_saved():
+    ch = CollectingChannel()
+    files = [Inbound(filename="evil.jpg", mime="image/jpeg", data=b"MZ\x90\x00" + b"\0" * 32)]
+    asyncio.run(notes_plugin.handle("save_note", Ctx(user_id=1, channel=ch, content="keep this", files=files)))
+    assert ch.sent == ["Saved. Skipped evil.jpg: I can keep images and PDFs, not that."]
+    assert notes.list_recent(1)[0]["content"] == "keep this"
+
+
 def test_recall_card_marks_attached_notes_and_sends_the_files():
     note_id = notes.save(1, "tyre receipt", [])
     notes.attach(note_id, "receipt.jpg", "image/jpeg", JPEG)
