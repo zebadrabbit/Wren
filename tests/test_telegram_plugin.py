@@ -605,7 +605,7 @@ def test_oversize_photo_is_refused_before_any_download():
     handle.assert_not_called()                 # nothing left to hand over
 
 
-def test_failed_download_is_reported_and_the_caption_still_reaches_core():
+def test_failed_download_is_reported_and_the_caption_is_dropped_with_it():
     api = AsyncMock(side_effect=[[_photo_update()], aiohttp.ClientError("boom")])
     sent = AsyncMock()
     with patch.object(telegram_plugin, "_api", new=api), \
@@ -613,8 +613,10 @@ def test_failed_download_is_reported_and_the_caption_still_reaches_core():
          patch.object(core, "handle_message", new=AsyncMock()) as handle:
         asyncio.run(telegram_plugin._poll_once(None))
     sent.assert_awaited_once_with(42, "Couldn't fetch that photo, try again.")
-    _user, text, _channel = handle.await_args.args
-    assert text == "tyre receipt" and handle.await_args.kwargs["files"] == []
+    # every wanted file was refused: the refusal reply already told the user
+    # to resend, and a bare caption is not a command on its own -- the HTTP
+    # door does not classify a bare caption as one either.
+    handle.assert_not_called()
 
 
 def test_malformed_getfile_response_is_reported_not_swallowed():

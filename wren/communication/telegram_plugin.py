@@ -314,6 +314,14 @@ async def _poll_once(offset: int | None) -> int | None:
                 files.append(Inbound(filename=want["filename"], mime=want["mime"], data=data))
             if not text and not files:
                 continue                         # every file refused, nothing to say
+            if wanted and not files:
+                # Every file the message wanted was refused (too big, or the
+                # download failed) and the refusal reply already told the
+                # user to resend. A caption riding along on its own is not a
+                # command -- the HTTP door does not classify a bare caption
+                # as one either -- so drop it rather than send it to core
+                # unattached to whatever it was describing.
+                continue
             # Two different ids on purpose: core gets the Wren user id (see
             # _wren_user_id), the channel keeps the raw Telegram chat id it has
             # to answer into. In a private chat the chat id IS the user id, so
