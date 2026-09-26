@@ -189,15 +189,7 @@ and Telegram get prose, each plugin chunking at its own platform's limit.
 
 Ordered roughly by value, not by size.
 
-**Inbound images and files.** The clearest gap between how notes actually get
-used and what Wren accepts: a screenshot or a photo cannot enter through any
-door. `telegram_plugin._incoming` skips every message without a `text` field,
-which is exactly how photos, stickers and voice notes arrive; Discord
-attachments are ignored the same way. Needs blob storage, an inbound-file
-capability on the `Channel` protocol (the mirror of the `send_file` that
-already exists for exports), and per-surface handling. A real feature, not an
-afternoon — and it unlocks a use that exists today rather than improving one
-that already works.
+**Inbound images and files.** Landed 2026-09-26 (spec: docs/superpowers/specs/2026-09-26-inbound-images-design.md; Telegram and web chat, images and PDFs, no vision). Discord and vision remain open.
 
 **Summarise large collections in prose.** Already specified in
 `docs/superpowers/specs/2026-08-17-skill-cards-and-spaces-design.md`: past ~15

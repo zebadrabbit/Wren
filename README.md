@@ -117,7 +117,7 @@ The machine API, used by the desktop voice client:
 | Route | Body | Returns |
 |---|---|---|
 | `GET /health` | — | `{"ok": true}` |
-| `POST /message` | `{"text": "..."}` | `{"replies": [...], "files": [...]}` |
+| `POST /message` | `{"text": "..."}` or multipart `text` + `file` parts | `{"replies": [...], "files": [{filename, mime, data}]}` |
 | `POST /voice` | raw WAV bytes | `{"transcript": "...", "replies": [...]}` |
 
 All routes but `/health` need `Authorization: Bearer <token>`. Files come
@@ -135,6 +135,14 @@ curl -s localhost:8787/message \
   -H "Authorization: Bearer $WREN_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"text":"add potatoes to shopping"}'
+```
+
+A photo or PDF goes in as multipart and becomes a note with the caption as
+its text:
+
+```bash
+curl -s localhost:8787/message -H "Authorization: Bearer $WREN_TOKEN" \
+  -F text="tyre place receipt" -F file=@receipt.jpg
 ```
 
 It binds `127.0.0.1` by default, and Wren serves plain HTTP with no TLS of its
@@ -362,6 +370,14 @@ alternatives with the same profile.
 **Notes**
 - "remind me to call the plumber" → saves a note
 - "what do I need to do" → recalls and answers from your notes
+
+**Photos and PDFs.** Send a photo on Telegram, or paste or drop one into the
+web chat, with a caption: it becomes a note with the caption as its text and
+the file attached. Without a caption Wren asks "What is this?" and your next
+message is the caption. "Show my notes" marks attached notes and sends the
+files back, five per reply at most; the web chat shows images inline.
+Images (JPEG, PNG, WebP, GIF) and PDFs, 10 MB each. Wren keeps the file; it
+does not look at it.
 
 **Ideas** (separate from notes — for things to revisit or expand later)
 - "remember this idea: build a treehouse"
