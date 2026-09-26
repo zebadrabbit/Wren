@@ -1080,6 +1080,9 @@ $("#text").addEventListener("paste", e => {
   e.preventDefault();
   addFiles(items.map(i => i.getAsFile()).filter(Boolean));
 });
+// A drop that misses the composer must not navigate the tab to the file.
+document.addEventListener("dragover", e => e.preventDefault());
+document.addEventListener("drop", e => e.preventDefault());
 $("#composer").ondragover = e => { e.preventDefault(); $("#composer").classList.add("dragover"); };
 $("#composer").ondragleave = () => $("#composer").classList.remove("dragover");
 $("#composer").ondrop = e => {

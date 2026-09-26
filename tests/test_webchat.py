@@ -941,6 +941,11 @@ def test_page_has_the_attachment_plumbing():
     assert '.ondrop' in page or 'addEventListener("drop"' in page
 
 
+def test_a_drop_outside_the_composer_does_not_navigate_the_tab():
+    page = _page()
+    assert 'document.addEventListener("drop"' in page
+
+
 def test_api_helper_does_not_force_json_content_type_on_form_bodies():
     page = _page()
     assert "instanceof FormData" in page
