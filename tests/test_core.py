@@ -571,6 +571,15 @@ def test_expired_parked_files_are_reported_then_the_text_is_handled_normally(det
     assert OWNER not in core._pending_files
 
 
+def test_a_captioned_photo_drains_a_parked_bare_one(detected, notes_handler):
+    ch = CollectingChannel()
+    asyncio.run(core.handle_message(OWNER, "", ch, files=[_photo("first.jpg")]))
+    asyncio.run(core.handle_message(OWNER, "receipt", ch, files=[_photo("second.jpg")]))
+    assert OWNER not in core._pending_files
+    (_intent, ctx), = notes_handler
+    assert [f.filename for f in ctx.files] == ["second.jpg"]
+
+
 def test_a_strangers_files_are_dropped_with_their_text(detected, notes_handler):
     ch = CollectingChannel()
     asyncio.run(core.handle_message(999, "mine", ch, files=[_photo()]))

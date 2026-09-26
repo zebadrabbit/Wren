@@ -102,6 +102,12 @@ _NO = re.compile(
 # whatever it says -- a wrong caption is one note to delete, while guessing
 # whether "what's the weather" was meant as one is worse. Process-local for
 # the same reason as _pending.
+#
+# Keyed by Wren user id, not by surface: the park is per person, so a bare
+# photo sent on Telegram can be captioned from a message typed in the web
+# chat a minute later. It holds the raw bytes in RAM until the next text or
+# expiry, which is fine bounded by a household's size and message rate but
+# would not scale past that.
 _pending_files: dict[int, tuple[list[Inbound], float]] = {}
 _FILES_TTL = 300.0
 
@@ -202,6 +208,11 @@ async def handle_message(user_id: int, text: str, channel: Channel, *, source: s
                 await channel.send("Something went wrong, try again.")
                 await channel.ack("error")
             return
+
+    if files:
+        # a new photo, captioned or not, supersedes a parked one: the parked
+        # one must not hijack the user's next unrelated message
+        _pending_files.pop(user_id, None)
 
     # A caption arriving for parked files, or a bare photo to park. After the
     # yes/no check on purpose: an answer to a question core asked is still an
