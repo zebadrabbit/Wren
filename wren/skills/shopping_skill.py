@@ -1,5 +1,6 @@
 import re
 
+from .. import brain
 from .. import config
 from . import shopping_store as shopping
 from .. import router
@@ -9,6 +10,9 @@ from ..channel import Ctx
 INTENTS = ["add_shopping_item", "remove_shopping_item", "restore_shopping_item",
            "clear_shopping", "recall_shopping", "send_shopping_list"]
 DESTRUCTIVE = ["remove_shopping_item", "clear_shopping"]
+# "add these to the list" with a photo of a receipt, a fridge or a handwritten
+# list: the items are read off the picture (brain.items_in)
+ACCEPTS_FILES = ["add_shopping_item"]
 # "the list", not "the shopping list": the template cannot see which named
 # list the sentence was about, and confirming the wrong name is worse than
 # confirming no name.
@@ -50,7 +54,18 @@ def _on(name: str) -> str:
 
 async def handle(intent: str, ctx: Ctx) -> None:
     lst = _list_name(ctx)
-    if intent == "add_shopping_item":
+    if intent == "add_shopping_item" and ctx.files:
+        who = config.id_to_name()[ctx.user_id]
+        added = [item for item in brain.items_in(ctx.files, ctx.content)
+                 if shopping.add(item, added_by=who, list_name=lst)[1]]
+        if not added:
+            await ctx.channel.send("I couldn't read any items off that picture.")
+        else:
+            names = ", ".join(added[:-1]) + (" and " if len(added) > 1 else "") + added[-1]
+            await ctx.channel.send(flourish.flourish(
+                f"Added {names}{' to' + _on(lst) if lst != 'shopping' else ''}."))
+
+    elif intent == "add_shopping_item":
         _, was_new = shopping.add(ctx.content, added_by=config.id_to_name()[ctx.user_id], list_name=lst)
         if was_new:
             await ctx.channel.send(flourish.flourish(

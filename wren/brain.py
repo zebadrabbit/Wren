@@ -1,3 +1,4 @@
+import base64
 import json
 import logging
 from datetime import datetime
@@ -5,6 +6,7 @@ from zoneinfo import ZoneInfo
 from openai import OpenAI
 from . import config
 from . import providers
+from . import filetypes
 
 _SYSTEM = """You are Wren, a private personal assistant. You are short, structured, and ready. No filler, no affirmations.
 
@@ -247,3 +249,52 @@ def summarize_web(query: str, content) -> str:
         temperature=0.3,
         max_tokens=500,
     )
+
+
+# ---------------------------------------------------------------- vision
+# Pictures go to the model on the native Ollama transport only: it takes
+# images per message, and Gemma 4 reads them. The OpenAI-shaped providers are
+# not asked -- a text-only model handed an image is a 400 at best.
+
+_SEE = """You are Wren, a private household assistant. Answer the question about the picture(s) in one or two plain sentences. If there is no question, say what the picture shows. No preamble."""
+
+_ITEMS = """List the items visible in the picture(s) that someone would put on a list: products on a receipt, food in a fridge, lines of a handwritten list. Short generic names, lowercase, one entry each, no quantities or prices. Reply with JSON only: {"items": ["milk", "eggs"]}. Empty list if there is nothing of the kind."""
+
+
+def _images(files) -> list[str]:
+    return [base64.b64encode(f.data).decode() for f in files if f.mime in filetypes.IMAGE_MIMES]
+
+
+def _see(files, system: str, user: str, json_mode: bool) -> str | None:
+    """One call with the images on the user turn, or None when it cannot be
+    made here (no ollama provider, no image among the files)."""
+    provider = next((p for p in config.LLM_CHAIN if p["name"] == "ollama"), None)
+    images = _images(files)
+    if provider is None or not images:
+        return None
+    messages = [{"role": "system", "content": system},
+                {"role": "user", "content": user, "images": images}]
+    content, usage = providers.ollama_chat(provider, messages, temperature=0.2,
+                                           max_tokens=300, json_mode=json_mode)
+    _count(usage)
+    return content.strip()
+
+
+def describe(files, question: str) -> str:
+    """Answer a question about the pictures, as prose."""
+    if not _images(files):
+        return "I can read pictures, not PDFs yet." if files else "There's no picture to look at."
+    out = _see(files, _SEE, question or "What is in this picture?", json_mode=False)
+    return out if out is not None else "This model can't see pictures."
+
+
+def items_in(files, hint: str) -> list[str]:
+    """The list-worthy items visible in the pictures; empty when unreadable."""
+    raw = _see(files, _ITEMS, hint or "List the items.", json_mode=True)
+    if not raw:
+        return []
+    try:
+        items = json.loads(raw).get("items", [])
+    except (ValueError, AttributeError):
+        return []
+    return [str(i).strip() for i in items if str(i).strip()]

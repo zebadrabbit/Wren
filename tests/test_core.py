@@ -539,10 +539,12 @@ def test_files_without_a_caption_are_parked_and_wren_asks(detected, notes_handle
 def test_the_next_message_becomes_the_caption_for_parked_files(detected, notes_handler):
     ch = CollectingChannel()
     asyncio.run(core.handle_message(OWNER, "", ch, files=[_photo("park.jpg")]))
-    asyncio.run(core.handle_message(OWNER, "what's the weather", ch, files=None))
+    asyncio.run(core.handle_message(OWNER, "the tyre place receipt", ch, files=None))
     (intent, ctx), = notes_handler
     assert intent == "save_note"
-    assert ctx.content == "what's the weather"        # whatever it says, it is the caption
+    # whatever it says, it is the caption -- unless it is a question, which
+    # is answered from the picture instead (see the vision tests below)
+    assert ctx.content == "the tyre place receipt"
     assert [f.filename for f in ctx.files] == ["park.jpg"]
     assert OWNER not in core._pending_files
 
@@ -608,3 +610,63 @@ def test_files_when_notes_is_switched_off_say_so(detected, notes_handler, monkey
     asyncio.run(core.handle_message(OWNER, "receipt", ch, files=[_photo()]))
     assert ch.sent == ["Notes is switched off, so I can't keep that."]
     assert notes_handler == []
+
+
+# --- vision: a caption that is a question is answered, not saved ----------
+
+@pytest.fixture
+def vision(monkeypatch):
+    seen = []
+    def fake_describe(files, question):
+        seen.append((files, question))
+        return "A red mug on a desk."
+    monkeypatch.setattr(core.brain, "describe", fake_describe)
+    return seen
+
+def test_a_question_caption_is_answered_from_the_picture_and_not_saved(detected, notes_handler, vision):
+    detected(intent="chat", content="what's in this?")
+    ch = CollectingChannel()
+    asyncio.run(core.handle_message(OWNER, "what's in this?", ch, files=[_photo()]))
+    assert ch.sent == ["A red mug on a desk."]
+    assert notes_handler == []
+    (files, question), = vision
+    assert [f.filename for f in files] == ["a.jpg"] and question == "what's in this?"
+
+@pytest.mark.parametrize("caption", ["is this cable usb-c", "What plant is this", "how many eggs are left"])
+def test_question_words_count_as_questions_without_a_question_mark(detected, notes_handler, vision, caption):
+    detected(intent="chat", content=caption)
+    ch = CollectingChannel()
+    asyncio.run(core.handle_message(OWNER, caption, ch, files=[_photo()]))
+    assert notes_handler == [] and len(vision) == 1
+
+def test_a_statement_caption_is_still_a_note_even_if_the_classifier_guessed_elsewhere(detected, notes_handler, vision):
+    detected(intent="get_weather", content="whatever")
+    ch = CollectingChannel()
+    asyncio.run(core.handle_message(OWNER, "tyre place receipt", ch, files=[_photo()]))
+    (intent, ctx), = notes_handler
+    assert intent == "save_note" and vision == []
+
+def test_a_file_accepting_intent_gets_the_files_instead_of_a_note(detected, notes_handler, vision, monkeypatch):
+    seen = []
+    class FakeShopping:
+        INTENTS = ["add_shopping_item"]
+        ACCEPTS_FILES = ["add_shopping_item"]
+        @staticmethod
+        async def handle(intent, ctx):
+            seen.append((intent, ctx)); await ctx.channel.send("added")
+    monkeypatch.setitem(registry.INTENT_HANDLERS, "add_shopping_item", FakeShopping)
+    monkeypatch.setattr(registry, "PLUGINS", [FakeShopping])
+    detected(intent="add_shopping_item", content="these")
+    ch = CollectingChannel()
+    asyncio.run(core.handle_message(OWNER, "add these to the shopping list", ch, files=[_photo()]))
+    (intent, ctx), = seen
+    assert intent == "add_shopping_item" and [f.filename for f in ctx.files] == ["a.jpg"]
+    assert notes_handler == [] and vision == [] and ch.sent == ["added"]
+
+def test_the_answer_to_what_is_this_can_itself_be_a_question(detected, notes_handler, vision):
+    detected(intent="chat", content="what's in it?")
+    ch = CollectingChannel()
+    asyncio.run(core.handle_message(OWNER, "", ch, files=[_photo()]))
+    assert ch.sent == ["What is this?"]
+    asyncio.run(core.handle_message(OWNER, "what's in it?", ch))
+    assert ch.sent[-1] == "A red mug on a desk." and notes_handler == []

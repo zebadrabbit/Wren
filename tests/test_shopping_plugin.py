@@ -220,3 +220,43 @@ def test_the_shopping_card_params_are_unchanged_for_the_default_list():
     asyncio.run(shopping_plugin.handle("recall_shopping", Ctx(user_id=1, channel=ch, content="")))
     assert ch.cards[0]["params"] == {"content": "", "list": "shopping"}
     assert ch.cards[0]["data"]["list"] == "shopping"
+
+
+# --- a photo of a receipt, a fridge or a handwritten list ---------------------
+from wren.channel import Inbound
+from wren import brain as _brain
+
+def _photo():
+    return Inbound(filename="receipt.jpg", mime="image/jpeg", data=b"\xff\xd8\xff\xe0" + b"\0" * 8)
+
+def test_add_shopping_item_declares_that_it_takes_files():
+    assert "add_shopping_item" in shopping_plugin.ACCEPTS_FILES
+
+def test_add_from_a_photo_reads_the_items_off_the_picture(monkeypatch):
+    seen = []
+    def fake_items_in(files, hint):
+        seen.append(([f.filename for f in files], hint)); return ["milk", "eggs", "bread"]
+    monkeypatch.setattr(_brain, "items_in", fake_items_in)
+    ch = CollectingChannel()
+    asyncio.run(shopping_plugin.handle("add_shopping_item", Ctx(
+        user_id=1, channel=ch, content="these", text="add these to my packing list", files=[_photo()])))
+    assert seen == [(["receipt.jpg"], "these")]
+    assert [i["item"] for i in shopping.active_items(list_name="packing")] == ["milk", "eggs", "bread"]
+    _assert_flourished(ch.sent[-1], "Added milk, eggs and bread to the packing list.")
+
+def test_add_from_a_photo_with_nothing_readable_says_so(monkeypatch):
+    monkeypatch.setattr(_brain, "items_in", lambda files, hint: [])
+    ch = CollectingChannel()
+    asyncio.run(shopping_plugin.handle("add_shopping_item", Ctx(
+        user_id=1, channel=ch, content="these", text="add these", files=[_photo()])))
+    assert ch.sent == ["I couldn't read any items off that picture."]
+    assert shopping.active_items() == []
+
+def test_add_from_a_photo_skips_what_is_already_on_the_list(monkeypatch):
+    shopping.add("milk", "owner")
+    monkeypatch.setattr(_brain, "items_in", lambda files, hint: ["milk", "eggs"])
+    ch = CollectingChannel()
+    asyncio.run(shopping_plugin.handle("add_shopping_item", Ctx(
+        user_id=1, channel=ch, content="these", text="add these", files=[_photo()])))
+    _assert_flourished(ch.sent[-1], "Added eggs.")
+    assert [i["item"] for i in shopping.active_items()] == ["milk", "eggs"]

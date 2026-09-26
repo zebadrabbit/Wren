@@ -595,3 +595,55 @@ def test_ollama_failure_falls_through_to_the_next_provider(monkeypatch):
     with patch.object(brain, "_get_client", return_value=_client_returning("from lmstudio")):
         assert brain._complete([{"role": "user", "content": "hi"}], temperature=0.7) == "from lmstudio"
     assert brain._last_provider["name"] == "lmstudio"
+
+
+# --- vision: pictures go to the model on the native transport --------------
+
+from wren.channel import Inbound
+
+_JPEG = b"\xff\xd8\xff\xe0" + b"\0" * 8
+_PDF = b"%PDF-1.4 stub"
+
+def _files():
+    return [Inbound(filename="a.jpg", mime="image/jpeg", data=_JPEG),
+            Inbound(filename="doc.pdf", mime="application/pdf", data=_PDF)]
+
+def test_describe_sends_only_the_images_base64_on_the_user_turn(monkeypatch):
+    monkeypatch.setattr(config, "LLM_CHAIN", [_OLLAMA])
+    seen = {}
+    def fake(provider, messages, temperature, max_tokens, json_mode):
+        seen.update(provider=provider, messages=messages, json_mode=json_mode)
+        return "A red mug on a desk.", {}
+    monkeypatch.setattr(providers, "ollama_chat", fake)
+    out = brain.describe(_files(), "what's in this?")
+    assert out == "A red mug on a desk."
+    assert seen["provider"]["name"] == "ollama" and seen["json_mode"] is False
+    user = seen["messages"][-1]
+    assert user["role"] == "user" and user["content"] == "what's in this?"
+    import base64
+    assert user["images"] == [base64.b64encode(_JPEG).decode()]     # the PDF is not sent
+
+def test_describe_without_an_ollama_provider_says_so(monkeypatch):
+    monkeypatch.setattr(config, "LLM_CHAIN", [{"name": "lmstudio", "base_url": "http://l/v1", "api_key": "x", "model": "q"}])
+    assert brain.describe(_files(), "what's this") == "This model can't see pictures."
+
+def test_describe_with_no_image_among_the_files_says_pictures_only(monkeypatch):
+    monkeypatch.setattr(config, "LLM_CHAIN", [_OLLAMA])
+    assert brain.describe([Inbound(filename="doc.pdf", mime="application/pdf", data=_PDF)], "summarise") \
+        == "I can read pictures, not PDFs yet."
+
+def test_items_in_parses_the_json_list(monkeypatch):
+    monkeypatch.setattr(config, "LLM_CHAIN", [_OLLAMA])
+    seen = {}
+    def fake(provider, messages, temperature, max_tokens, json_mode):
+        seen.update(json_mode=json_mode, images=messages[-1].get("images"))
+        return '{"items": ["milk", "eggs", "bread"]}', {}
+    monkeypatch.setattr(providers, "ollama_chat", fake)
+    assert brain.items_in(_files(), "add these to the list") == ["milk", "eggs", "bread"]
+    assert seen["json_mode"] is True and len(seen["images"]) == 1
+
+def test_items_in_returns_nothing_for_garbage_or_no_images(monkeypatch):
+    monkeypatch.setattr(config, "LLM_CHAIN", [_OLLAMA])
+    monkeypatch.setattr(providers, "ollama_chat", lambda *a, **k: ("not json", {}))
+    assert brain.items_in(_files(), "") == []
+    assert brain.items_in([], "") == []

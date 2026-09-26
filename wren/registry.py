@@ -98,6 +98,15 @@ def destructive_intents() -> set[str]:
             for intent in getattr(plugin, "DESTRUCTIVE", [])}
 
 
+def file_intents() -> set[str]:
+    """Intents that know what to do with files that arrived alongside the
+    words, declared by the skills that own them (ACCEPTS_FILES). A captioned
+    photo whose intent is not one of these is a note, or, if the caption is a
+    question, a question about the picture -- see core.handle_message."""
+    return {intent for plugin in enabled_plugins()
+            for intent in getattr(plugin, "ACCEPTS_FILES", [])}
+
+
 def confirm_phrase(intent: str) -> str:
     """How to word "do you want me to …?" for this intent, from the skill."""
     for plugin in PLUGINS:

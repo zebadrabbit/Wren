@@ -292,7 +292,13 @@ Household Gaps") holds the state; this is the order and the why.
 4. **Web chat as an installable app with push.** Also the answer to where
    device replies land.
 5. **Calendar write (CalDAV).**
-6. **Vision on inbound images.**
+6. ~~**Vision on inbound images.**~~ Landed 2026-09-26: pictures go to
+   Gemma on the native Ollama transport (`brain.describe`, `brain.items_in`).
+   A question caption is answered from the picture and not kept; "add these
+   to the list" reads the items off a receipt, fridge or handwritten list;
+   anything else is a note as before. Skills declare `ACCEPTS_FILES`. Live:
+   five items read off a rendered list in 0.6 s. Out of scope: Discord
+   attachments, describing a photo unasked.
 7. **Cross-skill recall.**
 8. **Timers.** 9. **Undo for typed messages.** 10. **Gmail digest / sender
    allowlist.**

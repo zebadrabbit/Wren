@@ -9,6 +9,8 @@ from .. import filetypes
 from .. import flourish
 
 INTENTS = ["save_note", "recall_notes", "save_idea", "recall_ideas", "discard_idea", "expand_idea", "export_notes"]
+# a captioned photo is a note with an attachment; core routes it here
+ACCEPTS_FILES = ["save_note"]
 DESTRUCTIVE = ["discard_idea"]
 CONFIRM = {"discard_idea": 'discard the idea "{content}"'}
 PLUGIN_NAME = "Notes & Ideas"

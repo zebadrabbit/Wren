@@ -253,3 +253,15 @@ def test_destructive_intents_unions_enabled_skills():
 def test_confirm_phrase_falls_back_to_the_intent_name():
     assert registry.confirm_phrase("discard_idea") == 'discard the idea "{content}"'
     assert registry.confirm_phrase("no_such_intent") == "no such intent"
+
+
+def test_file_intents_are_declared_by_the_skills_that_take_files():
+    from wren import settings
+    settings.init_db()
+    assert {"save_note", "add_shopping_item"} <= registry.file_intents()
+    from wren.skills import shopping_skill
+    registry.set_enabled(shopping_skill, False)
+    try:
+        assert "add_shopping_item" not in registry.file_intents()
+    finally:
+        registry.set_enabled(shopping_skill, True)

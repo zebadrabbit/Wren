@@ -150,8 +150,8 @@ curl -s localhost:8787/message \
   -d '{"text":"add potatoes to shopping"}'
 ```
 
-A photo or PDF goes in as multipart and becomes a note with the caption as
-its text:
+A photo or PDF goes in as multipart. A statement caption makes it a note; a
+question caption is answered from the picture:
 
 ```bash
 curl -s localhost:8787/message -H "Authorization: Bearer $WREN_TOKEN" \
@@ -371,12 +371,21 @@ alternatives with the same profile.
 - "what do I need to do" → recalls and answers from your notes
 
 **Photos and PDFs.** Send a photo on Telegram, or paste or drop one into the
-web chat, with a caption: it becomes a note with the caption as its text and
-the file attached. Without a caption Wren asks "What is this?" and your next
-message is the caption. "Show my notes" marks attached notes and sends the
-files back, five per reply at most; the web chat shows images inline.
-Images (JPEG, PNG, WebP, GIF) and PDFs, 10 MB each. Wren keeps the file; it
-does not look at it.
+web chat, with a caption. What happens depends on the caption, by a plain
+rule rather than a model's guess:
+
+- A question — "what's in this?", "is this cable USB-C", "what plant is
+  this" — is answered from the picture, and the picture is not kept.
+- "Add these to the shopping list" (or any named list) reads the items off
+  the picture — a receipt, the fridge, a handwritten list — and adds each.
+- Anything else makes a note with the caption as its text and the file
+  attached. Without a caption Wren asks "What is this?" and your next message
+  is the caption, by the same rule.
+
+"Show my notes" marks attached notes and sends the files back, five per reply
+at most; the web chat shows images inline. Images (JPEG, PNG, WebP, GIF) and
+PDFs, 10 MB each. Looking at a picture needs the Ollama provider and a model
+that reads images (Gemma 4 does); PDFs are stored, not read.
 
 **Ideas** (separate from notes — for things to revisit or expand later)
 - "remember this idea: build a treehouse"

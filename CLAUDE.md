@@ -39,7 +39,10 @@ Run with `python3 -m wren.run`. Full architecture doc: `README.md`
    intent deletes or irreversibly changes something, also declare optional
    `DESTRUCTIVE = [...]` (⊆ `INTENTS`) and `CONFIRM = {intent: 'verb phrase,
    may contain "{content}"'}` — a skill that omits them gets no voice
-   confirmation for anything it deletes.
+   confirmation for anything it deletes. If an intent knows what to do with
+   files sent alongside the words, declare `ACCEPTS_FILES = [...]`; a
+   captioned photo whose intent is not in that set is a note, or, if the
+   caption is a question, a question about the picture (`brain.describe`).
 5. **Adding a communication plugin**: new file in `wren/communication/`,
    then add its name to `COMMUNICATION_PLUGINS` in `.env`. `run.py` imports
    `wren.communication.<name>_plugin` dynamically — the module name must be
@@ -98,7 +101,7 @@ Module path renames (for grep/context when reading old plans/specs):
 ```bash
 source venv/bin/activate
 pip install -r requirements.txt
-pytest -q                        # 1134 passed as of 2026-09-26
+pytest -q                        # 1151 passed as of 2026-09-26
 python3 -m wren.run              # needs .env; see .env.example
 ```
 

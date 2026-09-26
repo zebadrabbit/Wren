@@ -112,6 +112,19 @@ _pending_files: dict[int, tuple[list[Inbound], float]] = {}
 _FILES_TTL = 300.0
 
 
+# A caption that asks something. A trailing "?" or a leading question word;
+# deliberately a plain rule rather than the classifier, so that what happens
+# to a photo is predictable from the words alone.
+_QUESTION = re.compile(
+    r"^(?:what|what's|which|who|where|when|why|how|is|are|was|were|do|does|did|can|could|"
+    r"should|would|will|has|have)\b", re.I)
+
+
+def _is_question(text: str) -> bool:
+    t = (text or "").strip()
+    return t.endswith("?") or bool(_QUESTION.match(t))
+
+
 def _take_parked(user_id: int) -> tuple[list[Inbound], bool] | None:
     """(files, still_fresh) for this user's parked files, removed; None if
     nothing was parked. Expired entries come back with False so the caller
@@ -240,10 +253,21 @@ async def handle_message(user_id: int, text: str, channel: Channel, *, source: s
         # Discord gateway heartbeat would stall on each call.
         result = await asyncio.to_thread(brain.detect_intent, user_id, text, history)
         intent = result.get("intent", "chat")
-        if files:
-            # Without vision there is nothing else Wren can do with a picture,
-            # and "receipt from the tyre place" must not gamble on a small
-            # model's guess. The classifier still ran: its tags are kept.
+        if files and intent in registry.file_intents() and intent != "save_note":
+            # a skill that knows what to do with a picture ("add these to the
+            # shopping list") gets it with the words
+            pass
+        elif files and _is_question(text):
+            # "what's in this?", "is this cable usb-c" -- answered from the
+            # picture, and the picture is not kept: a question is not a note
+            answer = await asyncio.to_thread(brain.describe, files, text)
+            await channel.send(answer)
+            await channel.ack("done")
+            return
+        elif files:
+            # Anything else with a picture is a note. Not the classifier's
+            # guess: "receipt from the tyre place" must not gamble on a small
+            # model reading it as weather. Its tags are still kept.
             intent = "save_note"
             result["content"] = text
             notes_plugin = registry.INTENT_HANDLERS.get("save_note")
