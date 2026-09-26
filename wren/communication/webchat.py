@@ -1,4 +1,3 @@
-import base64
 import importlib
 import logging
 import pathlib
@@ -9,9 +8,8 @@ from aiohttp import web
 from .. import config
 from .. import conversations
 from .. import core
-from .. import filetypes
 from ..channel import CollectingChannel, Ctx
-from .http_plugin import read_message
+from .http_plugin import file_entries, read_message
 
 HISTORY_LIMIT = 20
 
@@ -275,12 +273,7 @@ def register_routes(app: web.Application, authenticate) -> None:
 
         return web.json_response({
             "replies": channel.sent,
-            "files": [
-                {"filename": name,
-                 "mime": filetypes.sniff(data) or "application/octet-stream",
-                 "data": base64.b64encode(data).decode("ascii")}
-                for data, name in channel.files
-            ],
+            "files": file_entries(channel.files),
             "cards": channel.cards,
         })
 
@@ -352,10 +345,7 @@ def register_routes(app: web.Application, authenticate) -> None:
         return web.json_response({
             "cards": channel.cards,
             "replies": channel.sent,
-            "files": [
-                {"filename": name, "data": base64.b64encode(data).decode("ascii")}
-                for data, name in channel.files
-            ],
+            "files": file_entries(channel.files),
         })
 
     async def get_me(request):

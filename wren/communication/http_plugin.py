@@ -78,17 +78,22 @@ async def read_message(request: web.Request) -> tuple[str, list[Inbound]]:
     return (text if isinstance(text, str) else ""), []
 
 
+def file_entries(files: list[tuple[bytes, str]]) -> list[dict]:
+    """The wire shape of reply files, shared by every HTTP response that
+    carries them. mime is sniffed, not guessed from the name: the page
+    decides inline image vs download link from it."""
+    return [
+        {"filename": name,
+         "mime": filetypes.sniff(data) or "application/octet-stream",
+         "data": base64.b64encode(data).decode("ascii")}
+        for data, name in files
+    ]
+
+
 def _payload(channel: CollectingChannel, **extra) -> dict:
     return {
         "replies": channel.sent,
-        "files": [
-            {"filename": name,
-             # sniffed, not guessed from the name: the page decides inline
-             # image vs download link from this
-             "mime": filetypes.sniff(data) or "application/octet-stream",
-             "data": base64.b64encode(data).decode("ascii")}
-            for data, name in channel.files
-        ],
+        "files": file_entries(channel.files),
         **extra,
     }
 

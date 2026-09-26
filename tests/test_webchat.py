@@ -833,7 +833,26 @@ def test_dispatch_returns_files_from_a_send_file_intent():
                             json={"intent": "export_notes"})
     assert status == 200
     assert body["files"] == [{"filename": "notes.md",
+                              "mime": "application/octet-stream",
                               "data": base64.b64encode(b"hello").decode("ascii")}]
+
+
+def test_dispatch_reply_files_carry_mime():
+    # dispatch's response used to build {"filename", "data"} with no "mime",
+    # unlike /message and /api/conversations/{id}/message -- the page decides
+    # inline image vs download link from mime, so a card-driven reply that
+    # happens to carry a file must get the same treatment.
+    async def fake_handle(intent, ctx):
+        await ctx.channel.send_file(JPEG, "receipt.jpg")
+
+    plugin = MagicMock()
+    plugin.__name__ = "wren.fake_notes_skill"
+    plugin.handle = fake_handle
+    with patch.dict(registry.INTENT_HANDLERS, {"export_notes": plugin}):
+        status, body = call("post", "/api/dispatch", token=TOKEN_A,
+                            json={"intent": "export_notes"})
+    assert status == 200
+    assert body["files"][0]["mime"] == "image/jpeg"
 
 
 def test_log_is_the_containing_block_for_the_speaker_labels():
