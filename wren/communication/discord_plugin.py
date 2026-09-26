@@ -16,13 +16,6 @@ ROLE = "chat"   # chat: full input + output, DM-based conversation
 PLUGIN_NAME = "Discord"
 CAN_NOTIFY = True
 
-# discord.py performs no client-side length check, so a body over this reaches
-# the API as-is and comes back as a 400 ("content: Must be 2000 or fewer in
-# length") — which propagates out of the skill and into core's blanket
-# except, losing the reply entirely. Chunk rather than trust callers to be
-# brief; see chunking.chunks for the splitting algorithm.
-_MAX_MESSAGE_CHARS = 2000
-
 _client: discord.Client | None = None
 
 
@@ -34,7 +27,7 @@ class DiscordChannel:
         self._client = client
 
     async def send(self, text: str) -> None:
-        for part in chunking.chunks(text, _MAX_MESSAGE_CHARS):
+        for part in chunking.chunks(text, discord_utils._MAX_MESSAGE_CHARS):
             await self._message.channel.send(part)
 
     async def send_file(self, data: bytes, filename: str) -> None:

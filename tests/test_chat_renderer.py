@@ -10,11 +10,6 @@ the already-escaped string; these tests are what stop that ordering from being
 Skipped when node is absent — it is a dev-time check, not a runtime dependency.
 """
 import os, re, shutil, subprocess, pathlib, tempfile, textwrap
-os.environ.setdefault("DISCORD_TOKEN", "test")
-os.environ.setdefault("WREN_OWNER_ID", "1")
-os.environ.setdefault("LLM_PROVIDERS", "lmstudio")
-os.environ.setdefault("LMSTUDIO_BASE_URL", "http://test")
-os.environ.setdefault("LMSTUDIO_MODEL", "test-model")
 
 import pytest
 

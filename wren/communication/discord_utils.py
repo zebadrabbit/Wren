@@ -5,10 +5,13 @@ import discord
 from .. import config
 from . import chunking
 
-# Discord's own limit, same value as discord_plugin's — duplicated rather than
-# imported from there because discord_plugin already imports this module, and
-# the reverse import would be circular. Both files belong to the one plugin;
-# only the platform changes this number, not either file individually.
+# Discord's own limit. discord.py performs no client-side length check, so a
+# body over this reaches the API as-is and comes back as a 400 ("content: Must
+# be 2000 or fewer in length") — which propagates out of the skill and into
+# core's blanket except, losing the reply entirely. Chunk rather than trust
+# callers to be brief; see chunking.chunks for the splitting algorithm.
+# discord_plugin imports this module, so it reads the value from here — one
+# literal for the one plugin.
 _MAX_MESSAGE_CHARS = 2000
 
 def history_to_messages(messages: list[discord.Message], bot_user_id: int) -> list[dict]:
