@@ -311,16 +311,6 @@ main footer { padding: 10px 20px 18px; }
   align-self: flex-end; height: 36px;
 }
 #send:disabled { opacity: .5; cursor: default; }
-#model {
-  border: 1px solid var(--line); border-radius: 8px; background: var(--panel);
-  color: var(--muted); font: inherit; font-size: 13px; padding: 4px 6px;
-  /* #topbar is display:flex with the default align-items:stretch, so without
-     align-self this <select> would grow to the bar's height. max-width plus
-     the overflow rules stop a long id (e.g. a full openrouter slug) from
-     squeezing the title instead of just truncating with an ellipsis. */
-  align-self: center; max-width: 220px; overflow: hidden;
-  text-overflow: ellipsis; white-space: nowrap;
-}
 #modeltext { color: var(--muted); font-size: 13px; align-self: center; }
 #modeltext.err { color: var(--alert); }
 
@@ -494,7 +484,6 @@ main footer { padding: 10px 20px 18px; }
   <main>
     <header id="topbar">
       <span id="ctitle"></span>
-      <select id="model" hidden></select>
       <span id="modeltext" hidden></span>
     </header>
     <div id="log"><div id="inner"></div></div>
@@ -980,9 +969,8 @@ async function showEmpty(mePromise) {
   $("#greet").textContent = greeting(null);
   let me;
   try {
-    // start() already has an /api/me in flight for the model selector's
-    // fallback and passes it in here so the same page load doesn't fetch it
-    // twice. Later calls (delConvo, openConvo, a fresh "New") pass nothing
+    // start() already has an /api/me in flight for the topbar's model text
+    // and passes it in here so the same page load doesn't fetch it twice. Later calls (delConvo, openConvo, a fresh "New") pass nothing
     // and get their own current fetch.
     me = await (mePromise || api("/api/me"));
   } catch (e) {
@@ -1177,7 +1165,6 @@ const SECRET_INFO = {
   CALENDAR_URLS:      "Calendar feed URLs (ICS, comma-separated)",
 };
 
-const MODEL_HELP = "Applies live — but only providers named in LLM_PROVIDERS (.env) are ever used.";
 const SETTING_META = {
   OWNER_NAME:            { group: "General", label: "Your name",
                            help: "Used in the landing-screen greeting." },
@@ -1213,11 +1200,6 @@ const SETTING_META = {
                    help: "fahrenheit or celsius." },
   BRIEFING_TIME: { group: "Day", label: "Daily briefing at",
                    help: "HH:MM in your timezone. Empty switches the daily push off; asking still works." },
-  OLLAMA_MODEL:          { group: "Models", label: "Ollama model", help: MODEL_HELP },
-  LMSTUDIO_MODEL:        { group: "Models", label: "LM Studio model", help: MODEL_HELP },
-  OPENAI_MODEL:          { group: "Models", label: "OpenAI model", help: MODEL_HELP },
-  CLAUDE_MODEL:          { group: "Models", label: "Claude model", help: MODEL_HELP },
-  OPENROUTER_MODEL:      { group: "Models", label: "OpenRouter model", help: MODEL_HELP },
   MEMORY_SWEEP_SECONDS:  { group: "Memory", label: "Memory sweep (seconds)",
                            help: "How often queued turns are read for facts. Minimum 5.", num: true },
   MEMORY_DEDUP_THRESHOLD: { group: "Memory", label: "Dedup threshold (0–1)",
@@ -1226,7 +1208,7 @@ const SETTING_META = {
   MEMORY_TOP_K:          { group: "Memory", label: "Facts per reply",
                            help: "How many relevant memories go in front of the model per turn.", num: true },
 };
-const SETTING_GROUPS = ["General", "Watchers", "Web lookup", "Day", "Models", "Memory", "Other"];
+const SETTING_GROUPS = ["General", "Watchers", "Web lookup", "Day", "Memory", "Other"];
 
 function showTab(name) {
   document.querySelectorAll("#ptabs .tab").forEach(t =>
@@ -1428,68 +1410,12 @@ $("#ptabs").onclick = e => {
   if (t) showTab(t.dataset.tab);
 };
 
-async function loadModels(fallbackModel) {
-  let d;
-  try {
-    d = await api("/api/models");
-  } catch (e) {
-    // 403 for a non-owner, or the request failed. Fail closed to static text,
-    // using the model /api/me already told us about.
-    $("#modeltext").textContent = fallbackModel || "";
-    $("#modeltext").hidden = !fallbackModel;
-    return;
-  }
-  if (!d.models.length) {                 // owner, but the provider is down (or unconfigured)
-    // d.reason says WHY the list is empty -- without it "the list failed to
-    // load" and "this is simply the model" render as identical text.
-    const text = d.reason ? [d.current, d.reason].filter(Boolean).join(" — ") : (d.current || "");
-    $("#modeltext").textContent = text;
-    $("#modeltext").hidden = !text;
-    return;
-  }
-  $("#model").innerHTML = "";
-  // d.current might not be IN d.models -- e.g. OLLAMA_MODEL names a model
-  // since removed from the host, or LM Studio only lists currently LOADED
-  // models. The loop below only ever *selects* an existing option, so without
-  // this, nothing would be selected and the browser would silently default to
-  // d.models[0] -- displaying a model that is not the one actually answering,
-  // with no indication anything is wrong. Prepending an option for it keeps
-  // the visible selection truthful: the label explains the mismatch, but the
-  // VALUE stays the bare model id, since that's what gets PATCHed.
-  if (d.current && !d.models.includes(d.current)) {
-    const o = document.createElement("option");
-    o.value = d.current;
-    o.textContent = `${d.current} (not offered by ${d.provider})`;
-    o.selected = true;
-    $("#model").appendChild(o);
-  }
-  d.models.forEach(m => {
-    const o = document.createElement("option");
-    o.value = m; o.textContent = m; o.selected = (m === d.current);
-    $("#model").appendChild(o);
-  });
-  $("#model").hidden = false;
-  $("#model").onchange = async () => {
-    const key = d.provider.toUpperCase() + "_MODEL";
-    const chosen = $("#model").value;
-    $("#modeltext").hidden = true; $("#modeltext").classList.remove("err");
-    try {
-      await api("/api/settings", { method: "PATCH",
-        body: JSON.stringify({ [key]: chosen }) });
-      d.current = chosen;   // keep our snapshot in sync so a later failed
-                             // change has the right value to revert to
-    } catch (e) {
-      // PATCH /api/settings can genuinely 400 here -- config.set_override
-      // rejects a model that fails to resolve. Revert the visible selection
-      // to the last value that actually saved (simpler than re-fetching
-      // /api/models, and d.current is already the source of truth we have in
-      // hand) rather than let the dropdown show a choice the server never
-      // accepted as though it had taken.
-      $("#model").value = d.current;
-      $("#modeltext").textContent = "Couldn't switch model: " + (e.message || "unknown error");
-      $("#modeltext").hidden = false; $("#modeltext").classList.add("err");
-    }
-  };
+// Which model is answering, as text. The model is set in .env: Wren is tuned
+// to one (the classifier probe, the thinking switch, vision), so the live
+// picker that used to live here went on 2026-09-26.
+function showModel(model) {
+  $("#modeltext").textContent = model || "";
+  $("#modeltext").hidden = !model;
 }
 
 async function start() {
@@ -1508,7 +1434,7 @@ async function start() {
   // closed independently.
   const me = api("/api/me");
   me.then(m => { $("#whoname").textContent = m.name || "Signed in"; }).catch(() => {});
-  me.then(m => loadModels(m.model)).catch(() => loadModels(null));
+  me.then(m => showModel(m.model)).catch(() => showModel(null));
   const list = await api("/api/conversations");
   if (list.length) await openConvo(list[0].id); else { showEmpty(me); await loadConvos(); }
   $("#text").focus();

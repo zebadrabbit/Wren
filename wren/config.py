@@ -84,25 +84,6 @@ if not LLM_CHAIN:
     )
 
 
-def reload_llm_chain() -> None:
-    """Re-resolve LLM_CHAIN from the current environment.
-
-    Deliberately re-runs the same expression import does, so a runtime model
-    switch and a restart cannot diverge.
-
-    Refuses a rebuild that would leave no usable provider: an empty chain at
-    boot is a loud startup error, but an empty chain at runtime would mean Wren
-    silently stops being able to answer because someone touched a dropdown.
-    """
-    global LLM_CHAIN
-    rebuilt = [c for c in (providers.resolve(n) for n in _provider_names) if c is not None]
-    if not rebuilt:
-        raise RuntimeError(
-            "that change would leave no usable LLM provider; keeping the current one"
-        )
-    LLM_CHAIN = rebuilt
-
-
 def _build_whitelist(owner_raw: str) -> dict[str, int]:
     if not owner_raw.isdigit():
         raise RuntimeError("WREN_OWNER_ID must be a numeric user id.")
@@ -235,17 +216,6 @@ FIRECRAWL_API_KEY = os.environ.get("FIRECRAWL_API_KEY", "")
 # setting rather than reusing the alias.
 OWNER_NAME = os.environ.get("OWNER_NAME", "")
 
-# providers.py and reload_llm_chain() read these from os.environ directly,
-# never from the module attribute (see _apply_model) -- the attribute exists
-# purely so these five behave like every other settable for
-# serialize_setting()/GET /api/plugins instead of needing their own
-# special-cased read path. _apply_model keeps the two in step.
-OLLAMA_MODEL     = os.environ.get("OLLAMA_MODEL", "")
-LMSTUDIO_MODEL   = os.environ.get("LMSTUDIO_MODEL", "")
-OPENAI_MODEL     = os.environ.get("OPENAI_MODEL", "")
-CLAUDE_MODEL     = os.environ.get("CLAUDE_MODEL", "")
-OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "")
-
 # ── Runtime-editable settings ────────────────────────────────────────────────
 # Everything above is read from .env at import. These may additionally be
 # overridden at runtime from the settings table, by the owner, through the web
@@ -299,44 +269,6 @@ def _apply_attr(key: str, value) -> None:
     globals()[key] = value
 
 
-def _apply_model(key: str, value) -> None:
-    """Model names must land in two places that cannot be allowed to drift:
-    os.environ, which is the one providers.resolve() actually reads, and the
-    module attribute, kept in step purely so these keys serialize and display
-    like every other settable. Setting only the attribute would do nothing --
-    providers.py never looks at it.
-
-    Writes both plus the rebuild as one unit: if reload_llm_chain() refuses
-    (empty chain), both are put back exactly as they were first. Without this,
-    a refused clear_override -- or a refused stored setting at boot, which
-    apply_overrides() only logs and moves past -- would leave os.environ (or
-    the attribute) pointing at a model that disagrees with the LLM_CHAIN entry
-    still in use, a split that would only resolve itself on the next restart.
-
-    os.environ is written FIRST, before the module attribute: __setitem__ on
-    os.environ raises ValueError on an embedded NUL (e.g. a stray b"\\x00" in a
-    PATCH body), and that raise happens before either previous_env/previous_attr
-    is used for anything. Writing the attribute first would leave it holding
-    the new value with no os.environ write to match and nothing queued to roll
-    it back with -- a drift from os.environ and LLM_CHAIN that would persist
-    until restart, since the except block below only ever fires for
-    reload_llm_chain()'s RuntimeError, not for this.
-    """
-    previous_env = os.environ.get(key)
-    previous_attr = globals()[key]
-    os.environ[key] = value
-    globals()[key] = value
-    try:
-        reload_llm_chain()
-    except RuntimeError:
-        globals()[key] = previous_attr
-        if previous_env is None:
-            os.environ.pop(key, None)
-        else:
-            os.environ[key] = previous_env
-        raise
-
-
 class Setting(NamedTuple):
     """Everything the system needs to know about one runtime-editable setting.
 
@@ -371,22 +303,6 @@ SETTABLE = {
     "MEMORY_SWEEP_SECONDS":   Setting(_coerce_poll_seconds),
     "MEMORY_DEDUP_THRESHOLD": Setting(_coerce_threshold),
     "MEMORY_TOP_K":           Setting(_coerce_top_k),
-
-    # Model NAMES are not credentials, so they belong in the allowlist; the
-    # matching *_API_KEY values are and never will. Listed literally rather
-    # than derived from LLM_PROVIDERS so the allowlist stays readable in one
-    # place. Note a side effect worth knowing: providers.resolve() returns None
-    # when a provider's model is unset, so setting one here can REVIVE that
-    # provider into the fallback chain if it is already named in LLM_PROVIDERS
-    # -- but reload_llm_chain() only re-resolves _provider_names (captured once
-    # at import from LLM_PROVIDERS, itself not in SETTABLE), so this can never
-    # add a provider LLM_PROVIDERS never named; that write just silently does
-    # nothing.
-    "OLLAMA_MODEL":     Setting(str.strip, apply=_apply_model),
-    "LMSTUDIO_MODEL":   Setting(str.strip, apply=_apply_model),
-    "OPENAI_MODEL":     Setting(str.strip, apply=_apply_model),
-    "CLAUDE_MODEL":     Setting(str.strip, apply=_apply_model),
-    "OPENROUTER_MODEL": Setting(str.strip, apply=_apply_model),
 
     # Shown in the web chat's greeting. The whitelist alias for the owner is
     # the literal string "owner", which is a placeholder, not a name -- so

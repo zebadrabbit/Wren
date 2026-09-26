@@ -310,16 +310,6 @@ def test_me_requires_a_token():
     assert status == 401
 
 
-def test_me_reports_the_active_model_to_a_non_owner(monkeypatch):
-    # /api/models is owner-only, so this is the only way a household member's
-    # composer can show which model is answering.
-    monkeypatch.setattr(config, "LLM_CHAIN", [
-        {"name": "ollama", "base_url": "http://test", "api_key": "x", "model": "a-model"}])
-    status, body = call("get", "/api/me", token=TOKEN_OTHER)
-    assert status == 200
-    assert body["model"] == "a-model"
-
-
 def test_me_lists_only_enabled_skills():
     from wren.skills import notes_skill
     status, body = call("get", "/api/me", token=TOKEN_OWNER)
@@ -332,137 +322,9 @@ def test_me_lists_only_enabled_skills():
         registry.set_enabled(notes_skill, True)
 
 
-# ── GET /api/models ──────────────────────────────────────────────────────────
 # Owner-only: unlike /api/me, this proxies a call to the internal LLM host,
 # and it must never 5xx -- it feeds the landing screen, which has to render
 # even while the LLM host is rebooting.
-
-def test_models_is_owner_only():
-    status, _ = call("get", "/api/models", token=TOKEN_OTHER)
-    assert status == 403
-
-
-def test_models_reports_the_current_model(monkeypatch):
-    async def fake_fetch(base_url, api_key):
-        return ["a-model", "b-model"]
-    monkeypatch.setattr(webchat, "_fetch_models", fake_fetch)
-    monkeypatch.setattr(config, "LLM_CHAIN", [
-        {"name": "ollama", "base_url": "http://test", "api_key": "x", "model": "a-model"}])
-    status, body = call("get", "/api/models", token=TOKEN_OWNER)
-    assert status == 200
-    assert body["provider"] == "ollama"
-    assert body["current"] == "a-model"
-    assert body["models"] == ["a-model", "b-model"]
-
-
-def test_models_degrades_to_an_empty_list_when_the_provider_is_down(monkeypatch):
-    # The landing screen must not break because the LLM host is rebooting.
-    async def boom(base_url, api_key):
-        raise OSError("connection refused")
-    monkeypatch.setattr(webchat, "_fetch_models", boom)
-    monkeypatch.setattr(config, "LLM_CHAIN", [
-        {"name": "ollama", "base_url": "http://test", "api_key": "x", "model": "a-model"}])
-    status, body = call("get", "/api/models", token=TOKEN_OWNER)
-    assert status == 200
-    assert body["models"] == []
-    assert body["reason"]
-    assert body["current"] == "a-model"
-
-
-class _FakeErrorResponse:
-    """Stands in for aiohttp's ClientResponse on an HTTP error status.
-
-    Offers BOTH raise_for_status() and json(), same as a real response would --
-    that is what makes this test able to fail: with the fix, raise_for_status()
-    raises and json() is never reached; without it (or if json() bypassed the
-    error), it would parse the body below into an empty model list, same as the
-    pre-fix bug.
-    """
-
-    def __init__(self, status: int, body: dict):
-        self._status = status
-        self._body = body
-
-    def raise_for_status(self):
-        import types
-        import aiohttp
-
-        request_info = types.SimpleNamespace(real_url="http://test/models")
-        raise aiohttp.ClientResponseError(
-            request_info, (), status=self._status, message="unauthorized")
-
-    async def json(self):
-        return self._body
-
-
-class _FakeGetContextManager:
-    """What session.get(...) returns: an async context manager yielding a response."""
-
-    def __init__(self, response):
-        self._response = response
-
-    async def __aenter__(self):
-        return self._response
-
-    async def __aexit__(self, exc_type, exc, tb):
-        return False
-
-
-class _FakeSession:
-    """What aiohttp.ClientSession(...) returns: an async context manager with .get()."""
-
-    def __init__(self, response, *args, **kwargs):
-        self._response = response
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, exc_type, exc, tb):
-        return False
-
-    def get(self, url, headers=None):
-        return _FakeGetContextManager(self._response)
-
-
-def test_fetch_models_raises_on_a_provider_error_status(monkeypatch):
-    # Drives the REAL _fetch_models -- unlike monkeypatching _fetch_models
-    # itself (which replaces the whole function and never executes
-    # raise_for_status() at all), this fakes only the session one level down,
-    # so the fix under test actually runs. Proven by mutation: deleting
-    # raise_for_status() from _fetch_models makes this test fail (see the
-    # report for the observed failure); it is not a test that passes either way.
-    import aiohttp
-
-    response = _FakeErrorResponse(401, {"error": "unauthorized"})
-    monkeypatch.setattr(aiohttp, "ClientSession",
-                        lambda *a, **kw: _FakeSession(response, *a, **kw))
-    with pytest.raises(aiohttp.ClientResponseError):
-        asyncio.run(webchat._fetch_models("http://test", "x"))
-
-
-def test_models_endpoint_degrades_on_a_client_response_error(monkeypatch):
-    # This covers get_models's exception handling, NOT the raise_for_status
-    # line itself (that is test_fetch_models_raises_on_a_provider_error_status,
-    # above) -- it stubs out _fetch_models entirely to prove that whatever
-    # error it produces, the handler still returns 200 with an empty list and
-    # a non-empty reason rather than propagating a 5xx. request_info only
-    # needs a `real_url` attribute because that is all ClientResponseError's
-    # __str__ touches, and the handler's logging.warning(f"...{e}") call must
-    # not itself blow up on it.
-    import types
-    import aiohttp
-
-    async def unauthorized(base_url, api_key):
-        request_info = types.SimpleNamespace(real_url="http://test/models")
-        raise aiohttp.ClientResponseError(request_info, (), status=401, message="unauthorized")
-    monkeypatch.setattr(webchat, "_fetch_models", unauthorized)
-    monkeypatch.setattr(config, "LLM_CHAIN", [
-        {"name": "ollama", "base_url": "http://test", "api_key": "x", "model": "a-model"}])
-    status, body = call("get", "/api/models", token=TOKEN_OWNER)
-    assert status == 200
-    assert body["models"] == []
-    assert body["reason"]
-
 
 def test_memory_settings_are_labelled_in_the_plugins_panel():
     # Without a SETTING_META entry, MEMORY_* falls through settingRow() to

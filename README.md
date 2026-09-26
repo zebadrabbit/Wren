@@ -225,7 +225,6 @@ or touch another's conversations.
 | `DELETE /api/conversations/{id}` | — | delete it and its messages |
 | `POST /api/conversations/{id}/message` | `{text}` | `{replies, files}` |
 | `GET /api/me` | — | `{name, skills, model}` — any whitelisted user |
-| `GET /api/models` | — | `{provider, current, models, reason}` — owner only |
 | `GET /api/plugins` | — | `{skills, channels, settings}` — owner only |
 | `PATCH /api/plugins/{module}` | `{enabled}` | toggle a skill — owner only |
 | `PATCH /api/settings` | `{KEY: value}` | change a non-secret setting — owner only |
@@ -248,14 +247,10 @@ the greeting is just the time of day: the whitelist alias for the owner is the
 literal string `owner`, and being greeted as "owner" is worse than not being
 greeted by name. Contacts are greeted by their own alias.
 
-Changing the model rewrites the active provider's `*_MODEL` setting and
-rebuilds the provider chain, so it applies everywhere Wren answers — Discord
-and reminders included — and survives a restart. Wren has one engine; there
-is no web-chat-only model. The selector only ever lists models for whichever
-provider is currently active; it cannot switch you to a different provider,
-only to a different model of the one already in use. The model list comes
-from the provider itself; if it is unreachable, or you are not the owner, the
-selector falls back to showing the current model as text.
+The top bar shows which model is answering. The model itself is set in
+`.env` (`OLLAMA_MODEL` and friends) and takes a restart: Wren is tuned to one
+model — the intent probe, the thinking switch, vision — so the live picker
+that used to sit there went on 2026-09-26.
 
 ### The plugins panel
 
@@ -274,17 +269,8 @@ once at startup, so enabling Telegram is still two lines in `.env` and a
 restart — a toggle here would be a dead control, and the endpoint refuses a
 channel PATCH with a 400 rather than pretend one would work.
 
-Unlike the landing screen's own model selector (above, scoped to the one
-active provider), the settings list here shows all five `*_MODEL` fields —
-`GET /api/plugins` lists every key in `config.SETTABLE` unconditionally, not
-just the providers `LLM_PROVIDERS` actually names. Typing a model into a
-provider already named in `LLM_PROVIDERS` that had none configured genuinely
-revives it into the fallback chain. Typing one into a provider that was never
-named in `LLM_PROVIDERS` does not: `reload_llm_chain()` only re-resolves the
-providers captured from `LLM_PROVIDERS` at import, so that provider is never
-even attempted — and the field still returns a 200, silently doing nothing.
-`LLM_PROVIDERS` itself is `.env`-only and needs a restart to change; this
-panel cannot substitute for it.
+`LLM_PROVIDERS` and every `*_MODEL` are `.env`-only and need a restart to
+change; this panel cannot substitute for them.
 
 Switching a skill off does not undo what it already did. Reminders keeps
 firing what you already scheduled even with the skill switched off in this
