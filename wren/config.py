@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 
 from . import providers
 from . import contacts
+from . import db
 
 load_dotenv()
 
@@ -486,6 +487,10 @@ def set_override(key: str, raw: str):
         raise KeyError(key)
     spec = SETTABLE[key]
     value = spec.coerce(raw)         # raises ValueError/RuntimeError if bad
+    if db.in_dry_run():
+        # The row would land in the snapshot anyway, but apply() mutates this
+        # process: a dry-run "my location is ..." must not move live weather.
+        return value
     previous_raw = settings.get(key)
     settings.set(key, raw)
     try:

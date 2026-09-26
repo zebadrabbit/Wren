@@ -8,6 +8,7 @@ from aiohttp import web
 
 from .. import config
 from .. import core
+from .. import db
 from .. import router
 from ..channel import CollectingChannel
 
@@ -46,9 +47,22 @@ def _payload(channel: CollectingChannel, **extra) -> dict:
     }
 
 
-async def _dispatch(user_id: int, text: str, *, source: str = "text", **extra) -> web.Response:
+def _wants_dry_run(request: web.Request) -> bool:
+    return request.query.get("dry_run", "").lower() in ("1", "true", "yes")
+
+
+async def _dispatch(user_id: int, text: str, *, source: str = "text",
+                    dry: bool = False, **extra) -> web.Response:
+    """dry: run against a discarded snapshot of the database (see db.dry_run)
+    and echo `dry_run: true` so a caller can never mistake which one it got.
+    For testing a live install without touching its data."""
     channel = CollectingChannel()
-    await core.handle_message(user_id, text, channel, source=source)
+    if dry:
+        extra["dry_run"] = True
+        with db.dry_run():
+            await core.handle_message(user_id, text, channel, source=source)
+    else:
+        await core.handle_message(user_id, text, channel, source=source)
     if not channel.sent and not channel.files:
         # core's authorization gate returned silently — the token is valid but
         # maps to a user who is not whitelisted. Say so rather than returning
@@ -75,7 +89,7 @@ async def message(request: web.Request) -> web.Response:
     text = (body or {}).get("text", "")
     if not isinstance(text, str) or not text.strip():
         return web.json_response({"error": "missing 'text'"}, status=400)
-    return await _dispatch(user_id, text)
+    return await _dispatch(user_id, text, dry=_wants_dry_run(request))
 
 
 async def voice(request: web.Request) -> web.Response:
@@ -101,7 +115,8 @@ async def voice(request: web.Request) -> web.Response:
 
     if not transcript.strip():
         return web.json_response({"transcript": "", "replies": [], "files": []})
-    return await _dispatch(user_id, transcript, source="voice", transcript=transcript)
+    return await _dispatch(user_id, transcript, source="voice", dry=_wants_dry_run(request),
+                           transcript=transcript)
 
 
 def build_app() -> web.Application:

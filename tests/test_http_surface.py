@@ -262,3 +262,71 @@ def test_start_keeps_serving_and_does_not_return(monkeypatch):
         asyncio.run(run())
     finally:
         router.reset()
+
+
+# ── dry_run ───────────────────────────────────────────────────────────────
+
+def test_dry_run_query_flag_runs_core_inside_db_dry_run(monkeypatch):
+    from wren import db
+    seen = []
+
+    async def fake(user_id, text, channel, *, source="text"):
+        seen.append(db.in_dry_run())
+        await channel.send("ok")
+    monkeypatch.setattr(core, "handle_message", fake)
+    status, body = call("post", "/message?dry_run=1", token="good-token", json={"text": "hi"})
+    assert status == 200
+    assert seen == [True]
+    assert body["dry_run"] is True and body["replies"] == ["ok"]
+
+
+def test_without_the_flag_nothing_is_dry(monkeypatch):
+    from wren import db
+    seen = []
+
+    async def fake(user_id, text, channel, *, source="text"):
+        seen.append(db.in_dry_run())
+        await channel.send("ok")
+    monkeypatch.setattr(core, "handle_message", fake)
+    status, body = call("post", "/message", token="good-token", json={"text": "hi"})
+    assert seen == [False]
+    assert "dry_run" not in body
+
+
+def test_dry_run_flag_accepts_true_and_rejects_zero(monkeypatch):
+    from wren import db
+    seen = []
+
+    async def fake(user_id, text, channel, *, source="text"):
+        seen.append(db.in_dry_run())
+        await channel.send("ok")
+    monkeypatch.setattr(core, "handle_message", fake)
+    call("post", "/message?dry_run=true", token="good-token", json={"text": "hi"})
+    call("post", "/message?dry_run=0", token="good-token", json={"text": "hi"})
+    assert seen == [True, False]
+
+
+def test_dry_run_message_leaves_no_rows_end_to_end(monkeypatch):
+    # The real core and a real store: the only fake is the classifier.
+    from wren import brain, contacts, settings
+    from wren.skills import shopping_store
+    contacts.init_db(); settings.init_db(); shopping_store.init_db()
+    monkeypatch.setattr(brain, "detect_intent", lambda *a, **k: {
+        "intent": "add_shopping_item", "content": "potatoes", "tags": [], "person": None})
+    status, body = call("post", "/message?dry_run=1", token="good-token", json={"text": "add potatoes"})
+    assert status == 200 and body["dry_run"] is True
+    assert body["replies"] and "potatoes" in body["replies"][0].lower()
+    assert shopping_store.active_items() == []
+
+
+def test_voice_honours_dry_run(monkeypatch):
+    from wren import db, stt
+    seen = []
+    monkeypatch.setattr(stt, "transcribe", lambda audio: "hello")
+
+    async def fake(user_id, text, channel, *, source="text"):
+        seen.append(db.in_dry_run())
+        await channel.send("ok")
+    monkeypatch.setattr(core, "handle_message", fake)
+    status, body = call("post", "/voice?dry_run=1", token="good-token", data=b"RIFF")
+    assert seen == [True] and body["dry_run"] is True

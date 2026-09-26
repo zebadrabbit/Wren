@@ -1,6 +1,7 @@
 import logging
 
 from . import config
+from . import db
 
 # name -> surface module/object exposing `async notify(user_id, text) -> bool`
 _surfaces: dict = {}
@@ -41,6 +42,11 @@ async def notify(user_id: int, text: str, via: str | None = None) -> bool:
     error here silently destroys the message instead of retrying it on the
     next poll. Do not add a blanket `except Exception` back to this function.
     """
+    if db.in_dry_run():
+        # A dry run (http ?dry_run=1) must never DM a real person. True, not
+        # False: the caller under test should take its "delivered" branch.
+        logging.info(f"dry run: would notify {user_id}: {text[:80]!r}")
+        return True
     name = via or config.NOTIFY_VIA
     surface = _surfaces.get(name)
     if surface is None:

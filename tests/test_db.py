@@ -82,3 +82,71 @@ def test_conn_attaches_the_path_not_the_default(monkeypatch, tmp_path):
     with db.conn() as con:
         opened = con.execute("PRAGMA database_list").fetchone()[2]
     assert os.path.realpath(opened) == os.path.realpath(str(target))
+
+
+# ── dry run ───────────────────────────────────────────────────────────────
+
+def test_dry_run_writes_go_to_a_snapshot_that_is_discarded(monkeypatch, tmp_path):
+    real = str(tmp_path / "real.db")
+    monkeypatch.setenv("WREN_DB", real)
+    with db.conn() as c:
+        c.execute("CREATE TABLE t (v TEXT)")
+        c.execute("INSERT INTO t VALUES ('before')")
+    with db.dry_run():
+        assert db.path() != real
+        assert db.in_dry_run()
+        with db.conn() as c:
+            # the snapshot carries the real data, so reads are honest
+            assert [r[0] for r in c.execute("SELECT v FROM t")] == ["before"]
+            c.execute("INSERT INTO t VALUES ('during')")
+        snapshot = db.path()
+    assert not os.path.exists(snapshot)
+    assert db.path() == real and not db.in_dry_run()
+    with db.conn() as c:
+        assert [r[0] for r in c.execute("SELECT v FROM t")] == ["before"]
+
+
+def test_dry_run_is_per_task_not_global(monkeypatch, tmp_path):
+    import asyncio
+    real = str(tmp_path / "real.db")
+    monkeypatch.setenv("WREN_DB", real)
+    with db.conn() as c:
+        c.execute("CREATE TABLE t (v TEXT)")
+
+    async def dry():
+        with db.dry_run():
+            await asyncio.sleep(0.01)          # let the other task run inside our window
+            return db.path()
+
+    async def wet():
+        await asyncio.sleep(0)
+        return db.path()
+
+    async def both():
+        return await asyncio.gather(dry(), wet())
+
+    dry_path, wet_path = asyncio.run(both())
+    assert dry_path != real and wet_path == real
+
+
+def test_dry_run_survives_to_thread(monkeypatch, tmp_path):
+    # skills do their store calls under asyncio.to_thread; the override must
+    # follow them there or the "dry" run writes to the real file
+    import asyncio
+    monkeypatch.setenv("WREN_DB", str(tmp_path / "real.db"))
+    with db.conn() as c:
+        c.execute("CREATE TABLE t (v TEXT)")
+
+    async def go():
+        with db.dry_run():
+            return await asyncio.to_thread(db.path)
+
+    assert asyncio.run(go()) != str(tmp_path / "real.db")
+
+
+def test_dry_run_without_a_real_database_yet(monkeypatch, tmp_path):
+    monkeypatch.setenv("WREN_DB", str(tmp_path / "never-created.db"))
+    with db.dry_run():
+        with db.conn() as c:
+            c.execute("CREATE TABLE t (v TEXT)")
+    assert not os.path.exists(str(tmp_path / "never-created.db"))

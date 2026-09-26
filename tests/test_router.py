@@ -212,3 +212,15 @@ def test_notify_via_an_unregistered_surface_is_a_permanent_failure(monkeypatch):
     router.register("telegram", FakeSurface())
     monkeypatch.setattr(config, "NOTIFY_VIA", "telegram")
     assert asyncio.run(router.notify(7, "hello", via="discord")) is False
+
+
+def test_notify_is_a_silent_success_in_a_dry_run(monkeypatch):
+    # A dry run must never DM a real person; True (not False) so a caller
+    # under test still takes its "delivered" branch.
+    from wren import db
+    surface = FakeSurface()
+    router.register("discord", surface)
+    monkeypatch.setattr(config, "NOTIFY_VIA", "discord")
+    with db.dry_run():
+        assert asyncio.run(router.notify(1, "hi")) is True
+    assert surface.calls == []

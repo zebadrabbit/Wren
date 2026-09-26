@@ -123,6 +123,13 @@ The machine API, used by the desktop voice client:
 All routes but `/health` need `Authorization: Bearer <token>`. Files come
 back base64-encoded.
 
+Add `?dry_run=1` to `/message` or `/voice` to test against a live install
+without touching it: the request runs on a throwaway snapshot of the
+database, nothing it writes survives, no notification is sent, and no
+setting changes. The reply is real, since it reads current data, and the
+response carries `"dry_run": true`. Outbound reads (the LLM, web search,
+geocoding) still happen.
+
 ```bash
 curl -s localhost:8787/message \
   -H "Authorization: Bearer $WREN_TOKEN" \

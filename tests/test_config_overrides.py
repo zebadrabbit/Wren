@@ -431,3 +431,19 @@ def test_briefing_time_is_hhmm_or_empty():
         config.SETTABLE["BRIEFING_TIME"].coerce("25:00")
     with pytest.raises(ValueError):
         config.SETTABLE["BRIEFING_TIME"].coerce("morning")
+
+
+def test_set_override_validates_but_neither_persists_nor_applies_in_a_dry_run(monkeypatch):
+    # The settings row would land in the snapshot anyway, but apply() mutates
+    # this process -- a dry-run "my location is ..." must not move the live
+    # weather. Validation still runs so a bad value is still reported.
+    import pytest
+    from wren import db
+    settings.init_db()
+    monkeypatch.setattr(config, "WEATHER_LAT", None)
+    with db.dry_run():
+        assert config.set_override("WEATHER_LAT", "41.88") == 41.88
+        with pytest.raises(ValueError):
+            config.set_override("WEATHER_LAT", "95")
+    assert config.WEATHER_LAT is None
+    assert settings.get("WEATHER_LAT") is None
