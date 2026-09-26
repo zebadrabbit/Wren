@@ -9,8 +9,9 @@ from aiohttp import web
 from .. import config
 from .. import core
 from .. import db
+from .. import filetypes
 from .. import router
-from ..channel import CollectingChannel
+from ..channel import CollectingChannel, Inbound
 
 # 25 MB — a minute of 16 kHz mono WAV is about 2 MB, so this is generous for
 # voice while still refusing anything absurd. aiohttp's default is 1 MB, which
@@ -36,11 +37,48 @@ def _authenticate(request: web.Request) -> int | None:
     return matched
 
 
+async def read_message(request: web.Request) -> tuple[str, list[Inbound]]:
+    """(text, files) from either a JSON body {"text": ...} or a multipart form
+    with a `text` field and any number of `file` parts. One parser for the
+    machine API and the browser chat, so `curl -F` and a pasted screenshot
+    take the same path. Raises HTTPBadRequest for a body that is neither."""
+    if request.content_type in ("multipart/form-data", "application/x-www-form-urlencoded"):
+        # aiohttp's own FormData degrades to urlencoded when it holds no file
+        # field (aiohttp.FormData().is_multipart is False for text-only data)
+        # -- a caption-only post with no attachment must parse the same way.
+        form = await request.post()          # bounded by client_max_size
+        text = form.get("text", "")
+        files = [
+            Inbound(filename=part.filename or "file",
+                    mime=part.content_type or "application/octet-stream",
+                    data=part.file.read())
+            for part in form.getall("file", [])
+            if isinstance(part, web.FileField)
+        ]
+        return (text if isinstance(text, str) else ""), files
+    try:
+        body = await request.json()
+    except Exception:
+        raise web.HTTPBadRequest(text='{"error": "body must be JSON"}',
+                                 content_type="application/json")
+    if body is None:
+        body = {}
+    if not isinstance(body, dict):
+        raise web.HTTPBadRequest(text='{"error": "body must be a JSON object"}',
+                                 content_type="application/json")
+    text = body.get("text", "")
+    return (text if isinstance(text, str) else ""), []
+
+
 def _payload(channel: CollectingChannel, **extra) -> dict:
     return {
         "replies": channel.sent,
         "files": [
-            {"filename": name, "data": base64.b64encode(data).decode("ascii")}
+            {"filename": name,
+             # sniffed, not guessed from the name: the page decides inline
+             # image vs download link from this
+             "mime": filetypes.sniff(data) or "application/octet-stream",
+             "data": base64.b64encode(data).decode("ascii")}
             for data, name in channel.files
         ],
         **extra,
@@ -52,7 +90,7 @@ def _wants_dry_run(request: web.Request) -> bool:
 
 
 async def _dispatch(user_id: int, text: str, *, source: str = "text",
-                    dry: bool = False, **extra) -> web.Response:
+                    dry: bool = False, files: list[Inbound] | None = None, **extra) -> web.Response:
     """dry: run against a discarded snapshot of the database (see db.dry_run)
     and echo `dry_run: true` so a caller can never mistake which one it got.
     For testing a live install without touching its data."""
@@ -60,9 +98,9 @@ async def _dispatch(user_id: int, text: str, *, source: str = "text",
     if dry:
         extra["dry_run"] = True
         with db.dry_run():
-            await core.handle_message(user_id, text, channel, source=source)
+            await core.handle_message(user_id, text, channel, source=source, files=files)
     else:
-        await core.handle_message(user_id, text, channel, source=source)
+        await core.handle_message(user_id, text, channel, source=source, files=files)
     if not channel.sent and not channel.files:
         # core's authorization gate returned silently — the token is valid but
         # maps to a user who is not whitelisted. Say so rather than returning
@@ -82,14 +120,10 @@ async def message(request: web.Request) -> web.Response:
     user_id = _authenticate(request)
     if user_id is None:
         return web.json_response({"error": "unauthorized"}, status=401)
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "body must be JSON"}, status=400)
-    text = (body or {}).get("text", "")
-    if not isinstance(text, str) or not text.strip():
+    text, files = await read_message(request)
+    if not text.strip() and not files:
         return web.json_response({"error": "missing 'text'"}, status=400)
-    return await _dispatch(user_id, text, dry=_wants_dry_run(request))
+    return await _dispatch(user_id, text, dry=_wants_dry_run(request), files=files)
 
 
 async def voice(request: web.Request) -> web.Response:

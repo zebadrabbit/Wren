@@ -50,10 +50,12 @@ async def _page_request(**kw):
 
 
 def _replies(*texts, files=()):
-    async def fake(user_id, text, channel):
+    outbound = files
+
+    async def fake(user_id, text, channel, *, files=None):
         for t in texts:
             await channel.send(t)
-        for data, name in files:
+        for data, name in outbound:
             await channel.send_file(data, name)
     return fake
 
@@ -275,7 +277,7 @@ def test_other_users_conversation_is_404_on_delete():
 def test_other_users_conversation_is_404_on_post_message(monkeypatch):
     called = []
 
-    async def fake(user_id, text, channel):
+    async def fake(user_id, text, channel, *, files=None):
         called.append((user_id, text))
         await channel.send("leaked")
 
@@ -301,7 +303,7 @@ def test_list_does_not_leak_other_users_conversations():
 def test_message_dispatches_and_returns_replies(monkeypatch):
     seen = {}
 
-    async def fake(user_id, text, channel):
+    async def fake(user_id, text, channel, *, files=None):
         seen["user_id"], seen["text"] = user_id, text
         await channel.send("Saved.")
 
@@ -337,7 +339,8 @@ def test_message_returns_files_base64(monkeypatch):
                         json={"text": "export"})
     assert status == 200
     assert body["files"] == [
-        {"filename": "notes.md", "data": base64.b64encode(b"# notes").decode()}
+        {"filename": "notes.md", "mime": "application/octet-stream",
+         "data": base64.b64encode(b"# notes").decode()}
     ]
 
 
@@ -471,7 +474,7 @@ def test_history_excludes_the_in_flight_message(monkeypatch):
     included it the model would see the same message twice."""
     seen = []
 
-    async def fake(user_id, text, channel):
+    async def fake(user_id, text, channel, *, files=None):
         seen.append({"text": text, "history": await channel.history()})
         await channel.send(f"echo:{text}")
 
@@ -497,7 +500,7 @@ def test_history_excludes_the_in_flight_message(monkeypatch):
 def test_history_is_scoped_to_one_conversation(monkeypatch):
     seen = []
 
-    async def fake(user_id, text, channel):
+    async def fake(user_id, text, channel, *, files=None):
         seen.append(await channel.history())
         await channel.send(f"echo:{text}")
 
@@ -591,7 +594,7 @@ def test_established_conversation_renamed_to_new_chat_is_not_retitled(monkeypatc
 # ── cards ───────────────────────────────────────────────────────────────────
 
 def test_a_card_comes_back_in_the_message_response():
-    async def fake_handle(user_id, text, channel):
+    async def fake_handle(user_id, text, channel, *, files=None):
         await channel.send_card(
             "shopping", {"items": [{"text": "milk", "added_by": "ann"}]},
             "milk", intent="recall_shopping", params={"content": ""})
@@ -614,7 +617,7 @@ def test_a_card_comes_back_in_the_message_response():
 def test_a_card_survives_a_reload_but_its_rows_do_not():
     # what is persisted is how to re-fetch, never the rows -- that is what makes
     # a card live when you scroll back to it an hour later
-    async def fake_handle(user_id, text, channel):
+    async def fake_handle(user_id, text, channel, *, files=None):
         await channel.send_card("shopping", {"items": [{"text": "milk"}]}, "milk",
                                 intent="recall_shopping", params={"content": ""})
 
@@ -633,7 +636,7 @@ def test_a_card_survives_a_reload_but_its_rows_do_not():
 
 def test_the_model_does_not_see_cards():
     # history() feeds brain.detect_intent; a card must be invisible there
-    async def fake_handle(user_id, text, channel):
+    async def fake_handle(user_id, text, channel, *, files=None):
         await channel.send_card("shopping", {"items": [{"text": "milk"}]}, "milk",
                                 intent="recall_shopping", params={"content": ""})
 
@@ -850,3 +853,56 @@ def test_reopen_does_not_remount_cards_without_a_refresh_intent():
     from pathlib import Path
     page = (Path(__file__).parent.parent / "wren" / "communication" / "chat.html").read_text()
     assert "if (m.card && m.card.intent) mountStoredCard(" in page
+
+
+# ── multipart ─────────────────────────────────────────────────────────────
+
+JPEG = b"\xff\xd8\xff\xe0" + b"\0" * 32
+
+
+def _multipart(text, *files):
+    import aiohttp
+    form = aiohttp.FormData()
+    if text is not None:
+        form.add_field("text", text)
+    for name, data in files:
+        form.add_field("file", data, filename=name, content_type="image/jpeg")
+    return form
+
+
+def _convo(token=TOKEN_A):
+    _, body = call("post", "/api/conversations", token=token, json={})
+    return body["id"]
+
+
+def test_post_message_accepts_multipart_and_stores_the_caption(monkeypatch):
+    seen = {}
+
+    async def fake(user_id, text, channel, *, files=None):
+        seen["text"], seen["files"] = text, files
+        await channel.send("Saved, 1 image.")
+    monkeypatch.setattr(core, "handle_message", fake)
+    cid = _convo()
+    status, body = call("post", f"/api/conversations/{cid}/message", token=TOKEN_A,
+                        data=_multipart("receipt", ("r.jpg", JPEG)))
+    assert status == 200 and body["replies"] == ["Saved, 1 image."]
+    assert seen["text"] == "receipt" and [f.filename for f in seen["files"]] == ["r.jpg"]
+    assert conversations.messages(cid)[0]["content"] == "receipt"
+
+
+def test_post_message_with_a_file_and_no_caption_stores_a_placeholder(monkeypatch):
+    async def fake(user_id, text, channel, *, files=None):
+        await channel.send("What is this?")
+    monkeypatch.setattr(core, "handle_message", fake)
+    cid = _convo()
+    status, _ = call("post", f"/api/conversations/{cid}/message", token=TOKEN_A,
+                     data=_multipart(None, ("r.jpg", JPEG)))
+    assert status == 200
+    assert conversations.messages(cid)[0]["content"] == "(sent r.jpg)"
+
+
+def test_post_message_reply_files_carry_mime(monkeypatch):
+    monkeypatch.setattr(core, "handle_message", _replies("here", files=[(JPEG, "a.jpg")]))
+    cid = _convo()
+    _, body = call("post", f"/api/conversations/{cid}/message", token=TOKEN_A, json={"text": "show"})
+    assert body["files"][0]["mime"] == "image/jpeg"

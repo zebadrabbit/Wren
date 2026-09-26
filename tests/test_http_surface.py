@@ -36,10 +36,12 @@ def call(method, path, **kw):
 
 
 def _replies(*texts, files=()):
-    async def fake(user_id, text, channel, *, source="text"):
+    outbound = files
+
+    async def fake(user_id, text, channel, *, source="text", files=None):
         for t in texts:
             await channel.send(t)
-        for data, name in files:
+        for data, name in outbound:
             await channel.send_file(data, name)
     return fake
 
@@ -73,7 +75,7 @@ def test_malformed_bearer_header_is_401():
 def test_message_dispatches_and_returns_replies(monkeypatch):
     seen = {}
 
-    async def fake(user_id, text, channel, *, source="text"):
+    async def fake(user_id, text, channel, *, source="text", files=None):
         seen["user_id"], seen["text"] = user_id, text
         await channel.send("Saved.")
 
@@ -91,7 +93,8 @@ def test_message_returns_files_base64(monkeypatch):
     status, body = call("post", "/message", token="good-token", json={"text": "export"})
     assert status == 200
     assert body["files"] == [
-        {"filename": "notes.md", "data": base64.b64encode(b"# notes").decode()}
+        {"filename": "notes.md", "mime": "application/octet-stream",
+         "data": base64.b64encode(b"# notes").decode()}
     ]
 
 
@@ -144,7 +147,7 @@ def test_voice_transcribes_then_dispatches(monkeypatch):
     from wren import stt
     seen = {}
 
-    async def fake(user_id, text, channel, *, source="text"):
+    async def fake(user_id, text, channel, *, source="text", files=None):
         seen["text"] = text
         await channel.send("Reminder set.")
 
@@ -161,7 +164,7 @@ def test_voice_dispatches_with_source_voice(monkeypatch):
     from wren import stt
     seen = {}
 
-    async def fake(user_id, text, channel, *, source="text"):
+    async def fake(user_id, text, channel, *, source="text", files=None):
         seen["source"] = source
         await channel.send("ok")
 
@@ -205,7 +208,7 @@ def test_voice_destructive_intent_asks_for_confirmation_end_to_end(monkeypatch):
 def test_message_dispatches_with_source_text(monkeypatch):
     seen = {}
 
-    async def fake(user_id, text, channel, *, source="text"):
+    async def fake(user_id, text, channel, *, source="text", files=None):
         seen["source"] = source
         await channel.send("ok")
 
@@ -270,7 +273,7 @@ def test_dry_run_query_flag_runs_core_inside_db_dry_run(monkeypatch):
     from wren import db
     seen = []
 
-    async def fake(user_id, text, channel, *, source="text"):
+    async def fake(user_id, text, channel, *, source="text", files=None):
         seen.append(db.in_dry_run())
         await channel.send("ok")
     monkeypatch.setattr(core, "handle_message", fake)
@@ -284,7 +287,7 @@ def test_without_the_flag_nothing_is_dry(monkeypatch):
     from wren import db
     seen = []
 
-    async def fake(user_id, text, channel, *, source="text"):
+    async def fake(user_id, text, channel, *, source="text", files=None):
         seen.append(db.in_dry_run())
         await channel.send("ok")
     monkeypatch.setattr(core, "handle_message", fake)
@@ -297,7 +300,7 @@ def test_dry_run_flag_accepts_true_and_rejects_zero(monkeypatch):
     from wren import db
     seen = []
 
-    async def fake(user_id, text, channel, *, source="text"):
+    async def fake(user_id, text, channel, *, source="text", files=None):
         seen.append(db.in_dry_run())
         await channel.send("ok")
     monkeypatch.setattr(core, "handle_message", fake)
@@ -324,9 +327,83 @@ def test_voice_honours_dry_run(monkeypatch):
     seen = []
     monkeypatch.setattr(stt, "transcribe", lambda audio: "hello")
 
-    async def fake(user_id, text, channel, *, source="text"):
+    async def fake(user_id, text, channel, *, source="text", files=None):
         seen.append(db.in_dry_run())
         await channel.send("ok")
     monkeypatch.setattr(core, "handle_message", fake)
     status, body = call("post", "/voice?dry_run=1", token="good-token", data=b"RIFF")
+    assert seen == [True] and body["dry_run"] is True
+
+
+# ── multipart ─────────────────────────────────────────────────────────────
+
+JPEG = b"\xff\xd8\xff\xe0" + b"\0" * 32
+
+
+def _multipart(text, *files):
+    import aiohttp
+    form = aiohttp.FormData()
+    if text is not None:
+        form.add_field("text", text)
+    for name, data in files:
+        form.add_field("file", data, filename=name, content_type="application/octet-stream")
+    return form
+
+
+def test_message_accepts_multipart_text_and_file(monkeypatch):
+    seen = {}
+
+    async def fake(user_id, text, channel, *, source="text", files=None):
+        seen["text"], seen["files"] = text, files
+        await channel.send("ok")
+    monkeypatch.setattr(core, "handle_message", fake)
+    status, body = call("post", "/message", token="good-token", data=_multipart("receipt", ("r.jpg", JPEG)))
+    assert status == 200 and body["replies"] == ["ok"]
+    assert seen["text"] == "receipt"
+    assert [(f.filename, f.mime, f.data) for f in seen["files"]] == [("r.jpg", "application/octet-stream", JPEG)]
+
+
+def test_message_accepts_a_file_with_no_text(monkeypatch):
+    seen = {}
+
+    async def fake(user_id, text, channel, *, source="text", files=None):
+        seen["text"], seen["files"] = text, files
+        await channel.send("What is this?")
+    monkeypatch.setattr(core, "handle_message", fake)
+    status, body = call("post", "/message", token="good-token", data=_multipart(None, ("r.jpg", JPEG)))
+    assert status == 200 and seen["text"] == "" and len(seen["files"]) == 1
+
+
+def test_multipart_with_neither_text_nor_file_is_400():
+    status, body = call("post", "/message", token="good-token", data=_multipart(""))
+    assert status == 400 and body["error"] == "missing 'text'"
+
+
+def test_json_message_still_works_and_passes_no_files(monkeypatch):
+    seen = {}
+
+    async def fake(user_id, text, channel, *, source="text", files=None):
+        seen["files"] = files
+        await channel.send("ok")
+    monkeypatch.setattr(core, "handle_message", fake)
+    status, _ = call("post", "/message", token="good-token", json={"text": "hi"})
+    assert status == 200 and seen["files"] == []
+
+
+def test_reply_files_carry_a_sniffed_mime(monkeypatch):
+    monkeypatch.setattr(core, "handle_message", _replies("here", files=[(JPEG, "a.jpg"), (b"plain", "a.txt")]))
+    _, body = call("post", "/message", token="good-token", json={"text": "show"})
+    assert [(f["filename"], f["mime"]) for f in body["files"]] == \
+        [("a.jpg", "image/jpeg"), ("a.txt", "application/octet-stream")]
+
+
+def test_dry_run_applies_to_multipart_too(monkeypatch):
+    from wren import db
+    seen = []
+
+    async def fake(user_id, text, channel, *, source="text", files=None):
+        seen.append(db.in_dry_run())
+        await channel.send("ok")
+    monkeypatch.setattr(core, "handle_message", fake)
+    _, body = call("post", "/message?dry_run=1", token="good-token", data=_multipart("x", ("r.jpg", JPEG)))
     assert seen == [True] and body["dry_run"] is True

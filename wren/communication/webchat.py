@@ -9,7 +9,9 @@ from aiohttp import web
 from .. import config
 from .. import conversations
 from .. import core
+from .. import filetypes
 from ..channel import CollectingChannel, Ctx
+from .http_plugin import read_message
 
 HISTORY_LIMIT = 20
 
@@ -247,10 +249,12 @@ def register_routes(app: web.Application, authenticate) -> None:
         convo_id = _id_from(request)
         convo = _conversation_or_404(convo_id, user_id)
 
-        body = await _json_object(request)
-        text = body.get("text", "")
-        if not isinstance(text, str) or not text.strip():
+        text, files = await read_message(request)
+        if not text.strip() and not files:
             return web.json_response({"error": "missing 'text'"}, status=400)
+        # The transcript stores words only (files are not persisted, see
+        # send_file); a bare photo leaves a placeholder so the turn is visible.
+        stored = text.strip() or "(sent " + ", ".join(f.filename for f in files) + ")"
 
         # persist first so a failed LLM call doesn't lose what was typed, then
         # exclude it from history — core passes it separately as `text`, and
@@ -261,18 +265,20 @@ def register_routes(app: web.Application, authenticate) -> None:
         # would clobber one renamed straight after creation. Renaming an
         # established chat to "New chat" is safe — it already has messages.
         untitled = convo["title"] == "New chat" and not conversations.messages(convo_id, limit=1)
-        user_msg_id = conversations.add_message(convo_id, "user", text)
+        user_msg_id = conversations.add_message(convo_id, "user", stored)
         if untitled:
-            conversations.rename(convo_id, user_id, conversations.title_from(text))
+            conversations.rename(convo_id, user_id, conversations.title_from(stored))
 
         channel = WebChannel(convo_id, user_id, before_id=user_msg_id)
-        await core.handle_message(user_id, text, channel)
+        await core.handle_message(user_id, text, channel, files=files)
         conversations.touch(convo_id, user_id)
 
         return web.json_response({
             "replies": channel.sent,
             "files": [
-                {"filename": name, "data": base64.b64encode(data).decode("ascii")}
+                {"filename": name,
+                 "mime": filetypes.sniff(data) or "application/octet-stream",
+                 "data": base64.b64encode(data).decode("ascii")}
                 for data, name in channel.files
             ],
             "cards": channel.cards,
