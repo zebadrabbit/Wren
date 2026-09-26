@@ -10,7 +10,7 @@ import logging
 
 import pytest
 
-from wren import config, router
+from wren import config, contacts, router
 
 
 class FakeSurface:
@@ -34,6 +34,9 @@ def clean_registry():
     # the registry is module-level global state; wipe it either side of every
     # test so registrations cannot leak between them.
     router.reset()
+    # notify() consults contacts to route a person to their surface, and
+    # run.py creates that table at startup; here nothing else does.
+    contacts.init_db()
     yield
     router.reset()
 
@@ -224,3 +227,50 @@ def test_notify_is_a_silent_success_in_a_dry_run(monkeypatch):
     with db.dry_run():
         assert asyncio.run(router.notify(1, "hi")) is True
     assert surface.calls == []
+
+
+# --- notifications follow the person --------------------------------------
+# With no explicit `via`, a contact who has no id on the default surface but
+# is registered on another running one is reached there. The owner is not a
+# contact, so the owner's routing is untouched.
+
+from wren import contacts
+
+@pytest.fixture
+def hubby_on_telegram():
+    contacts.init_db()
+    contacts.add("hubby", 42, surface="telegram")
+    return 42
+
+def test_a_telegram_only_contact_is_notified_on_telegram(monkeypatch, hubby_on_telegram):
+    monkeypatch.setattr(config, "NOTIFY_VIA", "discord")
+    discord, telegram = FakeSurface(), FakeSurface()
+    router.register("discord", discord)
+    router.register("telegram", telegram)
+    assert asyncio.run(router.notify(42, "bins")) is True
+    assert discord.calls == []
+    assert telegram.calls == [(42, "bins")]
+
+def test_the_default_surface_wins_when_the_contact_is_on_it(monkeypatch, hubby_on_telegram):
+    monkeypatch.setattr(config, "NOTIFY_VIA", "discord")
+    contacts.set_id("hubby", "discord", 222)
+    discord, telegram = FakeSurface(), FakeSurface()
+    router.register("discord", discord)
+    router.register("telegram", telegram)
+    asyncio.run(router.notify(222, "bins"))
+    assert discord.calls == [(222, "bins")] and telegram.calls == []
+
+def test_an_explicit_via_is_not_second_guessed(monkeypatch, hubby_on_telegram):
+    monkeypatch.setattr(config, "NOTIFY_VIA", "discord")
+    discord, telegram = FakeSurface(), FakeSurface()
+    router.register("discord", discord)
+    router.register("telegram", telegram)
+    asyncio.run(router.notify(42, "bins", via="discord"))
+    assert discord.calls == [(42, "bins")] and telegram.calls == []
+
+def test_falls_back_to_the_default_when_their_surface_is_not_running(monkeypatch, hubby_on_telegram):
+    monkeypatch.setattr(config, "NOTIFY_VIA", "discord")
+    discord = FakeSurface()
+    router.register("discord", discord)
+    asyncio.run(router.notify(42, "bins"))
+    assert discord.calls == [(42, "bins")]

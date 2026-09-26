@@ -104,23 +104,9 @@ def _next_fire(fire_at_iso: str, repeat: str, now: datetime) -> datetime:
         t += step
     return t.astimezone(timezone.utc).replace(microsecond=0)
 
-_VIA = re.compile(r"\b(?:on|via|through)\s+([a-z]+)\b", re.I)
-
-def _parse_via(text: str) -> str | None:
-    """The surface the user named for THIS reminder, or None for the default.
-
-    Matched against what this install actually has rather than a list of
-    transport names -- a skill has no business knowing what a "discord" is
-    (CLAUDE.md rule 1), and the same check is what stops "remind me on
-    tuesday" reading as a routing request. An unrecognised word after
-    "on/via/through" is not a surface, it is part of the sentence.
-    """
-    m = _VIA.search(text or "")
-    if not m:
-        return None
-    name = m.group(1).lower()
-    known = set(router.registered()) | set(config.COMMUNICATION_PLUGINS)
-    return name if name in known else None
+# the surface named in the sentence; the rule lives in router so the contacts
+# skill parses "add 555 as hubby on telegram" the same way
+_parse_via = router.named_surface
 
 def _parse_when(when):
     if not when:

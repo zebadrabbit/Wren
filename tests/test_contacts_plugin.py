@@ -91,9 +91,62 @@ def test_owner_lists_contacts():
     contacts.add("kevin", 333333333333333333)
     ch = CollectingChannel()
     asyncio.run(contacts_plugin.handle("list_contacts", Ctx(user_id=1, channel=ch)))
-    assert ch.sent == ["hubby, kevin"]
+    assert ch.sent == ["hubby (discord), kevin (discord)"]
 
 def test_non_owner_cannot_list_contacts():
     ch = CollectingChannel()
     asyncio.run(contacts_plugin.handle("list_contacts", Ctx(user_id=2, channel=ch)))
     assert ch.sent == ["Only the owner can manage contacts."]
+
+
+# --- "add 555 as hubby on telegram" ------------------------------------------
+from wren import config
+
+def _add(ch, content, person, text=""):
+    asyncio.run(contacts_plugin.handle("add_contact", Ctx(user_id=1, channel=ch, content=content, person=person, text=text)))
+
+def test_owner_adds_a_contact_on_a_named_surface(monkeypatch):
+    monkeypatch.setattr(config, "COMMUNICATION_PLUGINS", ["discord", "telegram"])
+    ch = CollectingChannel()
+    _add(ch, "555", "hubby", text="add 555 as hubby on telegram")
+    _assert_flourished(ch.sent[-1], "Added hubby on telegram.")
+    assert contacts.wren_id("telegram", 555) == 555
+    assert contacts.surfaces_of(555) == ["telegram"]
+
+def test_owner_adds_a_second_surface_to_an_existing_contact(monkeypatch):
+    monkeypatch.setattr(config, "COMMUNICATION_PLUGINS", ["discord", "telegram"])
+    contacts.add("hubby", 222222222222222222)
+    ch = CollectingChannel()
+    _add(ch, "555", "hubby", text="add 555 as hubby on telegram")
+    _assert_flourished(ch.sent[-1], "Added hubby on telegram.")
+    assert contacts.all() == {"hubby": 222222222222222222}
+    assert contacts.surface_id("telegram", 222222222222222222) == 555
+
+def test_a_surface_the_contact_already_has_is_taken(monkeypatch):
+    monkeypatch.setattr(config, "COMMUNICATION_PLUGINS", ["discord", "telegram"])
+    contacts.add("hubby", 42, surface="telegram")
+    ch = CollectingChannel()
+    _add(ch, "43", "hubby", text="add 43 as hubby on telegram")
+    assert ch.sent == ["That name's already taken."]
+
+def test_an_unknown_surface_word_is_not_a_surface(monkeypatch):
+    # same rule as reminders' "via": a word this install does not run is part
+    # of the sentence, so the default surface applies
+    monkeypatch.setattr(config, "COMMUNICATION_PLUGINS", ["discord", "telegram"])
+    ch = CollectingChannel()
+    _add(ch, "555", "hubby", text="add 555 as hubby on whatsapp")
+    assert contacts.surfaces_of(555) == ["discord"]
+
+def test_default_surface_is_the_first_configured_one_with_ids(monkeypatch):
+    monkeypatch.setattr(config, "COMMUNICATION_PLUGINS", ["telegram", "http"])
+    ch = CollectingChannel()
+    _add(ch, "555", "hubby")
+    assert contacts.surfaces_of(555) == ["telegram"]
+
+def test_list_contacts_shows_each_ones_surfaces():
+    contacts.add("hubby", 222222222222222222)
+    contacts.set_id("hubby", "telegram", 42)
+    contacts.add("kevin", 333333333333333333)
+    ch = CollectingChannel()
+    asyncio.run(contacts_plugin.handle("list_contacts", Ctx(user_id=1, channel=ch)))
+    assert ch.sent == ["hubby (discord, telegram), kevin (discord)"]

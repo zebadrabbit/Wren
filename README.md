@@ -83,11 +83,18 @@ user id (ask [@userinfobot](https://t.me/userinfobot)).
 
 User ids are per-surface: the number Telegram calls you is not the number
 Discord calls you, and Wren keys the whitelist and every note, reminder and pin
-off one id per person. `TELEGRAM_OWNER_ID` is what translates the two, so
-adding Telegram to an install that already has Discord gives you a second door
-into the same Wren rather than a second, empty one. Unset it only on a
-Telegram-first install, where `WREN_OWNER_ID` is already the Telegram id. Anyone
-else is a plain contact ("add 123456789 as phone").
+off one id per person. `TELEGRAM_OWNER_ID` is what translates the two for you,
+so adding Telegram to an install that already has Discord gives you a second
+door into the same Wren rather than a second, empty one. Unset it only on a
+Telegram-first install, where `WREN_OWNER_ID` is already the Telegram id.
+
+Everyone else is a contact, and a contact holds one id per surface: "add
+123456789 as hubby" (Discord, or Telegram on a Telegram-first install), then
+"add 987654321 as hubby on telegram" gives the same person their second door.
+Their notes and reminders are theirs on both; the shopping list is the
+household's on all of them. A reminder or a "send to hubby" with no surface
+named reaches them on the default `NOTIFY_VIA` surface if they are on it, and
+otherwise on whichever running surface they are.
 
 Long-polls `getUpdates` over `aiohttp`; there is no Telegram client library in
 the dependency list. Private chats only — group messages are ignored. The Bot

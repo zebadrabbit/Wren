@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, patch
 import aiohttp
 import pytest
 
-from wren import config, core, router
+from wren import config, contacts, core, router
 from wren.communication import telegram_plugin
 
 
@@ -19,6 +19,8 @@ def clean_router():
     # start() registers itself in router's module-level dict; wipe it either
     # side so a registration cannot leak into another test.
     router.reset()
+    # the id translation consults contacts, which run.py creates at startup
+    contacts.init_db()
     yield
     router.reset()
 
@@ -680,3 +682,33 @@ def test_send_file_posts_a_photo_for_image_bytes_and_a_document_otherwise():
     assert api.await_args_list[0].args == ("sendPhoto",)
     assert _form_fields(api.await_args_list[0].kwargs["data"])["photo"] == JPEG
     assert api.await_args_list[1].args == ("sendDocument",)
+
+
+# ── a second person on Telegram ──────────────────────────────────────────────
+# Contacts carry one id per surface; the plugin translates in both directions
+# for everyone, not just the owner. Translation is authn, so it lives here.
+
+from wren import contacts
+
+@pytest.fixture
+def hubby_on_both(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "TELEGRAM_OWNER_ID", 999)
+    contacts.init_db()
+    contacts.add("hubby", 222)
+    contacts.set_id("hubby", "telegram", 42)
+    return 222
+
+def test_a_contacts_telegram_id_becomes_their_wren_id(hubby_on_both):
+    api = AsyncMock(return_value=[_update(text="add milk", user_id=42)])
+    with patch.object(telegram_plugin, "_api", new=api), \
+         patch.object(core, "handle_message", new=AsyncMock()) as handle:
+        asyncio.run(telegram_plugin._poll_once(None))
+    user_id, _text, channel = handle.await_args.args
+    assert user_id == 222
+    assert channel._chat_id == 42
+
+def test_notify_to_a_contact_goes_to_their_telegram_chat(hubby_on_both):
+    api = AsyncMock(return_value={"message_id": 1})
+    with patch.object(telegram_plugin, "_api", new=api):
+        asyncio.run(telegram_plugin.notify(222, "kettle boiled"))
+    assert api.await_args.kwargs["data"]["chat_id"] == 42

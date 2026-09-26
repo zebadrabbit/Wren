@@ -261,8 +261,12 @@ Household Gaps") holds the state; this is the order and the why.
    DST, hour/minute steps in UTC — and a service that was down for a week
    fires once and skips forward. Cancel stops the series. "Every weekday"
    and "skip next time" are out of scope.
-2. **Second person.** Per-surface ids in `contacts` so the shared list is
-   actually shared; translation stays in the surface.
+2. ~~**Second person.**~~ Landed 2026-09-26: `contacts` holds one id column
+   per surface (`SURFACES`), a contact's Wren id is `COALESCE(discord_id,
+   telegram_id)`, "add 555 as hubby on telegram" gives an existing contact a
+   second door, the Telegram plugin translates everyone in both directions,
+   and `router.notify` with no `via` routes a contact to a surface they are
+   on. The old table is rebuilt in place with its rows.
 3. **Generic named lists.** The shopping machinery with a list-name column.
 4. **Web chat as an installable app with push.** Also the answer to where
    device replies land.

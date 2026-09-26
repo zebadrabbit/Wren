@@ -18,6 +18,7 @@ import sys
 import aiohttp
 
 from .. import config
+from .. import contacts
 from .. import core
 from .. import filetypes
 from .. import router
@@ -155,12 +156,12 @@ def _wren_user_id(chat_id: int) -> int:
     with its own notes. Translating is authn, which core.handle_message's
     docstring puts in the surface — so it belongs here and not in core.
 
-    ponytail: the owner only. A second person on Telegram needs a real
-    per-surface id column in contacts; add it when there is a second person.
+    The owner's mapping is the env pair (WREN_OWNER_ID, TELEGRAM_OWNER_ID);
+    everyone else's is their contacts row, which holds one id per surface.
     """
     if config.TELEGRAM_OWNER_ID and chat_id == config.TELEGRAM_OWNER_ID:
         return config.WHITELIST["owner"]
-    return chat_id
+    return contacts.wren_id("telegram", chat_id) or chat_id
 
 
 def _telegram_chat_id(user_id: int) -> int:
@@ -169,7 +170,7 @@ def _telegram_chat_id(user_id: int) -> int:
     found'."""
     if config.TELEGRAM_OWNER_ID and user_id == config.WHITELIST["owner"]:
         return config.TELEGRAM_OWNER_ID
-    return user_id
+    return contacts.surface_id("telegram", user_id) or user_id
 
 
 class TelegramChannel:
