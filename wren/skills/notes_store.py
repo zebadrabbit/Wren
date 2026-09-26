@@ -2,6 +2,11 @@ import sqlite3
 from datetime import datetime, timezone
 
 from .. import db
+from .. import filetypes
+
+# How many attachments one reply will send back. A broad "show my notes"
+# must not dump a gallery into the chat.
+MAX_FILES_PER_REPLY = 5
 
 def init_db() -> None:
     with db.conn() as con:
@@ -11,6 +16,22 @@ def init_db() -> None:
                 owner_id   TEXT NOT NULL,
                 content    TEXT NOT NULL,
                 tags       TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            )
+        """)
+        # Bytes live in SQLite on purpose: one file to back up, and per-test
+        # isolation and db.dry_run() cover them with no extra work (a file on
+        # disk would leak out of a dry run).
+        # ponytail: move blobs to disk if the database passes a few hundred MB
+        # -- db.dry_run() copies the whole file each time.
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS attachments (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                note_id    INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+                filename   TEXT NOT NULL,
+                mime       TEXT NOT NULL,
+                size       INTEGER NOT NULL,
+                data       BLOB NOT NULL,
                 created_at TEXT NOT NULL
             )
         """)
@@ -51,6 +72,10 @@ def list_recent(owner_id: int, n: int = 10) -> list[dict]:
 
 def delete(note_id: int) -> bool:
     with db.conn() as con:
+        # Explicit, not via the REFERENCES cascade: SQLite only honours ON
+        # DELETE CASCADE when PRAGMA foreign_keys=ON is set per connection,
+        # and db.conn() does not set it. Same transaction either way.
+        con.execute("DELETE FROM attachments WHERE note_id=?", (note_id,))
         cur = con.execute("DELETE FROM notes WHERE id=?", (note_id,))
         return cur.rowcount > 0
 
@@ -64,3 +89,39 @@ def find(owner_id: int, substring: str, tags: list[str] | None = None) -> list[d
     # treehouse with a rope ladder" also exists. Substring stays the fallback.
     exact = [r for r in hits if r["content"].strip().lower() == substring.strip().lower()]
     return exact if len(exact) == 1 else hits
+
+
+def attach(note_id: int, filename: str, mime: str, data: bytes) -> int:
+    """Store one file against a note. `mime` is what the surface declared; the
+    sniffed type is what gets stored, and a file that sniffs as nothing is
+    refused -- a renamed executable must not become a "PDF"."""
+    if len(data) > filetypes.MAX_BYTES:
+        raise ValueError("too big")
+    sniffed = filetypes.sniff(data)
+    if sniffed is None:
+        raise ValueError("unsupported type")
+    ts = datetime.now(timezone.utc).isoformat()
+    with db.conn() as con:
+        cur = con.execute(
+            "INSERT INTO attachments (note_id, filename, mime, size, data, created_at) "
+            "VALUES (?,?,?,?,?,?)",
+            (note_id, filename, sniffed, len(data), data, ts),
+        )
+        return cur.lastrowid
+
+def attachments(note_id: int) -> list[dict]:
+    """Metadata only -- never the bytes, so listing a note is cheap."""
+    with db.conn() as con:
+        con.row_factory = sqlite3.Row
+        rows = con.execute(
+            "SELECT id, note_id, filename, mime, size, created_at FROM attachments "
+            "WHERE note_id=? ORDER BY id",
+            (note_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+def attachment(attachment_id: int) -> dict | None:
+    with db.conn() as con:
+        con.row_factory = sqlite3.Row
+        row = con.execute("SELECT * FROM attachments WHERE id=?", (attachment_id,)).fetchone()
+    return dict(row) if row else None

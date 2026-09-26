@@ -97,3 +97,57 @@ def test_find_exact_match_ignores_case():
     notes.save(1, "build a treehouse with a rope ladder", ["idea"])
     found = notes.find(1, "build a treehouse", tags=["idea"])
     assert [n["content"] for n in found] == ["Build A Treehouse"]
+
+
+# ── attachments ───────────────────────────────────────────────────────────
+
+JPEG = b"\xff\xd8\xff\xe0" + b"\0" * 32
+PDF = b"%PDF-1.7\n" + b"\0" * 32
+
+
+def test_attach_stores_bytes_and_the_sniffed_mime_wins_over_the_declared_one():
+    notes.init_db()
+    note_id = notes.save(1, "tyre receipt", [])
+    att_id = notes.attach(note_id, "receipt.png", "image/png", JPEG)   # lied: it is a JPEG
+    rows = notes.attachments(note_id)
+    assert [r["id"] for r in rows] == [att_id]
+    assert rows[0]["mime"] == "image/jpeg"
+    assert rows[0]["size"] == len(JPEG)
+    assert "data" not in rows[0]                      # metadata only
+    assert notes.attachment(att_id)["data"] == JPEG
+    assert notes.attachment(att_id + 100) is None
+
+
+def test_attach_refuses_oversize_and_unknown_types_without_writing():
+    import pytest
+    from wren import filetypes
+    notes.init_db()
+    note_id = notes.save(1, "n", [])
+    with pytest.raises(ValueError, match="too big"):
+        notes.attach(note_id, "big.jpg", "image/jpeg", JPEG + b"\0" * filetypes.MAX_BYTES)
+    with pytest.raises(ValueError, match="unsupported type"):
+        notes.attach(note_id, "evil.jpg", "image/jpeg", b"MZ\x90\x00" + b"\0" * 32)
+    assert notes.attachments(note_id) == []
+
+
+def test_delete_removes_the_notes_attachments_too():
+    notes.init_db()
+    keep = notes.save(1, "keep", [])
+    gone = notes.save(1, "gone", [])
+    keep_att = notes.attach(keep, "a.pdf", "application/pdf", PDF)
+    notes.attach(gone, "b.pdf", "application/pdf", PDF)
+    assert notes.delete(gone) is True
+    assert notes.attachments(gone) == []
+    assert notes.attachment(keep_att) is not None
+
+
+def test_attachments_come_back_in_insertion_order():
+    notes.init_db()
+    note_id = notes.save(1, "n", [])
+    first = notes.attach(note_id, "1.pdf", "application/pdf", PDF)
+    second = notes.attach(note_id, "2.pdf", "application/pdf", PDF)
+    assert [r["id"] for r in notes.attachments(note_id)] == [first, second]
+
+
+def test_max_files_per_reply_is_five():
+    assert notes.MAX_FILES_PER_REPLY == 5
