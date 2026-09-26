@@ -299,7 +299,12 @@ Household Gaps") holds the state; this is the order and the why.
    anything else is a note as before. Skills declare `ACCEPTS_FILES`. Live:
    five items read off a rendered list in 0.6 s. Out of scope: Discord
    attachments, describing a photo unasked.
-7. **Cross-skill recall.**
+7. ~~**Cross-skill recall.**~~ Landed 2026-09-26: a question routed to
+   recall_notes now gathers from notes, memories, pending reminders and the
+   next thirty days of calendar (`wren/recall.py`), ranked by word overlap
+   and capped at twenty, and the answer prompt labels each record with its
+   source and date. No new intent; the classifier is untouched. Attachments
+   come back only for the notes that matched. Ceiling: lexical matching.
 8. **Timers.** 9. **Undo for typed messages.** 10. **Gmail digest / sender
    allowlist.**
 

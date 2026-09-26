@@ -1,9 +1,11 @@
+import asyncio
 from collections import Counter
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from ..channel import Ctx
 from . import notes_store as notes
 from .. import brain
+from .. import recall
 from .. import config
 from .. import filetypes
 from .. import flourish
@@ -148,9 +150,13 @@ async def handle(intent: str, ctx: Ctx) -> None:
             if not matches:
                 await ctx.channel.send("No notes found.")
             else:
-                summary = brain.recall(matches, ctx.content)
+                # every store, not just notes: the dentist may be a memory,
+                # a reminder or a calendar event. to_thread: the calendar
+                # part can fetch a feed.
+                records = await asyncio.to_thread(recall.gather, ctx.user_id, ctx.content, matches)
+                summary = brain.recall(records, ctx.content)
                 await ctx.channel.send(summary)
-                await _send_attachments(ctx, [n["id"] for n in matches])
+                await _send_attachments(ctx, [r["note_id"] for r in records if r["source"] == "note"])
         else:
             rows = [{"content": n["content"],
                      "tags": [t for t in n["tags"].split(",") if t],

@@ -186,12 +186,15 @@ def extract_facts(text: str) -> str:
         json_mode=True,
     )
 
-def recall(notes: list[dict], query: str) -> str:
-    notes_text = "\n".join(
-        f"- [{n['created_at'][:10]}] {n['content']} (tags: {n['tags']})"
-        for n in notes
-    )
-    prompt = f"User's notes:\n{notes_text}\n\nUser asked: {query}\n\nAnswer directly using only what's in the notes."
+def recall(records: list[dict], query: str) -> str:
+    """Answer a question from labelled records (see wren/recall.py): each
+    line names its source and date so the answer can say where it came from."""
+    lines = "\n".join(
+        f"- [{r['source']} {r['when']}] {r['content']}" + (f" (tags: {r['tags']})" if r.get("tags") else "")
+        for r in records)
+    prompt = (f"What Wren has on record (notes, remembered facts, reminders, calendar):\n{lines}\n\n"
+              f"User asked: {query}\n\n"
+              "Answer directly using only these records. Say which kind it came from when it matters.")
     return _complete(
         [
             {"role": "system", "content": "You are Wren. Short, structured, ready. No filler. Answer directly, no reasoning or thinking process shown. /no_think"},

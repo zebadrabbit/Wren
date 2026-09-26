@@ -71,11 +71,21 @@ def test_detect_intent_all_providers_fail_falls_back_to_chat():
     assert result["intent"] == "chat"
 
 def test_recall_returns_string():
-    sample_notes = [{"content": "buy eggs", "tags": "grocery", "created_at": "2026-06-25T10:00:00+00:00"}]
+    records = [{"source": "note", "when": "2026-06-25", "content": "buy eggs (tags: grocery)"}]
     with patch.object(brain, "_get_client", return_value=_client_returning("You need eggs.")):
-        result = brain.recall(sample_notes, "what groceries do I need?")
+        result = brain.recall(records, "what groceries do I need?")
     assert isinstance(result, str)
     assert len(result) > 0
+
+def test_recall_prompt_labels_each_record_with_its_source_and_when():
+    records = [{"source": "note", "when": "2026-06-25", "content": "dentist is dr patel"},
+               {"source": "reminder", "when": "2026-10-01 09:00 UTC, every week", "content": "dentist cleaning"}]
+    client = _client_returning("March.")
+    with patch.object(brain, "_get_client", return_value=client):
+        brain.recall(records, "when is the dentist")
+    prompt = client.chat.completions.create.call_args.kwargs["messages"][-1]["content"]
+    assert "[note 2026-06-25] dentist is dr patel" in prompt
+    assert "[reminder 2026-10-01 09:00 UTC, every week] dentist cleaning" in prompt
 
 def test_chat_returns_string():
     with patch.object(brain, "_get_client", return_value=_client_returning("Hello.")):

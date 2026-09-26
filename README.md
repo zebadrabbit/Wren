@@ -368,7 +368,9 @@ alternatives with the same profile.
 
 **Notes**
 - "remind me to call the plumber" → saves a note
-- "what do I need to do" → recalls and answers from your notes
+- "what do I need to do", "what did I say about the dentist" → answers in prose
+  from everything Wren has on it: notes, remembered facts, pending reminders
+  and the next thirty days of calendar, each answer saying which it came from
 
 **Photos and PDFs.** Send a photo on Telegram, or paste or drop one into the
 web chat, with a caption. What happens depends on the caption, by a plain

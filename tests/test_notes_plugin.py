@@ -16,6 +16,10 @@ from wren.flourish import EMOTES
 def tmp_db(tmp_path, monkeypatch):
     monkeypatch.setenv("WREN_DB", str(tmp_path / "wren.db"))
     notes.init_db()
+    # a question over notes gathers from every store (wren/recall.py); run.py
+    # creates these at startup, here nothing else does
+    from wren.skills import memory_store, reminders_store
+    memory_store.init_db(); reminders_store.init_db()
 
 def _assert_flourished(sent: str, prefix: str):
     assert sent.startswith(prefix + " ")
@@ -436,3 +440,15 @@ def test_recall_ideas_past_threshold_shows_newest_and_a_count():
     assert "- idea 00" not in text
     assert text.endswith("…and 1 more. Ask about one to narrow it down.")
     assert len(ch.cards[0]["data"]["ideas"]) == 16
+
+
+def test_recall_with_a_question_sends_files_only_for_the_notes_that_matched():
+    hit = notes.save(1, "tyre receipt from the garage", [])
+    notes.attach(hit, "receipt.jpg", "image/jpeg", JPEG)
+    miss = notes.save(1, "wifi password on the fridge", [])
+    notes.attach(miss, "router.jpg", "image/jpeg", JPEG)
+    ch = CollectingChannel()
+    with patch.object(brain, "recall", return_value="The garage.") as mock_recall:
+        asyncio.run(notes_plugin.handle("recall_notes", Ctx(user_id=1, channel=ch, content="where is the tyre receipt")))
+    assert ch.files == [(JPEG, "receipt.jpg")]
+    assert [r["source"] for r in mock_recall.call_args[0][0]] == ["note"]
