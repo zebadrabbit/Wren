@@ -275,6 +275,8 @@ const ARCH = {
    "intents": [
     "add_shopping_item",
     "remove_shopping_item",
+    "restore_shopping_item",
+    "clear_shopping",
     "recall_shopping",
     "send_shopping_list"
    ]
@@ -313,14 +315,45 @@ const ARCH = {
     "unpin_note",
     "list_pins"
    ]
+  },
+  {
+   "module": "memory_skill",
+   "name": "Memory",
+   "intents": [
+    "recall_memories",
+    "forget_memory"
+   ]
+  },
+  {
+   "module": "calendar_skill",
+   "name": "Calendar",
+   "intents": [
+    "recall_calendar"
+   ]
+  },
+  {
+   "module": "weather_skill",
+   "name": "Weather",
+   "intents": [
+    "get_weather",
+    "set_location",
+    "locate_me"
+   ]
+  },
+  {
+   "module": "briefing_skill",
+   "name": "Briefing",
+   "intents": [
+    "briefing"
+   ]
   }
  ],
  "totals": {
   "chat": 3,
   "input": 2,
   "stubs": 0,
-  "skills": 6,
-  "intents": 22
+  "skills": 10,
+  "intents": 31
  }
 };
 // WCAG 2.1 relative luminance and contrast, recomputed in the browser so the
