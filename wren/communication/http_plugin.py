@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import hmac
+import json
 import logging
 import sys
 
@@ -42,10 +43,7 @@ async def read_message(request: web.Request) -> tuple[str, list[Inbound]]:
     with a `text` field and any number of `file` parts. One parser for the
     machine API and the browser chat, so `curl -F` and a pasted screenshot
     take the same path. Raises HTTPBadRequest for a body that is neither."""
-    if request.content_type in ("multipart/form-data", "application/x-www-form-urlencoded"):
-        # aiohttp's own FormData degrades to urlencoded when it holds no file
-        # field (aiohttp.FormData().is_multipart is False for text-only data)
-        # -- a caption-only post with no attachment must parse the same way.
+    if request.content_type == "multipart/form-data":
         form = await request.post()          # bounded by client_max_size
         text = form.get("text", "")
         files = [
@@ -56,9 +54,19 @@ async def read_message(request: web.Request) -> tuple[str, list[Inbound]]:
             if isinstance(part, web.FileField)
         ]
         return (text if isinstance(text, str) else ""), files
+    # JSON first, whatever the declared type: plain `curl -d '{"text": ...}'`
+    # sends application/x-www-form-urlencoded and has always worked.
+    raw = await request.read()
     try:
-        body = await request.json()
-    except Exception:
+        body = json.loads(raw) if raw.strip() else None
+    except ValueError:
+        body = None
+        if request.content_type == "application/x-www-form-urlencoded":
+            # a real form with no file part (aiohttp's FormData degrades to
+            # urlencoded when nothing is a file): text only, never files
+            form = await request.post()
+            text = form.get("text", "")
+            return (text if isinstance(text, str) else ""), []
         raise web.HTTPBadRequest(text='{"error": "body must be JSON"}',
                                  content_type="application/json")
     if body is None:

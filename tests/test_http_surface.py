@@ -407,3 +407,28 @@ def test_dry_run_applies_to_multipart_too(monkeypatch):
     monkeypatch.setattr(core, "handle_message", fake)
     _, body = call("post", "/message?dry_run=1", token="good-token", data=_multipart("x", ("r.jpg", JPEG)))
     assert seen == [True] and body["dry_run"] is True
+
+
+def test_json_body_with_a_urlencoded_content_type_still_dispatches(monkeypatch):
+    # plain `curl -d '{"text": "hi"}'` with no -H header sends this content type
+    seen = {}
+
+    async def fake(user_id, text, channel, *, source="text", files=None):
+        seen["text"], seen["files"] = text, files
+        await channel.send("ok")
+    monkeypatch.setattr(core, "handle_message", fake)
+    status, body = call("post", "/message", token="good-token", data=b'{"text": "hi"}',
+                        headers={"Content-Type": "application/x-www-form-urlencoded"})
+    assert status == 200 and body["replies"] == ["ok"]
+    assert seen["text"] == "hi" and seen["files"] == []
+
+
+def test_urlencoded_text_field_without_files_still_works(monkeypatch):
+    seen = {}
+
+    async def fake(user_id, text, channel, *, source="text", files=None):
+        seen["text"] = text
+        await channel.send("ok")
+    monkeypatch.setattr(core, "handle_message", fake)
+    status, _ = call("post", "/message", token="good-token", data={"text": "from a form"})
+    assert status == 200 and seen["text"] == "from a form"
