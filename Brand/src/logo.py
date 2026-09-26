@@ -244,9 +244,14 @@ if __name__ == "__main__":
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     out = os.path.join(root, "brand")
     os.makedirs(out, exist_ok=True)
-    for name, fn in FILES.items():
+    # Render everything before writing anything: a missing font used to kill
+    # the run after open() had already truncated the file it was about to
+    # write, leaving a 0-byte wordmark.svg that build.py's "reusing existing
+    # logo.json" fallback never noticed.
+    rendered = {name: fn() for name, fn in FILES.items()}
+    for name, svg in rendered.items():
         with open(os.path.join(out, name), "w") as f:
-            f.write(fn() + "\n")
+            f.write(svg + "\n")
     print(json.dumps({
         "geometry": geometry(),
         "wordmark": wordmark(64),
