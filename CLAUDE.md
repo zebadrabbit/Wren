@@ -144,11 +144,11 @@ a module.
   memory" caveat no longer applies — but the reverse now does: on-disk breakage
   is live at the next restart, and there is no stale-process grace period left.
   Assume any breakage you leave on disk is armed, not inert.
-- Old local git history (pre-restart, 8 commits ahead of `origin/main`) is
-  preserved at `.git-wren-v1-archive/` (gitignored). The current repo was
-  git-init'd fresh. GitHub remote is still `git@github.com:zebadrabbit/Wren.git`
-  from the old repo but has not been touched — decide when/how to push
-  (new branch on the existing repo, or a clean new repo) before you do.
+- Old local git history (pre-restart) is preserved at `.git-wren-v1-archive/`
+  (gitignored). `main` tracks `origin/main` on the public GitHub repo
+  (`zebadrabbit/Wren`) and fast-forwards cleanly — pushed 2026-09-26 after a
+  month of unpushed commits. Before any push, remember the repo is public:
+  scan the range for tracked `.env`/`.db` files and token-shaped strings.
 - `docs/superpowers/plans/` and `specs/` predate the restart and reference
   the old module/env names — still useful for the *behavioral* history of
   each feature (why reminders work the way they do, etc.), just translate
