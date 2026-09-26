@@ -525,3 +525,16 @@ def test_telegram_send_card_falls_back_to_the_prose():
 
     assert api.await_args.args[0] == "sendMessage"
     assert api.await_args.kwargs["data"] == {"chat_id": 42, "text": "Shopping list is empty."}
+
+
+def test_shared_location_becomes_a_set_location_message():
+    # Telegram's paperclip "Location" is the phone-GPS path. The plugin turns
+    # it into the same words a user would type, so weather_skill.set_location
+    # is the one write path -- transport translation, no domain logic here.
+    update = _update(text=None, location={"latitude": 36.4814, "longitude": -94.2733})
+    api = AsyncMock(return_value=[update])
+    with patch.object(telegram_plugin, "_api", new=api), \
+         patch.object(core, "handle_message", new=AsyncMock()) as handle:
+        asyncio.run(telegram_plugin._poll_once(None))
+    _user_id, text, _channel = handle.await_args.args
+    assert text == "my location is 36.4814, -94.2733"

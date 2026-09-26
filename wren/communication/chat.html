@@ -816,8 +816,23 @@ function remindersCard(data, mount) {
   }
 }
 
+// The skill cannot ask a browser for its position, so it sends this card and
+// the page does the asking. The fix goes back as ordinary chat text, so
+// weather_skill.set_location is the one write path for every surface.
+function locateCard(_data, mount) {
+  mount.innerHTML = '<div class="card locate"><p class="cstatus">Asking the browser for your location…</p></div>';
+  const status = msg => cardStatus(mount, msg);
+  if (!navigator.geolocation) { status("This browser has no location support."); return; }
+  navigator.geolocation.getCurrentPosition(pos => {
+    const { latitude, longitude } = pos.coords;
+    $("#text").value = "my location is " + latitude.toFixed(4) + ", " + longitude.toFixed(4);
+    status("Got it.");
+    send();
+  }, err => status(err.code === 1 ? "Location permission was denied." : "Couldn't get a location fix."));
+}
+
 const CARDS = { shopping: shoppingCard, notes: notesCard,
-                ideas: ideasCard, reminders: remindersCard };
+                ideas: ideasCard, reminders: remindersCard, locate: locateCard };
 
 function renderCard(card, mount) {
   const draw = CARDS[card.kind];

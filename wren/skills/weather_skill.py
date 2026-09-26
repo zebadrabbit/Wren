@@ -8,12 +8,15 @@ import httpx
 from .. import config
 from ..channel import Ctx
 
-INTENTS = ["get_weather"]
+INTENTS = ["get_weather", "set_location", "locate_me"]
 PLUGIN_NAME = "Weather"
 
-PROMPT_GUIDELINES = """- get_weather: user asks about the weather, temperature, rain or the forecast for here, now, today or tomorrow"""
+PROMPT_GUIDELINES = """- get_weather: user asks about the weather, temperature, rain or the forecast for here, now, today or tomorrow
+- set_location: user says where they live or wants the weather location changed (e.g. "my location is 72715", "set my location to Bella Vista, AR", "my location is 36.47, -94.27"); content is the place, zip code or coordinates exactly as given
+- locate_me: user wants Wren to use the device's current location (e.g. "use my current location", "get my location", "where am I")"""
 
 _URL = "https://api.open-meteo.com/v1/forecast"
+_GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search"
 _TIMEOUT = 10.0
 _TTL = 600
 
@@ -93,11 +96,91 @@ def summary(day: int = 0) -> str:
 
 
 _TOMORROW = re.compile(r"\btomorrow\b", re.I)
+_COORDS = re.compile(r"^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$")
+# With a weather exchange in history, a small model reads "my location is
+# 72715" as a follow-up and emits get_weather (3/3 live, 2026-09-26). The
+# words are unambiguous, so handle() reroutes on them the way it reads
+# "tomorrow" -- the classifier proposes, the skill disposes.
+_SET_LOC = re.compile(r"\b(?:my location is|set (?:my |the )?location to|location is)\s*(.+)$", re.I)
+_LOCATE = re.compile(r"\b(?:use|get|find|detect)\s+my\s+(?:current\s+)?location\b|\bwhere am i\b", re.I)
+
+
+def geocode(place: str) -> tuple[float, float, str] | None:
+    """Blocking; call under to_thread. (lat, lon, label) for the best match,
+    None when Open-Meteo knows no such place."""
+    params: dict = {"name": place, "count": 1}
+    if place.isdigit() and len(place) == 5:
+        # ponytail: a bare five-digit code is a US zip until someone abroad
+        # complains; other countries' postcodes still match by name unbiased
+        params["countryCode"] = "US"
+    resp = httpx.get(_GEOCODE_URL, params=params, timeout=_TIMEOUT)
+    resp.raise_for_status()
+    hits = resp.json().get("results") or []
+    if not hits:
+        return None
+    hit = hits[0]
+    label = ", ".join(str(hit[k]) for k in ("name", "admin1", "country_code") if hit.get(k))
+    return float(hit["latitude"]), float(hit["longitude"]), label
+
+
+async def _set_location(ctx: Ctx) -> None:
+    place = (ctx.content or "").strip()
+    if not place:
+        await ctx.channel.send("Where? A town, a zip code, or coordinates.")
+        return
+    m = _COORDS.match(place)
+    if m:
+        lat, lon, label = float(m.group(1)), float(m.group(2)), f"{m.group(1)}, {m.group(2)}"
+    else:
+        try:
+            found = await asyncio.to_thread(geocode, place)
+        except (httpx.HTTPError, KeyError, TypeError, ValueError) as e:
+            logging.warning(f"weather geocode: {type(e).__name__}: {e}")
+            await ctx.channel.send("Couldn't reach the weather service.")
+            return
+        if found is None:
+            await ctx.channel.send("Couldn't find that place.")
+            return
+        lat, lon, label = found
+    # set_override validates each key on its own, so check both before
+    # writing either: a bad longitude must not leave a new latitude behind.
+    try:
+        config.SETTABLE["WEATHER_LAT"].coerce(str(lat))
+        config.SETTABLE["WEATHER_LON"].coerce(str(lon))
+    except ValueError as e:
+        await ctx.channel.send(str(e))
+        return
+    config.set_override("WEATHER_LAT", str(lat))
+    config.set_override("WEATHER_LON", str(lon))
+    await ctx.channel.send(f"Weather location set to {label}.")
 
 
 async def handle(intent: str, ctx: Ctx) -> None:
+    if intent in ("get_weather", "set_location"):
+        # set_location too: the model has answered "use my current location"
+        # with set_location and a zip lifted from history, so the skill
+        # geocoded a stale place instead of asking the device.
+        if _LOCATE.search(ctx.text or ""):
+            intent = "locate_me"
+        elif m := _SET_LOC.search(ctx.text or ""):
+            intent = "set_location"
+            ctx.content = (ctx.content or "").strip() or m.group(1)
+    if intent in ("set_location", "locate_me"):
+        if ctx.user_id != config.WHITELIST["owner"]:
+            await ctx.channel.send("Only the owner can change the location.")
+            return
+        if intent == "set_location":
+            await _set_location(ctx)
+        else:
+            # Wren cannot poll a device; the surface has to push. The web chat
+            # draws this card and asks the browser; everything else prints the
+            # prose, which tells the user which door does work.
+            await ctx.channel.send_card(
+                "locate", {},
+                "Share your location from Telegram's attachment menu, or say this in the web chat.")
+        return
     if not is_active():
-        await ctx.channel.send("Weather isn't configured — set WEATHER_LAT and WEATHER_LON.")
+        await ctx.channel.send('Weather isn\'t configured — tell me where you are, e.g. "my location is 72715".')
         return
     day = 1 if _TOMORROW.search(ctx.text or "") else 0
     try:

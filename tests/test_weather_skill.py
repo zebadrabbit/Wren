@@ -118,7 +118,7 @@ def test_handle_reports_unconfigured_without_fetching(monkeypatch):
     with patch.object(weather_skill.httpx, "get") as get:
         asyncio.run(weather_skill.handle("get_weather", ctx))
     get.assert_not_called()
-    assert ctx.channel.sent == ["Weather isn't configured — set WEATHER_LAT and WEATHER_LON."]
+    assert ctx.channel.sent == ['Weather isn\'t configured — tell me where you are, e.g. "my location is 72715".']
 
 
 def test_handle_reports_a_dead_service():
@@ -167,3 +167,161 @@ def test_handle_reports_unreachable_on_a_non_json_body():
         ctx = _ctx("weather?")
         asyncio.run(weather_skill.handle("get_weather", ctx))
     assert ctx.channel.sent == ["Couldn't reach the weather service."]
+
+
+# ── set_location / locate_me ──────────────────────────────────────────────
+
+GEOCODE = {"results": [{"name": "Bella Vista", "admin1": "Arkansas", "country_code": "US",
+                        "latitude": 36.4814, "longitude": -94.2733}]}
+
+
+@pytest.fixture
+def scratch_settings():
+    from wren import settings
+    settings.init_db()
+    yield
+    for key in ("WEATHER_LAT", "WEATHER_LON"):
+        config.clear_override(key)
+
+
+def _owner(text, content):
+    return Ctx(user_id=config.WHITELIST["owner"], channel=CollectingChannel(), text=text, content=content)
+
+
+def test_set_location_geocodes_a_place_and_persists_it(scratch_settings):
+    from wren import settings
+    ctx = _owner("my location is bella vista, ar", "bella vista, ar")
+    with patch.object(weather_skill.httpx, "get", return_value=_response(GEOCODE)) as get:
+        asyncio.run(weather_skill.handle("set_location", ctx))
+    assert get.call_args.args[0] == weather_skill._GEOCODE_URL
+    assert get.call_args.kwargs["params"]["name"] == "bella vista, ar"
+    assert "countryCode" not in get.call_args.kwargs["params"]
+    assert (config.WEATHER_LAT, config.WEATHER_LON) == (36.4814, -94.2733)
+    assert settings.get("WEATHER_LAT") == "36.4814"     # survives a restart
+    assert ctx.channel.sent == ["Weather location set to Bella Vista, Arkansas, US."]
+
+
+def test_set_location_biases_a_bare_us_zip(scratch_settings):
+    ctx = _owner("my location is 72715", "72715")
+    with patch.object(weather_skill.httpx, "get", return_value=_response(GEOCODE)) as get:
+        asyncio.run(weather_skill.handle("set_location", ctx))
+    assert get.call_args.kwargs["params"]["countryCode"] == "US"
+
+
+def test_set_location_accepts_raw_coordinates_without_geocoding(scratch_settings):
+    ctx = _owner("my location is 36.47, -94.27", "36.47, -94.27")
+    with patch.object(weather_skill.httpx, "get") as get:
+        asyncio.run(weather_skill.handle("set_location", ctx))
+    get.assert_not_called()
+    assert (config.WEATHER_LAT, config.WEATHER_LON) == (36.47, -94.27)
+    assert ctx.channel.sent == ["Weather location set to 36.47, -94.27."]
+
+
+def test_set_location_rejects_out_of_range_coordinates(scratch_settings, monkeypatch):
+    monkeypatch.setattr(config, "WEATHER_LAT", None)
+    ctx = _owner("my location is 95, 10", "95, 10")
+    asyncio.run(weather_skill.handle("set_location", ctx))
+    assert config.WEATHER_LAT is None
+    assert "between -90.0 and 90.0" in ctx.channel.sent[0]
+
+
+def test_set_location_reports_no_match(scratch_settings, monkeypatch):
+    monkeypatch.setattr(config, "WEATHER_LAT", None)
+    ctx = _owner("my location is xyzzy", "xyzzy")
+    with patch.object(weather_skill.httpx, "get", return_value=_response({})):
+        asyncio.run(weather_skill.handle("set_location", ctx))
+    assert config.WEATHER_LAT is None
+    assert ctx.channel.sent == ["Couldn't find that place."]
+
+
+def test_set_location_reports_a_dead_geocoder():
+    ctx = _owner("my location is bella vista", "bella vista")
+    with patch.object(weather_skill.httpx, "get", side_effect=httpx.ConnectError("nope")):
+        asyncio.run(weather_skill.handle("set_location", ctx))
+    assert ctx.channel.sent == ["Couldn't reach the weather service."]
+
+
+def test_set_location_with_nothing_to_set_asks():
+    ctx = _owner("my location is", "")
+    asyncio.run(weather_skill.handle("set_location", ctx))
+    assert ctx.channel.sent == ["Where? A town, a zip code, or coordinates."]
+
+
+def test_set_location_is_owner_only():
+    ctx = Ctx(user_id=config.WHITELIST["owner"] + 1, channel=CollectingChannel(), content="72715")
+    with patch.object(weather_skill.httpx, "get") as get:
+        asyncio.run(weather_skill.handle("set_location", ctx))
+    get.assert_not_called()
+    assert ctx.channel.sent == ["Only the owner can change the location."]
+
+
+def test_locate_me_sends_a_locate_card_with_prose_fallback():
+    ctx = _owner("use my current location", "")
+    asyncio.run(weather_skill.handle("locate_me", ctx))
+    assert [c["kind"] for c in ctx.channel.cards] == ["locate"]
+    # Discord/Telegram print the prose; it must tell the user what to do instead
+    assert "Telegram" in ctx.channel.sent[0] and "web chat" in ctx.channel.sent[0]
+
+
+def test_locate_me_is_owner_only():
+    ctx = Ctx(user_id=config.WHITELIST["owner"] + 1, channel=CollectingChannel())
+    asyncio.run(weather_skill.handle("locate_me", ctx))
+    assert ctx.channel.cards == []
+
+
+def test_location_intents_are_declared_and_guided():
+    assert {"set_location", "locate_me"} <= set(weather_skill.INTENTS)
+    assert "set_location" in weather_skill.PROMPT_GUIDELINES
+    assert "locate_me" in weather_skill.PROMPT_GUIDELINES
+
+
+def test_web_chat_draws_the_locate_card_with_browser_geolocation():
+    from pathlib import Path
+    page = (Path(__file__).parent.parent / "wren" / "communication" / "chat.html").read_text()
+    assert "locate: locateCard" in page
+    assert "navigator.geolocation.getCurrentPosition" in page
+
+
+# With "what's the weather" / "not configured" in history, gemma classifies the
+# very next "my location is 72715" as get_weather -- reproduced 3/3 live on
+# 2026-09-26. The words are unambiguous, so the skill reroutes on them.
+def test_get_weather_with_location_words_is_rerouted_to_set_location(scratch_settings):
+    ctx = _owner("my location is 72715", "72715")
+    with patch.object(weather_skill.httpx, "get", return_value=_response(GEOCODE)):
+        asyncio.run(weather_skill.handle("get_weather", ctx))
+    assert ctx.channel.sent == ["Weather location set to Bella Vista, Arkansas, US."]
+
+
+def test_rerouted_set_location_takes_the_place_from_the_words_when_content_is_empty(scratch_settings):
+    ctx = _owner("set my location to bella vista, ar", "")
+    with patch.object(weather_skill.httpx, "get", return_value=_response(GEOCODE)) as get:
+        asyncio.run(weather_skill.handle("get_weather", ctx))
+    assert get.call_args.kwargs["params"]["name"] == "bella vista, ar"
+
+
+def test_get_weather_with_locate_words_is_rerouted_to_locate_me():
+    ctx = _owner("use my current location", "")
+    asyncio.run(weather_skill.handle("locate_me", ctx))
+    ctx = _owner("use my current location", "")
+    with patch.object(weather_skill.httpx, "get") as get:
+        asyncio.run(weather_skill.handle("get_weather", ctx))
+    get.assert_not_called()
+    assert [c["kind"] for c in ctx.channel.cards] == ["locate"]
+
+
+def test_unconfigured_reply_says_what_to_type(monkeypatch):
+    monkeypatch.setattr(config, "WEATHER_LAT", None)
+    ctx = _ctx("what's the weather")
+    asyncio.run(weather_skill.handle("get_weather", ctx))
+    assert ctx.channel.sent == ['Weather isn\'t configured — tell me where you are, e.g. "my location is 72715".']
+
+
+def test_set_location_with_locate_words_is_rerouted_even_when_content_was_invented():
+    # Live 2026-09-26: "use my current location" in the web chat came back as
+    # set_location with content "72715" lifted from history, so the skill
+    # geocoded a stale zip instead of asking the browser.
+    ctx = _owner("use my current location", "72715")
+    with patch.object(weather_skill.httpx, "get") as get:
+        asyncio.run(weather_skill.handle("set_location", ctx))
+    get.assert_not_called()
+    assert [c["kind"] for c in ctx.channel.cards] == ["locate"]

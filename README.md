@@ -433,11 +433,16 @@ to the plain frequency.
 ## Weather (optional)
 
 Set `WEATHER_LAT` and `WEATHER_LON` (decimal degrees) in `.env` or the
-plugins panel. Forecasts come from Open-Meteo — no account, no key, and the
-only thing sent is the coordinates.
+plugins panel, or just tell Wren where you are. Forecasts and geocoding come
+from Open-Meteo — no account, no key, and the only thing sent is the place
+or the coordinates.
 
 - "what's the weather" — now, plus today's high, low and rain chance
 - "will it rain tomorrow" — tomorrow's outlook
+- "my location is 72715" / "my location is Bella Vista, AR" — owner only;
+  geocoded and saved as the runtime override, so it survives restarts
+- "use my current location" — the web chat asks the browser for a position;
+  on Telegram, share a location from the attachment menu instead
 
 ## Daily briefing (optional)
 

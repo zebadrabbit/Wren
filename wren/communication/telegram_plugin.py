@@ -204,7 +204,7 @@ def _incoming(update: dict) -> tuple[int, str] | None:
     Everything else is skipped in one place: edited messages and channel posts
     arrive under different keys than "message", groups are filtered the way
     discord_plugin filters to DMs, and photos/stickers/voice notes simply have
-    no "text".
+    no "text". A shared location is the one non-text message that is acted on.
     """
     message = update.get("message")
     if not isinstance(message, dict):
@@ -212,6 +212,12 @@ def _incoming(update: dict) -> tuple[int, str] | None:
     if (message.get("chat") or {}).get("type") != "private":
         return None
     text = message.get("text")
+    location = message.get("location")
+    if not text and isinstance(location, dict):
+        # The paperclip "Location" share is how a phone hands over its GPS fix.
+        # Rendered as the words a user would type so weather_skill.set_location
+        # stays the only write path -- translation, not domain logic.
+        text = f"my location is {location.get('latitude')}, {location.get('longitude')}"
     if not text:
         return None
     user_id = (message.get("from") or {}).get("id")
