@@ -476,3 +476,126 @@ def test_abbreviated_units_are_parsed_here_not_by_the_model(phrase, seconds):
         user_id=1, channel=ch, content="stretch", text=phrase, when=bogus)))
     fire_at = datetime.fromisoformat(reminders.pending(1)[0]["fire_at"])
     assert abs((fire_at - datetime.now(timezone.utc)).total_seconds() - seconds) < 5
+
+
+# --- recurring reminders --------------------------------------------------
+# "every …" is parsed here, like "in 20 minutes", because the classifier's
+# clock maths cannot be trusted; the model still supplies the FIRST occurrence
+# as `when`. A fired recurring reminder re-arms instead of finishing.
+
+@pytest.mark.parametrize("text,expected", [
+    ("take the bins out every tuesday at 8pm", "7d"),
+    ("every day at 8am take my meds", "1d"),
+    ("water the plants every 3 days", "3d"),
+    ("every morning check the chickens", "1d"),
+    ("every night lock up", "1d"),
+    ("stretch every 2 hours", "2h"),
+    ("check the oven every 30 minutes", "30m"),
+    ("every other week put the recycling out", "14d"),
+    ("every week on friday do the timesheet", "7d"),
+    ("daily standup at 9", "1d"),
+    ("weekly review", "7d"),
+    ("hourly posture check", "1h"),
+    ("remind me at 6pm to call mum", None),
+    ("remind me about the everyday bag", None),
+    ("every weekday at 7", None),  # out of scope for now, must not mis-parse as daily
+])
+def test_parse_repeat(text, expected):
+    assert reminder_plugin._parse_repeat(text) == expected
+
+
+@pytest.mark.parametrize("repeat,phrase", [
+    ("1d", "every day"), ("3d", "every 3 days"), ("7d", "every week"),
+    ("14d", "every 2 weeks"), ("1h", "every hour"), ("2h", "every 2 hours"),
+    ("30m", "every 30 minutes"),
+])
+def test_format_repeat(repeat, phrase):
+    assert reminder_plugin._format_repeat(repeat) == phrase
+
+
+def test_set_recurring_reminder_stores_the_rule_and_says_so():
+    ch = CollectingChannel()
+    when = _future_iso()
+    asyncio.run(reminder_plugin.handle("set_reminder", Ctx(
+        user_id=1, channel=ch, content="water the plants every 3 days",
+        text="remind me to water the plants every 3 days at 6pm", when=when)))
+    assert "every 3 days" in ch.sent[0]
+    row = reminders.pending(1)[0]
+    assert row["repeat"] == "3d"
+    # the rule is not part of what gets read back at fire time
+    assert row["content"] == "water the plants"
+
+
+def test_one_shot_reminder_has_no_rule():
+    ch = CollectingChannel()
+    asyncio.run(reminder_plugin.handle("set_reminder", Ctx(
+        user_id=1, channel=ch, content="call mum", text="remind me to call mum at 6pm", when=_future_iso())))
+    assert reminders.pending(1)[0]["repeat"] is None
+
+
+def _run_one_poll():
+    async def go():
+        with patch.object(router, "notify", new=AsyncMock(return_value=True)) as mock_notify, \
+             patch("wren.skills.reminder_skill.asyncio.sleep", new=AsyncMock(side_effect=asyncio.CancelledError)):
+            try:
+                await reminder_plugin.start()
+            except asyncio.CancelledError:
+                pass
+        return mock_notify
+    return asyncio.run(go())
+
+
+def test_firing_a_recurring_reminder_rearms_it_from_the_scheduled_time():
+    scheduled = datetime.now(timezone.utc) - timedelta(seconds=5)
+    reminders.save(1, "water the plants", scheduled.isoformat(timespec="seconds"), repeat="3d")
+    mock_notify = _run_one_poll()
+    assert mock_notify.await_count == 1
+    rows = reminders.pending(1)
+    assert len(rows) == 1 and rows[0]["status"] == "pending"
+    assert datetime.fromisoformat(rows[0]["fire_at"]) == (scheduled + timedelta(days=3)).replace(microsecond=0)
+
+
+def test_missed_periods_fire_once_and_skip_to_the_next_future_slot():
+    # the service was down for ten days on a three-day rule: one reminder, not
+    # three, and the next slot is the first one still ahead of now
+    scheduled = datetime.now(timezone.utc) - timedelta(days=10)
+    reminders.save(1, "water the plants", scheduled.isoformat(timespec="seconds"), repeat="3d")
+    mock_notify = _run_one_poll()
+    assert mock_notify.await_count == 1
+    nxt = datetime.fromisoformat(reminders.pending(1)[0]["fire_at"])
+    assert nxt == (scheduled + timedelta(days=12)).replace(microsecond=0)
+    assert nxt > datetime.now(timezone.utc)
+
+
+def test_daily_step_keeps_the_wall_clock_time_across_the_dst_change(monkeypatch):
+    monkeypatch.setattr(config, "TIMEZONE", "America/Chicago")
+    # 08:00 CDT on the last day of daylight time is 13:00Z; the next 08:00 is CST, 14:00Z
+    fired = "2026-10-31T13:00:00+00:00"
+    now = datetime(2026, 10, 31, 13, 0, 5, tzinfo=timezone.utc)
+    nxt = reminder_plugin._next_fire(fired, "1d", now)
+    assert nxt == datetime(2026, 11, 1, 14, 0, tzinfo=timezone.utc)
+
+
+def test_hourly_step_is_absolute_not_wall_clock(monkeypatch):
+    monkeypatch.setattr(config, "TIMEZONE", "America/Chicago")
+    fired = "2026-11-01T06:00:00+00:00"   # 01:00 CDT, an hour before the fall-back
+    now = datetime(2026, 11, 1, 6, 0, 5, tzinfo=timezone.utc)
+    assert reminder_plugin._next_fire(fired, "2h", now) == datetime(2026, 11, 1, 8, 0, tzinfo=timezone.utc)
+
+
+def test_cancelling_a_recurring_reminder_stops_the_series():
+    reminders.save(1, "water the plants", _future_iso(), repeat="3d")
+    ch = CollectingChannel()
+    asyncio.run(reminder_plugin.handle("cancel_reminder", Ctx(user_id=1, channel=ch, content="plants")))
+    assert reminders.pending(1) == []
+
+
+def test_recall_shows_the_rule_in_prose_and_in_the_card():
+    reminders.save(1, "water the plants", _future_iso(), repeat="3d")
+    reminders.save(1, "call mum", _future_iso())
+    ch = CollectingChannel()
+    asyncio.run(reminder_plugin.handle("recall_reminders", Ctx(user_id=1, channel=ch, content="")))
+    assert "water the plants" in ch.sent[0] and "every 3 days" in ch.sent[0]
+    rows = ch.cards[0]["data"]["reminders"]
+    assert rows[0]["local"].endswith(", every 3 days")
+    assert "every" not in rows[1]["local"]

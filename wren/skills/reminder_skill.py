@@ -14,7 +14,7 @@ DESTRUCTIVE = ["cancel_reminder"]
 CONFIRM = {"cancel_reminder": 'cancel the reminder "{content}"'}
 PLUGIN_NAME = "Reminders"
 
-PROMPT_GUIDELINES = """- set_reminder: user wants to be reminded of something at a specific time; content is what to remind them of, and you must compute "when" as an absolute ISO 8601 datetime in the LOCAL timezone you were already told "today" is in (e.g. 2026-07-12T21:00:00, no UTC conversion) based on the current date/time and the relative or absolute time they gave (e.g. "in 20 minutes", "at 6pm", "tomorrow morning")
+PROMPT_GUIDELINES = """- set_reminder: user wants to be reminded of something at a specific time; content is what to remind them of, and you must compute "when" as an absolute ISO 8601 datetime in the LOCAL timezone you were already told "today" is in (e.g. 2026-07-12T21:00:00, no UTC conversion) based on the current date/time and the relative or absolute time they gave (e.g. "in 20 minutes", "at 6pm", "tomorrow morning"); for a repeating reminder ("every tuesday at 8pm", "every morning") "when" is the FIRST occurrence — the repetition is handled elsewhere
 - recall_reminders: user wants to see their upcoming reminders
 - cancel_reminder: user wants to cancel a previously set reminder; content is a short phrase identifying which one, not the full reminder text — set content to "all" if they want every reminder cancelled ("clear my reminders", "cancel everything")"""
 
@@ -42,6 +42,67 @@ def _relative_when(text: str):
         return None
     count = int(m.group(1)) if m.group(1).isdigit() else 1
     return datetime.now(timezone.utc) + timedelta(**{_UNITS[m.group(2).lower()]: count})
+
+_WEEKDAYS = "monday|tuesday|wednesday|thursday|friday|saturday|sunday"
+_EVERY = re.compile(
+    r"\b(?:every\s+(?:(\d+|other|an?)\s+)?"
+    r"(minute|min|hour|hr|day|week|morning|afternoon|evening|night|" + _WEEKDAYS + r")s?"
+    r"|daily|weekly|hourly)\b", re.I)
+_REPEAT_UNITS = {"m": "minutes", "h": "hours", "d": "days"}
+
+def _parse_repeat(text: str) -> str | None:
+    """The interval behind "every …" in what the user typed, as "<n><unit>"
+    with unit m/h/d ("3d", "7d", "2h", "30m"), or None for a one-shot.
+
+    Parsed here for the reason _relative_when gives: the model's clock maths
+    is not trustworthy, the phrase is. Every rule reduces to a fixed interval
+    — "every tuesday" is seven days from the first occurrence the model
+    already computed. "every weekday" is deliberately not matched (it is not
+    a fixed interval) rather than mis-read as daily.
+    """
+    m = _EVERY.search(text or "")
+    if not m:
+        return None
+    whole = m.group(0).lower()
+    if whole in ("daily", "weekly", "hourly"):
+        return {"daily": "1d", "weekly": "7d", "hourly": "1h"}[whole]
+    count, unit = m.group(1), m.group(2).lower()
+    n = 2 if count == "other" else int(count) if count and count.isdigit() else 1
+    if n == 0:
+        return None
+    if unit in ("minute", "min"):
+        return f"{n}m"
+    if unit in ("hour", "hr"):
+        return f"{n}h"
+    if unit == "week" or unit in _WEEKDAYS.split("|"):
+        return f"{7 * n}d"
+    return f"{n}d"
+
+def _format_repeat(repeat: str) -> str:
+    n, unit = int(repeat[:-1]), repeat[-1]
+    if unit == "d" and n % 7 == 0:
+        n, name = n // 7, "week"
+    else:
+        name = _REPEAT_UNITS[unit][:-1]
+    return f"every {name}" if n == 1 else f"every {n} {name}s"
+
+def _next_fire(fire_at_iso: str, repeat: str, now: datetime) -> datetime:
+    """The first slot after `now`, stepping from the SCHEDULED time, so a
+    reminder that fired late does not drift and a service that was down for
+    a week fires once and skips forward rather than once per missed slot.
+
+    Day steps are taken on the local wall clock (aware-datetime arithmetic
+    keeps the clock time, so "8am every day" survives the DST change); hour
+    and minute steps are absolute, in UTC, where the wall clock is the thing
+    that lies.
+    """
+    n, unit = int(repeat[:-1]), repeat[-1]
+    step = timedelta(**{_REPEAT_UNITS[unit]: n})
+    tz = ZoneInfo(config.TIMEZONE) if unit == "d" else timezone.utc
+    t = datetime.fromisoformat(fire_at_iso).astimezone(tz)
+    while t <= now:
+        t += step
+    return t.astimezone(timezone.utc).replace(microsecond=0)
 
 _VIA = re.compile(r"\b(?:on|via|through)\s+([a-z]+)\b", re.I)
 
@@ -117,23 +178,31 @@ async def handle(intent: str, ctx: Ctx) -> None:
                 await ctx.channel.send(f"I can't send reminders on {via}.")
                 return
         parsed_utc = _relative_when(ctx.text) or _parse_when(ctx.when)
-        if not ctx.content.strip() or parsed_utc is None:
+        repeat = _parse_repeat(ctx.text)
+        # the model tends to leave the rule inside content; what fires at 8pm
+        # should say "take the bins out", not "take the bins out every tuesday"
+        content = _EVERY.sub("", ctx.content).strip() if repeat else ctx.content.strip()
+        if not content or parsed_utc is None:
             await ctx.channel.send("I couldn't figure out when — try again with a specific time.")
         else:
             fire_at = parsed_utc.isoformat(timespec="seconds")
-            reminders.save(ctx.user_id, ctx.content, fire_at, via=via)
+            reminders.save(ctx.user_id, content, fire_at, via=via, repeat=repeat)
             await ctx.channel.send(flourish.flourish(
                 f"Reminder set for {_format_local(fire_at)}"
+                + (f", {_format_repeat(repeat)}" if repeat else "")
                 + (f", via {via}." if via else ".")))
 
     elif intent == "recall_reminders":
         items = reminders.pending(ctx.user_id)
-        rows = [{"content": r["content"], "fire_at": r["fire_at"],
-                 # formatted here, not in the page: the skill already owns the
-                 # timezone and the card should never have to
-                 "local": _format_local(r["fire_at"])}
+        # formatted here, not in the page: the skill already owns the timezone
+        # and the card should never have to. The rule rides in the same string
+        # so the card shows it without knowing what a rule is.
+        def _local(r):
+            return _format_local(r["fire_at"]) + (
+                f", {_format_repeat(r['repeat'])}" if r.get("repeat") else "")
+        rows = [{"content": r["content"], "fire_at": r["fire_at"], "local": _local(r)}
                 for r in items]
-        text = "\n".join(f"[{_format_local(r['fire_at'])}] {r['content']}"
+        text = "\n".join(f"[{_local(r)}] {r['content']}"
                          for r in items) if items else "No reminders set."
         await ctx.channel.send_card(
             "reminders", {"reminders": rows}, text,
@@ -174,7 +243,11 @@ async def start() -> None:
                                          via=r.get("via"))
                 if not ok:
                     logging.warning(f"Could not deliver reminder {r['id']} to {r['owner_id']}")
-                reminders.mark_fired(r["id"])
+                if r.get("repeat"):
+                    reminders.reschedule(r["id"], _next_fire(
+                        r["fire_at"], r["repeat"], datetime.now(timezone.utc)).isoformat(timespec="seconds"))
+                else:
+                    reminders.mark_fired(r["id"])
         except Exception as e:
             logging.warning(f"reminder poll failed: {e}")
         await asyncio.sleep(config.REMINDER_POLL_SECONDS)

@@ -19,21 +19,27 @@ def init_db() -> None:
         # Same additive migration conversations.py uses for messages.card, and
         # for the same reason: rows written before this column existed must
         # read back as via=None, i.e. "deliver wherever NOTIFY_VIA says".
+        # `repeat` (2026-09-26) rides the same migration: NULL reads as "one
+        # shot", which is what every row written before it existed was.
         cols = {row[1] for row in con.execute("PRAGMA table_info(reminders)")}
-        if "via" not in cols:
-            try:
-                con.execute("ALTER TABLE reminders ADD COLUMN via TEXT")
-            except sqlite3.OperationalError as e:
-                if "duplicate column name" not in str(e):
-                    raise
+        for col in ("via", "repeat"):
+            if col not in cols:
+                try:
+                    con.execute(f"ALTER TABLE reminders ADD COLUMN {col} TEXT")
+                except sqlite3.OperationalError as e:
+                    if "duplicate column name" not in str(e):
+                        raise
 
-def save(owner_id: int, content: str, fire_at: str, via: str | None = None) -> int:
+def save(owner_id: int, content: str, fire_at: str, via: str | None = None,
+         repeat: str | None = None) -> int:
+    """`repeat` is a fixed interval like "3d", "7d", "2h", "30m" (see
+    reminder_skill._parse_repeat), or None for a one-shot reminder."""
     ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
     with db.conn() as con:
         cur = con.execute(
-            "INSERT INTO reminders (owner_id, content, fire_at, status, created_at, via)"
-            " VALUES (?,?,?,?,?,?)",
-            (str(owner_id), content, fire_at, "pending", ts, via),
+            "INSERT INTO reminders (owner_id, content, fire_at, status, created_at, via, repeat)"
+            " VALUES (?,?,?,?,?,?,?)",
+            (str(owner_id), content, fire_at, "pending", ts, via, repeat),
         )
         return cur.lastrowid
 
@@ -81,3 +87,8 @@ def due(now_iso: str) -> list[dict]:
 def mark_fired(reminder_id: int) -> None:
     with db.conn() as con:
         con.execute("UPDATE reminders SET status='fired' WHERE id=?", (reminder_id,))
+
+def reschedule(reminder_id: int, fire_at: str) -> None:
+    """A recurring reminder that just fired stays pending, at its next slot."""
+    with db.conn() as con:
+        con.execute("UPDATE reminders SET fire_at=? WHERE id=?", (fire_at, reminder_id))

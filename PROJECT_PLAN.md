@@ -246,6 +246,32 @@ it is pointed at a model too small to classify intent reliably.
 Worth doing because it reads better daily, not because it wins a comparison
 against the dozen mature self-hosted notes apps.
 
+## Household gaps — Phase 7 (2026-09-26)
+
+Ten items chosen on 2026-09-26 after asking what a household actually hits,
+ranked by how often. The Planka board (project "Wren", list "Phase 7 —
+Household Gaps") holds the state; this is the order and the why.
+
+1. ~~**Recurring reminders and routines.**~~ Landed 2026-09-26: "every
+   tuesday at 8pm", "every morning", "every 3 days", "every other week",
+   daily/weekly/hourly are parsed in the skill (not the classifier, whose
+   clock maths cannot be trusted) into a fixed interval in a `repeat` column;
+   the model still supplies the first occurrence. A fired row re-arms from
+   its scheduled time — day steps on the local wall clock so 8am survives
+   DST, hour/minute steps in UTC — and a service that was down for a week
+   fires once and skips forward. Cancel stops the series. "Every weekday"
+   and "skip next time" are out of scope.
+2. **Second person.** Per-surface ids in `contacts` so the shared list is
+   actually shared; translation stays in the surface.
+3. **Generic named lists.** The shopping machinery with a list-name column.
+4. **Web chat as an installable app with push.** Also the answer to where
+   device replies land.
+5. **Calendar write (CalDAV).**
+6. **Vision on inbound images.**
+7. **Cross-skill recall.**
+8. **Timers.** 9. **Undo for typed messages.** 10. **Gmail digest / sender
+   allowlist.**
+
 ## Roadmap 2026-08-26 — "Jarvis, not Alexa"
 
 The honest read of Wren at this point was: a household message bus with an
