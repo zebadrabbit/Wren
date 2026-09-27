@@ -9,6 +9,9 @@ from . import gmail_state
 
 PLUGIN_NAME = "Gmail (IMAP) Watcher"
 ROLE = "input"   # input-only: watches an inbox, never sends; notify a chat plugin via router.notify_name
+# Declared, not defaulted: run.py, config and the reminder skill all read a
+# missing CAN_NOTIFY as True, so without this a watcher passed as NOTIFY_VIA.
+CAN_NOTIFY = False
 
 def is_active() -> bool:
     return bool(config.EMAIL_WATCH)

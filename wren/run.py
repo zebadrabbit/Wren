@@ -37,7 +37,7 @@ def _warn_if_notifications_go_nowhere(loaded: dict) -> None:
         )
     elif not getattr(surface, "CAN_NOTIFY", True):
         logging.warning(
-            f"NOTIFY_VIA='{target}' is send-only and cannot deliver unprompted "
+            f"NOTIFY_VIA='{target}' cannot deliver unprompted "
             f"messages. Reminders and watcher alerts will be DISCARDED. "
             f"Set NOTIFY_VIA to a communication plugin that can push."
         )
