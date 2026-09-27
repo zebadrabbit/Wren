@@ -65,6 +65,30 @@ def test_detect_intent_bad_json_falls_back_to_chat():
         result = brain.detect_intent(1, "hello")
     assert result["intent"] == "chat"
 
+@pytest.mark.parametrize("raw", ['["save_note"]', '"save_note"', '42', 'null', '{"content": "x"}',
+                                 '{"intent": ["save_note"]}'])
+def test_detect_intent_non_object_json_falls_back_to_chat(raw):
+    # Valid JSON that is not an intent object used to escape the fallback and
+    # crash core on result.get(...).
+    with patch.object(brain, "_get_client", return_value=_client_returning(raw)):
+        result = brain.detect_intent(1, "hello")
+    assert result == {"intent": "chat", "content": "hello", "tags": [], "person": None}
+
+def test_detect_intent_coerces_wrong_field_types():
+    payload = json.dumps({"intent": "add_contact", "content": 123456789012345678,
+                          "tags": None, "person": ["hubby"], "when": 7})
+    with patch.object(brain, "_get_client", return_value=_client_returning(payload)):
+        result = brain.detect_intent(1, "add 123456789012345678 as hubby")
+    assert result == {"intent": "add_contact", "content": "123456789012345678",
+                      "tags": [], "person": None, "when": None}
+
+def test_detect_intent_drops_non_string_tags_and_content():
+    payload = json.dumps({"intent": "save_note", "content": {"a": 1}, "tags": ["ok", 3, None]})
+    with patch.object(brain, "_get_client", return_value=_client_returning(payload)):
+        result = brain.detect_intent(1, "note: x")
+    assert result["tags"] == ["ok"]
+    assert "content" not in result     # core falls back to the user's words
+
 def test_detect_intent_all_providers_fail_falls_back_to_chat():
     with patch.object(brain, "_get_client", return_value=_client_raising(RuntimeError("down"))):
         result = brain.detect_intent(1, "hello")

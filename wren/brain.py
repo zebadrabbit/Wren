@@ -124,6 +124,29 @@ def status() -> dict:
         "tokens": dict(_token_usage),
     }
 
+def _shape(parsed) -> dict:
+    """The model's JSON, held to the shape core reads, or ValueError.
+
+    json_mode guarantees JSON, not an object: a small model can answer with a
+    bare list or string, or put null where a list goes. Uncaught, those reach
+    core as result.get(...) on a list, or ctx.tags = None, and crash the turn.
+    Raising lands in detect_intent's chat fallback; a wrong field type is
+    coerced, because the intent itself is still worth acting on.
+    """
+    if not isinstance(parsed, dict) or not isinstance(parsed.get("intent"), str):
+        raise ValueError(f"not an intent object: {parsed!r:.100}")
+    content = parsed.get("content")
+    if isinstance(content, (int, float)) and not isinstance(content, bool):
+        parsed["content"] = str(content)     # "add 1234… as hubby" as a bare number
+    elif "content" in parsed and not isinstance(content, str):
+        del parsed["content"]                # core then uses the user's own words
+    tags = parsed.get("tags")
+    parsed["tags"] = [t for t in tags if isinstance(t, str)] if isinstance(tags, list) else []
+    for key in ("person", "when"):
+        if key in parsed and not isinstance(parsed[key], str):
+            parsed[key] = None
+    return parsed
+
 def detect_intent(user_id: int, text: str, history: list[dict] | None = None) -> dict:
     plugin_intent_enum = " | ".join(f'"{i}"' for i in _plugin_intents)
     system = _SYSTEM.format(
@@ -141,7 +164,7 @@ def detect_intent(user_id: int, text: str, history: list[dict] | None = None) ->
             raw = raw.split("```")[1]
             if raw.startswith("json"):
                 raw = raw[4:]
-        return json.loads(raw)
+        return _shape(json.loads(raw))
     except Exception as e:
         # Loud, because downstream this is indistinguishable from a real "chat":
         # the user gets a conversational answer and no error anywhere, so a
