@@ -9,6 +9,7 @@ page that read the repository at build time.
     python3 render_pngs.py                     # everything, one browser launch
     python3 render_pngs.py gh-architecture     # one card
     python3 render_pngs.py --favicons          # just the favicon ladder
+    python3 render_pngs.py --brochure          # just brochure.html, full page
 
 Rasterising happens on a canvas inside the page — the same path the page's own
 "PNG @1x" buttons use — and the finished image comes back as a data URL via
@@ -38,6 +39,8 @@ import tempfile
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 PAGE = os.path.join(ROOT, "social-pack.html")
+BROCHURE = os.path.join(ROOT, "brochure.html")
+BROCHURE_W, BROCHURE_SCALE = 1200, 2   # desktop layout, @2x so it survives Reddit's zoom
 BRAND = os.path.join(ROOT, "brand")
 
 DIRS = {"gh-": "github", "so-": "social"}          # card id prefix -> output dir
@@ -100,6 +103,38 @@ addEventListener('load', async function () {
 </script>
 """
 
+# The brochure is an HTML page, not an SVG card, so it goes through the same
+# canvas as a foreignObject: the page measures its own height at BROCHURE_W and
+# serialises itself. Same reason as above for not using --screenshot, and a
+# full-length page makes the short-viewport bug worse, not better. Inside the
+# SVG image `:root` is the <svg>, not <html>; the page's tokens still reach the
+# content because custom properties inherit through foreignObject.
+BROCHURE_INJECT = """
+<script>
+addEventListener('load', function () {
+  var w = document.documentElement.clientWidth, h = document.documentElement.scrollHeight;
+  var xml = new XMLSerializer().serializeToString(document.documentElement);
+  var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '">' +
+            '<foreignObject width="100%%" height="100%%">' + xml + '</foreignObject></svg>';
+  var s = %(scale)d, img = new Image();
+  img.onload = function () {
+    var cv = document.createElement('canvas');
+    cv.width = w * s; cv.height = h * s;
+    cv.getContext('2d').drawImage(img, 0, 0, w * s, h * s);
+    done({png: cv.toDataURL('image/png'), w: w * s, h: h * s});
+  };
+  img.onerror = function () { done({png: null, w: 0, h: 0}); };
+  img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  function done(out) {
+    var el = document.createElement('div');
+    el.id = 'PNGOUT';
+    el.textContent = JSON.stringify(out);
+    document.body.replaceChildren(el);
+  }
+});
+</script>
+"""
+
 
 def _sandbox_flags():
     """Chromium cannot start its sandbox as uid 0, and cannot build one at all
@@ -156,12 +191,16 @@ def cards():
 
 def harvest(browser, want, fav_sizes):
     """One browser launch: render everything to data URLs and read them back."""
-    src = open(PAGE, encoding="utf-8").read()
     fav_path = os.path.join(BRAND, "favicon.svg")
     fav = open(fav_path, encoding="utf-8").read() if os.path.exists(fav_path) else ""
     inject = INJECT % {"want": json.dumps(want) if want else "null",
                        "favicon": json.dumps(fav),
                        "favsizes": json.dumps(fav_sizes)}
+    return _render(browser, PAGE, inject)
+
+
+def _render(browser, page, inject, extra=()):
+    src = open(page, encoding="utf-8").read()
     body = src.rfind("</body>")
     patched = (src[:body] + inject + src[body:]) if body > 0 else src + inject
 
@@ -171,7 +210,7 @@ def harvest(browser, want, fav_sizes):
         with open(tmp, "w", encoding="utf-8") as f:
             f.write(patched)
         dom = subprocess.run(
-            [browser, "--headless=new", *_sandbox_flags(), "--disable-gpu",
+            [browser, "--headless=new", *_sandbox_flags(), "--disable-gpu", *extra,
              "--virtual-time-budget=30000", "--dump-dom",
              "file:///" + tmp.replace("\\", "/")],
             check=True, capture_output=True, text=True,
@@ -183,7 +222,7 @@ def harvest(browser, want, fav_sizes):
     if not m:
         sys.exit("the page never finished rendering — no PNGOUT payload came back. "
                  "Raise --virtual-time-budget in this script, or export by hand "
-                 "from social-pack.html.")
+                 "from %s." % os.path.basename(page))
     return json.loads(m.group(1))
 
 
@@ -202,7 +241,22 @@ def write(dest, data_url, w, h):
     print("  %-38s %5dx%-5d %4d KB" % (os.path.relpath(dest, ROOT), w, h, len(raw) // 1024))
 
 
+def brochure(browser):
+    # Only the width is trusted from --window-size (see the docstring); the
+    # height is whatever the page measures, so a short viewport cannot crop it.
+    got = _render(browser, BROCHURE, BROCHURE_INJECT % {"scale": BROCHURE_SCALE},
+                  ("--window-size=%d,1000" % BROCHURE_W, "--hide-scrollbars"))
+    if got["w"] != BROCHURE_W * BROCHURE_SCALE:
+        sys.exit("brochure: laid out %dpx wide, expected %d — the browser ignored "
+                 "--window-size" % (got["w"] // BROCHURE_SCALE, BROCHURE_W))
+    write(os.path.join(ROOT, "social", "brochure-%dx%d.png" % (got["w"], got["h"])),
+          got["png"], got["w"], got["h"])
+
+
 def main():
+    if "--brochure" in sys.argv:
+        brochure(find_browser())
+        return
     if not os.path.exists(PAGE):
         sys.exit("social-pack.html not found — run build.py first")
     browser = find_browser()
@@ -237,6 +291,9 @@ def main():
         src = os.path.join(BRAND, "favicon.svg")
         if os.path.exists(src):
             shutil.copyfile(src, os.path.join(ROOT, "favicon", "favicon.svg"))
+
+    if not args and not only_fav and os.path.exists(BROCHURE):
+        brochure(browser)
 
 
 if __name__ == "__main__":

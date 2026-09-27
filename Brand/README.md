@@ -10,6 +10,7 @@ build step needed to *use* one, no webfonts, no network requests. Open any
 |---|---|
 | `brand-system.html` | The system itself — marks, reduction ladder, clear space, palette with live WCAG contrast checks, type scale, do/don't. **Read this first.** |
 | `social-pack.html` | Eleven cards at exact platform sizes, each with SVG and PNG export. |
+| `brochure.html` | The feature brochure, hand-written (not built). `render_pngs.py` renders it full-length to `social/brochure-2400xH.png` for Reddit. |
 | `brand/*.svg` | Mark, wordmark, lockups, avatar and favicon as standalone vector files. |
 | `github/*.png` | Social preview, README hero, and the architecture figure. |
 | `social/*.png` | Avatars and banners for X, Bluesky, LinkedIn, Discord, Instagram. |
