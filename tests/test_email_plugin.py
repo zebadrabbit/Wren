@@ -81,3 +81,13 @@ def test_digest_mode_queues_instead_of_notifying(monkeypatch, tmp_path):
     mock_notify.assert_not_awaited()
     imap_conn.store.assert_called_once_with(b"1", "+FLAGS", "\\Seen")
     assert [(r["sender"], r["subject"]) for r in gmail_state.recent("owner")] == [("alice@example.com", "Hello")]
+
+def test_connect_sets_a_timeout(monkeypatch):
+    # Without one, a hung IMAP host holds its worker thread forever.
+    seen = {}
+    def fake(host, **kw):
+        seen.update(kw)
+        return MagicMock()
+    monkeypatch.setattr(email_plugin.imaplib, "IMAP4_SSL", fake)
+    email_plugin._connect()
+    assert seen.get("timeout")

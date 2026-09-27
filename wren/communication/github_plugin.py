@@ -22,6 +22,8 @@ def _headers() -> dict:
     return headers
 
 def _get(url: str):
+    # Synchronous, so callers go through asyncio.to_thread: a slow api.github.com
+    # would otherwise hold the event loop every surface shares for up to 10s a call.
     resp = httpx.get(url, headers=_headers(), timeout=10)
     resp.raise_for_status()
     return resp
@@ -29,15 +31,15 @@ def _get(url: str):
 async def _poll_repo(repo: str) -> None:
     prior = github_state.get(repo)
 
-    info = _get(f"https://api.github.com/repos/{repo}").json()
+    info = (await asyncio.to_thread(_get, f"https://api.github.com/repos/{repo}")).json()
     star_count = info["stargazers_count"]
     default_branch = info["default_branch"]
 
-    commits = _get(f"https://api.github.com/repos/{repo}/commits?sha={default_branch}&per_page=1").json()
+    commits = (await asyncio.to_thread(_get, f"https://api.github.com/repos/{repo}/commits?sha={default_branch}&per_page=1")).json()
     latest_sha = commits[0]["sha"] if commits else None
     latest_commit = commits[0] if commits else None
 
-    issues = _get(f"https://api.github.com/repos/{repo}/issues?state=all&sort=created&direction=desc&per_page=10").json()
+    issues = (await asyncio.to_thread(_get, f"https://api.github.com/repos/{repo}/issues?state=all&sort=created&direction=desc&per_page=10")).json()
     highest_issue_number = max((i["number"] for i in issues), default=0)
 
     if prior is None:
