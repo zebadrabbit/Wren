@@ -1,6 +1,7 @@
 # Wren Asks Claude — Delegated Builds (DRAFT for review)
 
-Status: **draft, not approved, not implemented.** Written 2026-09-26 while the
+Status: **shelved 2026-09-27 by the owner to think about. Draft, not
+approved, not implemented.** Written 2026-09-26 while the
 owner was away, from their description: *"Wren, ask Claude to make an endpoint
 for Slack that lets you ingest, notify and communicate on" — and both of you
 work out how that will be created and implemented.* Everything below is a
@@ -125,3 +126,31 @@ test, and `?dry_run=1` for anything text-side.
 Concurrent delegations; delegations that change `.env` or secrets; Wren
 restarting itself; delegating to any agent other than Claude Code; a general
 "ask Claude a question" chat passthrough (the owner has that already).
+
+## Review notes, 2026-09-27 (shelved)
+
+Checked against the code the day after writing; read these before picking it
+back up.
+
+1. `claude` is installed on the Wren host (`~/.local/bin/claude`, 2.1.283),
+   so runner A needs nothing new.
+2. The `dry_run_only` token marker does not exist. `WREN_TOKENS` is plain
+   `token:user_id`; the marker and its enforcement in the API are part of
+   this work.
+3. Most safety rails are brief-level, not enforced. With Bash allowed, the
+   runner is the owner's own account: it can read `.env` (600 does not stop
+   the owner), the live `wren.db`, and run `git push`. Enforced rails need a
+   sandbox -- a separate user, or Claude Code's sandbox mode. Biggest gap.
+4. The worktree must live outside `~/work/Wren`: python-dotenv searches
+   parent directories, so a worktree inside the repo loads the LIVE `.env`.
+5. Merging is a production edit: the service runs `main` in place, so a
+   merge is armed at the next restart, and `chat.html` changes are live at
+   once (read per request).
+
+Added question 6: is instructions-only safety acceptable for an owner-only
+first slice, or is the sandbox part of the first slice? Leaning: sandbox from
+day one -- it is unattended Claude on the machine that holds the tokens.
+
+Recommendations given for 1-5: runner A; Wren merges on "merge it" only
+after the full suite passes on the merged tree; restart stays manual;
+~60 turns per delegation and 3 a day; prose only at first.
