@@ -15,9 +15,10 @@ from .channel import Channel, Ctx, Inbound
 HELP_TEXT = """Here's what I can actually do:
 
 **Notes**
-- "remind me to call the plumber" — saves a note
-- "what do I need to do" — recalls and answers from your notes
+- "note: call the plumber" — saves a note
+- "what did I say about the dentist" — answers from your notes, what I remember, reminders and calendar together
 - "show my grocery notes" — filters recalled notes/ideas by tag
+- send a photo or PDF with a caption — saved as a note with the file attached
 
 **Ideas** (separate from notes — for things to revisit or expand later)
 - "remember this idea: build a treehouse"
@@ -26,31 +27,50 @@ HELP_TEXT = """Here's what I can actually do:
 - "expand on the treehouse idea"
 - "send my notes as a markdown file" — exports all notes and ideas as a downloadable file
 
-**Reminders**
+**Photos**
+- send a photo with a question ("what plant is this?") — answered from the picture
+- send a photo of a list with "add these" — puts each item on the shopping list
+
+**Reminders & timers**
 - "remind me to take out the trash at 6pm" / "in 20 minutes" / "tomorrow morning"
+- "remind me every tuesday at 8pm to water the plants" — also daily, weekly, "every 3 days"
+- "timer 20 minutes" / "how long is left"
 - "what are my reminders" — shows all upcoming reminders with times
-- "cancel the trash reminder" — matches by phrase, asks for specifics if needed
+- "cancel the trash reminder" / "clear my reminders"
 
 **Calendar** (needs CALENDAR_URLS)
 - "what's on my calendar" / "what does tomorrow look like" / "show my week"
 
-**Weather** (needs WEATHER_LAT / WEATHER_LON)
+**Weather**
 - "what's the weather" / "will it rain tomorrow"
+- "my location is 72715" / "use my current location" — sets where the forecast is for (owner only)
 
 **Briefing**
 - "what's my day look like" — weather, calendar, today's reminders and the shopping list in one message
+- sent to you every morning when BRIEFING_TIME is set; with EMAIL_DIGEST on, watched mail waits for it too
 
-**Shopping** (one shared list)
-- "add potatoes to shopping"
+**Shopping** (one shared list, plus any named ones)
+- "add potatoes to shopping" / "add a tent to the packing list"
 - "got the potatoes" / "remove potatoes from shopping"
+- "put the milk back" — restores what you just removed
+- "clear the shopping list"
 - "what's on the shopping list"
 - "send shopping to hubby"
+
+**Undo**
+- "undo that" — reverses the last thing you removed, cleared, cancelled or forgot (within ten minutes)
+
+**Memory**
+- I pick up facts about you from conversation and use them in chat
+- "what do you know about me" — lists what I remember
+- "forget that I like mushrooms" — drops one
 
 **Messaging**
 - "tell hubby dinner's at 7" — messages a whitelisted contact by name
 
 **Contacts** (owner only)
 - "add 123456789012345678 as hubby" — whitelists a new contact
+- "add 987654321 as hubby on telegram" — same person, another app
 - "remove hubby" — un-whitelists a contact
 - "who's whitelisted" — lists current contacts
 
@@ -58,7 +78,7 @@ HELP_TEXT = """Here's what I can actually do:
 - "show status" / "what backend are you using" / "show model" — reports the active LLM backend, endpoint, uptime, and token usage
 
 **Web** (when configured)
-- "what's the weather in Chicago tomorrow" / "any news on the port strike" — searches the web and summarizes with links
+- "any news on the port strike" / "look up flights to Denver" — searches the web and summarizes with links
 - "read me the first one" / "read https://…" — fetches a page in full and summarizes
 
 **Pins**
@@ -69,7 +89,7 @@ HELP_TEXT = """Here's what I can actually do:
 **Plugins**
 - "what plugins do you have" / "what's active" — lists Wren's active capabilities
 
-Anything else just falls through to open-ended chat."""
+By voice, I'll ask before deleting anything. Anything else just falls through to open-ended chat."""
 
 _START_TIME = time.monotonic()
 
