@@ -62,3 +62,12 @@ def test_token_add_list_revoke_roundtrip(tmp_path):
 
     r = run(env, "token", "revoke", "42")  # already gone
     assert r.returncode != 0
+
+
+def test_a_readable_env_file_is_warned_about(tmp_path):
+    env = tmp_path / "env"
+    env.write_text("IMAP_PASSWORD=hunter2\n")
+    os.chmod(env, 0o664)
+    assert "chmod 600" in run(env, "secret", "list").stderr
+    os.chmod(env, 0o600)
+    assert "chmod 600" not in run(env, "secret", "list").stderr

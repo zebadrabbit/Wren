@@ -5,6 +5,14 @@ cd "$(dirname "$0")"
 # Overridable so tests can point at a scratch file; everything real uses .env.
 ENV_FILE="${WREN_ENV_FILE:-.env}"
 
+# .env holds every credential this install has. Writes below leave it 600, but
+# an editor or `cp .env.example .env` leaves the umask's 644/664. ls -l rather
+# than stat: stat's flags differ between GNU and BSD/macOS.
+if [ -f "$ENV_FILE" ] && [ "$(ls -l "$ENV_FILE" | cut -c5-10)" != "------" ]; then
+    echo "Warning: $ENV_FILE is readable by other accounts on this machine and holds your tokens." >&2
+    echo "         Fix: chmod 600 $ENV_FILE" >&2
+fi
+
 # Keep in sync with SECRET_KEYS in wren/config.py: the web UI shows these only
 # as set / not set. The values live in .env and are managed here, on the host,
 # where they never cross the network.

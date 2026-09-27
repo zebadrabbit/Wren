@@ -1,6 +1,8 @@
 import asyncio
 import importlib
 import logging
+import os
+import stat
 
 from . import config
 from . import contacts
@@ -26,6 +28,22 @@ def init_dbs() -> None:
         module.init_db()
 
 
+def _warn_if_env_readable(path: str) -> None:
+    """.env holds every credential this install has. A warning, not a refusal
+    to start: a household assistant that will not boot over a file mode is
+    worse than one that says so in the log. manage.sh writes it 600, but an
+    editor or a `cp .env.example .env` leaves the umask's 644/664."""
+    if not path or os.name != "posix":
+        return
+    try:
+        mode = os.stat(path).st_mode
+    except OSError:
+        return
+    if mode & (stat.S_IRWXG | stat.S_IRWXO):
+        logging.warning(f"{path} is readable by other accounts on this machine "
+                        f"(mode {stat.S_IMODE(mode):o}) and holds your tokens. Run: chmod 600 {path}")
+
+
 def _warn_if_notifications_go_nowhere(loaded: dict) -> None:
     """Say so loudly at boot rather than silently eating reminders at 3am."""
     target = config.NOTIFY_VIA
@@ -49,6 +67,7 @@ async def main() -> None:
     # starts (or a plugin reads a stale value during startup). The ordering
     # looks arbitrary and is not.
     config.apply_overrides()
+    _warn_if_env_readable(config.ENV_FILE)
 
     if not config.COMMUNICATION_PLUGINS:
         raise RuntimeError("No communication plugins enabled. Set COMMUNICATION_PLUGINS (e.g. COMMUNICATION_PLUGINS=discord,http).")
