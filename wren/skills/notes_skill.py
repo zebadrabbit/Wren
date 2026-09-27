@@ -170,7 +170,7 @@ async def handle(intent: str, ctx: Ctx) -> None:
                 # a reminder or a calendar event. to_thread: the calendar
                 # part can fetch a feed.
                 records = await asyncio.to_thread(recall.gather, ctx.user_id, ctx.content, matches)
-                summary = brain.recall(records, ctx.content)
+                summary = await asyncio.to_thread(brain.recall, records, ctx.content)
                 await ctx.channel.send(summary)
                 await _send_attachments(ctx, [r["note_id"] for r in records if r["source"] == "note"])
         else:
@@ -244,7 +244,7 @@ async def handle(intent: str, ctx: Ctx) -> None:
                 listing = "\n".join(f"- {m['content']}" for m in matches)
                 await ctx.channel.send(f"Found more than one match, be more specific.\n{listing}")
             else:
-                expansion = brain.expand(matches[0]["content"])
+                expansion = await asyncio.to_thread(brain.expand, matches[0]["content"])
                 await ctx.channel.send(expansion)
 
     elif intent == "export_notes":

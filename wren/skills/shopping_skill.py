@@ -1,3 +1,4 @@
+import asyncio
 import re
 
 from .. import brain
@@ -75,7 +76,9 @@ async def handle(intent: str, ctx: Ctx) -> None:
     lst = _list_name(ctx)
     if intent == "add_shopping_item" and ctx.files:
         who = config.id_to_name()[ctx.user_id]
-        added = [item for item in brain.items_in(ctx.files, ctx.content)
+        # to_thread: a vision call takes seconds, and inline it stalls every surface
+        seen = await asyncio.to_thread(brain.items_in, ctx.files, ctx.content)
+        added = [item for item in seen
                  if shopping.add(item, added_by=who, list_name=lst)[1]]
         if not added:
             await ctx.channel.send("I couldn't read any items off that picture.")

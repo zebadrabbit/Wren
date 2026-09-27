@@ -462,3 +462,16 @@ def test_undo_discard_idea_saves_it_again():
     asyncio.run(notes_plugin.UNDO["discard_idea"](ctx))
     assert [n["content"] for n in notes.search(1, tags=["idea"])] == ["build a treehouse"]
     _assert_flourished(ctx.channel.sent[-1], "Kept the idea after all: build a treehouse.")
+
+def test_expand_idea_runs_the_model_off_the_event_loop():
+    # A model call inline in a handler freezes every surface for its duration.
+    import threading
+    notes.save(1, "build a treehouse", ["idea"])
+    ch = CollectingChannel()
+    seen = []
+    def fake(_):
+        seen.append(threading.current_thread() is threading.main_thread())
+        return "ok"
+    with patch.object(brain, "expand", side_effect=fake):
+        asyncio.run(notes_plugin.handle("expand_idea", Ctx(user_id=1, channel=ch, content="treehouse")))
+    assert seen == [False]
