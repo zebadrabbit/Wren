@@ -100,7 +100,8 @@ Everyone else is a contact, and a contact holds one id per surface: "add
 Their notes and reminders are theirs on both; the shopping list is the
 household's on all of them. A reminder or a "send to hubby" with no surface
 named reaches them on the default `NOTIFY_VIA` surface if they are on it, and
-otherwise on whichever running surface they are.
+otherwise on whichever running surface they are (with `NOTIFY_VIA=any`, only
+their surfaces are tried at all).
 
 Long-polls `getUpdates` over `aiohttp`; there is no Telegram client library in
 the dependency list. Private chats only — group messages are ignored. The Bot
@@ -195,8 +196,8 @@ Note the page uses absolute paths (`/api/conversations`), so it must be proxied
 at a server root — a subpath like `/wren/` needs URL rewriting.
 
 **The http plugin is send-only.** It has no way to push, so
-`NOTIFY_VIA=http` cannot deliver reminders — it logs and drops them.
-Point `NOTIFY_VIA` at `discord` or `telegram` if you want reminders to reach you.
+`NOTIFY_VIA=http` cannot deliver reminders — it logs and drops them. The
+default, `any`, skips it; or point `NOTIFY_VIA` at `discord` or `telegram`.
 
 ## Web chat
 
@@ -301,10 +302,19 @@ all three routes.
 ### Where notifications go
 
 Replies always return to whichever communication plugin asked. *Unprompted*
-messages — a reminder firing, a Gmail or GitHub watcher alert — go to a
-single configured `NOTIFY_VIA`, defaulting to the first entry in
-`COMMUNICATION_PLUGINS`. So you can set a reminder by voice from a laptop
-and have it ping you on Discord.
+messages — a reminder firing, a Gmail or GitHub watcher alert, the daily
+briefing — go where `NOTIFY_VIA` says:
+
+- **`any`** (the default): the first running plugin that can push and reaches
+  you, in `COMMUNICATION_PLUGINS` order. If it is down, the next one gets it
+  straight away. Delivered once, not on every channel, so two chat apps on one
+  phone do not buzz twice.
+- **a plugin name** (`telegram`, `discord`): always that one.
+
+A reminder can name its own channel, and that beats either: "set a timer for
+10 minutes and notify me on discord", "remind me on telegram to call mum at
+6". So you can set a reminder by voice from a laptop and have it ping you on
+your phone.
 
 ## Voice (optional)
 

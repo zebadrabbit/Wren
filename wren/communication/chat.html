@@ -1175,7 +1175,7 @@ const SETTING_META = {
                            help: "IANA name, e.g. America/Chicago. Reminders fire on this clock.",
                            listId: "tzlist" },
   NOTIFY_VIA:            { group: "General", label: "Notify via",
-                           help: "Which channel delivers reminders and watcher alerts. Must be running and able to push (the web chat can't).",
+                           help: "Where reminders and alerts go when you don't name a channel. any: the first running channel that can reach you, falling back to the next. \"…on discord\" in a reminder still wins.",
                            channels: true },
   REMINDER_POLL_SECONDS: { group: "Watchers", label: "Reminder poll (seconds)",
                            help: "How often due reminders are checked. Minimum 5.", num: true },
@@ -1234,8 +1234,8 @@ function settingRow(key, value, channels, locked) {
     input = document.createElement("select");
     // running channels are candidates; the server still rejects one that
     // can't push, and that rejection lands in this row's status line
-    const names = channels.filter(c => c.running)
-                          .map(c => c.module.replace(/_plugin$/, ""));
+    const names = ["any", ...channels.filter(c => c.running)
+                                     .map(c => c.module.replace(/_plugin$/, ""))];
     if (value && !names.includes(value)) names.unshift(value);
     for (const n of names) {
       const o = document.createElement("option");

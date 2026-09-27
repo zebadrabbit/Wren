@@ -41,10 +41,14 @@ TELEGRAM_OWNER_ID = int(os.environ.get("TELEGRAM_OWNER_ID") or 0)
 
 COMMUNICATION_PLUGINS = [s.strip() for s in os.environ.get("COMMUNICATION_PLUGINS", "discord").split(",") if s.strip()]
 
-# where unprompted messages (reminders, watcher alerts) go. Defaults to the
-# first enabled surface rather than a hardcoded "discord", so an http-only
-# install routes somewhere real without extra config.
-NOTIFY_VIA = os.environ.get("NOTIFY_VIA", "").strip() or (COMMUNICATION_PLUGINS[0] if COMMUNICATION_PLUGINS else "discord")
+# Where unprompted messages (reminders, watcher alerts, the briefing) go when
+# the user did not name a surface. "any" -- the default -- is whichever running
+# surface can reach them first, in COMMUNICATION_PLUGINS order, failing over
+# to the next (router.notify). The old default, the first listed plugin, let a
+# send-only http listed first eat every reminder. Naming a surface makes it
+# the fall-through; "remind me ... on discord" still beats either.
+NOTIFY_ANY = "any"
+NOTIFY_VIA = os.environ.get("NOTIFY_VIA", "").strip().lower() or NOTIFY_ANY
 
 
 def _parse_tokens(raw: str) -> dict[str, int]:
@@ -270,7 +274,9 @@ def _coerce_top_k(raw: str) -> int:
 def _coerce_notify_via(raw: str) -> str:
     from . import router          # local: router imports config, so not at module level
 
-    name = raw.strip()
+    name = raw.strip().lower() or NOTIFY_ANY
+    if name == NOTIFY_ANY:
+        return name
     surface = router.surface(name)
     if surface is None:
         known = ", ".join(router.registered()) or "none running"
@@ -316,7 +322,8 @@ SETTABLE = {
     "GITHUB_WATCH":          Setting(_parse_github_watch, serialize=_serialize_github_watch),
     "EMAIL_WATCH":           Setting(_parse_email_watch, serialize=_serialize_email_watch),
     "EMAIL_DIGEST":          Setting(_coerce_onoff, serialize=lambda v: "on" if v else "off"),
-    "NOTIFY_VIA":            Setting(_coerce_notify_via, boot_coerce=str.strip),
+    "NOTIFY_VIA":            Setting(_coerce_notify_via,
+                                     boot_coerce=lambda raw: raw.strip().lower() or NOTIFY_ANY),
 
     "MEMORY_SWEEP_SECONDS":   Setting(_coerce_poll_seconds),
     "MEMORY_DEDUP_THRESHOLD": Setting(_coerce_threshold),

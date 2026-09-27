@@ -665,3 +665,12 @@ def test_undo_cancel_all_restores_them_all():
     asyncio.run(reminder_plugin.UNDO["cancel_reminder"](ctx))
     assert sorted(r["content"] for r in reminders.pending(1)) == ["a", "b"]
     _assert_flourished(ctx.channel.sent[-1], "Restored 2 reminders.")
+
+
+def test_a_timer_can_be_directed_to_a_surface(surfaces):
+    ch = CollectingChannel()
+    asyncio.run(reminder_plugin.handle("set_reminder", Ctx(
+        user_id=1, channel=ch, content="",
+        text="set a timer for 10 minutes and notify me on discord")))
+    assert reminders.pending(1)[0]["via"] == "discord"
+    assert ch.sent[0].startswith("Timer set, 10 minutes") and "via discord" in ch.sent[0]

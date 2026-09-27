@@ -30,3 +30,19 @@ def test_a_readable_env_file_is_warned_about(tmp_path, caplog):
         run._warn_if_env_readable(str(env))
         run._warn_if_env_readable("")          # no .env at all: nothing to say
     assert caplog.text == ""
+
+
+def test_notify_any_is_quiet_when_something_can_push(monkeypatch, caplog):
+    from wren.communication import http_plugin, telegram_plugin
+    monkeypatch.setattr(config, "NOTIFY_VIA", "any")
+    with caplog.at_level(logging.WARNING):
+        run._warn_if_notifications_go_nowhere({"http": http_plugin, "telegram": telegram_plugin})
+    assert caplog.text == ""
+
+
+def test_notify_any_warns_when_nothing_loaded_can_push(monkeypatch, caplog):
+    from wren.communication import http_plugin
+    monkeypatch.setattr(config, "NOTIFY_VIA", "any")
+    with caplog.at_level(logging.WARNING):
+        run._warn_if_notifications_go_nowhere({"http": http_plugin})
+    assert "DISCARDED" in caplog.text

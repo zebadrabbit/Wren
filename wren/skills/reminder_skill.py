@@ -215,7 +215,8 @@ async def handle(intent: str, ctx: Ctx) -> None:
             fire_at = (datetime.now(timezone.utc) + timedelta(**{unit: count})).isoformat(timespec="seconds")
             length = f"{count} {unit if count != 1 else unit[:-1]}"
             reminders.save(ctx.user_id, f"{count} {unit[:-1]} timer is up", fire_at, via=via)
-            await ctx.channel.send(flourish.flourish(f"Timer set, {length}."))
+            await ctx.channel.send(flourish.flourish(
+                f"Timer set, {length}" + (f", via {via}." if via else ".")))
             return
         parsed_utc = _relative_when(ctx.text) or _parse_when(ctx.when)
         repeat = _parse_repeat(ctx.text)

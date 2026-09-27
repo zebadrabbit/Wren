@@ -274,3 +274,92 @@ def test_falls_back_to_the_default_when_their_surface_is_not_running(monkeypatch
     router.register("discord", discord)
     asyncio.run(router.notify(42, "bins"))
     assert discord.calls == [(42, "bins")]
+
+
+# ── NOTIFY_VIA=any: the fall-through when no default surface is named ────────
+
+class MuteSurface(FakeSurface):
+    CAN_NOTIFY = False
+
+
+def _any(monkeypatch, *names):
+    monkeypatch.setattr(config, "NOTIFY_VIA", "any")
+    monkeypatch.setattr(config, "COMMUNICATION_PLUGINS", list(names))
+
+
+def test_any_delivers_once_to_the_first_surface_in_plugin_order(monkeypatch):
+    _any(monkeypatch, "telegram", "discord")
+    discord, telegram = FakeSurface(), FakeSurface()
+    router.register("discord", discord)
+    router.register("telegram", telegram)
+    assert asyncio.run(router.notify(1, "bins")) is True
+    assert telegram.calls == [(1, "bins")] and discord.calls == []
+
+
+def test_any_moves_on_when_a_surface_cannot_reach_the_person(monkeypatch):
+    _any(monkeypatch, "discord", "telegram")
+    discord, telegram = FakeSurface(result=False), FakeSurface()
+    router.register("discord", discord)
+    router.register("telegram", telegram)
+    assert asyncio.run(router.notify(1, "bins")) is True
+    assert telegram.calls == [(1, "bins")]
+
+
+def test_any_fails_over_when_a_surface_is_down(monkeypatch):
+    # Discord 503 while Telegram is fine: the reminder still arrives, now.
+    _any(monkeypatch, "discord", "telegram")
+    router.register("discord", FakeSurface(raises=ConnectionError("503")))
+    telegram = FakeSurface()
+    router.register("telegram", telegram)
+    assert asyncio.run(router.notify(1, "bins")) is True
+    assert telegram.calls == [(1, "bins")]
+
+
+def test_any_raises_when_nothing_delivered_and_something_was_transient(monkeypatch):
+    # The False-vs-raise contract: one surface merely down means retry later,
+    # so the caller must not consume the reminder.
+    _any(monkeypatch, "discord", "telegram")
+    router.register("discord", FakeSurface(raises=ConnectionError("503")))
+    router.register("telegram", FakeSurface(result=False))
+    with pytest.raises(ConnectionError):
+        asyncio.run(router.notify(1, "bins"))
+
+
+def test_any_is_a_permanent_failure_when_every_surface_says_so(monkeypatch):
+    _any(monkeypatch, "discord", "telegram")
+    router.register("discord", FakeSurface(result=False))
+    router.register("telegram", FakeSurface(result=False))
+    assert asyncio.run(router.notify(1, "bins")) is False
+
+
+def test_any_skips_surfaces_that_cannot_push(monkeypatch):
+    _any(monkeypatch, "http", "discord")
+    http, discord = MuteSurface(), FakeSurface()
+    router.register("http", http)
+    router.register("discord", discord)
+    assert asyncio.run(router.notify(1, "bins")) is True
+    assert http.calls == [] and discord.calls == [(1, "bins")]
+
+
+def test_any_only_tries_surfaces_a_contact_is_on(monkeypatch, hubby_on_telegram):
+    _any(monkeypatch, "discord", "telegram")
+    discord, telegram = FakeSurface(), FakeSurface()
+    router.register("discord", discord)
+    router.register("telegram", telegram)
+    assert asyncio.run(router.notify(42, "bins")) is True
+    assert discord.calls == [] and telegram.calls == [(42, "bins")]
+
+
+def test_any_with_nothing_able_to_push_is_a_permanent_failure(monkeypatch):
+    _any(monkeypatch, "http")
+    router.register("http", MuteSurface())
+    assert asyncio.run(router.notify(1, "bins")) is False
+
+
+def test_an_explicit_via_beats_any(monkeypatch):
+    _any(monkeypatch, "telegram", "discord")
+    discord, telegram = FakeSurface(), FakeSurface()
+    router.register("discord", discord)
+    router.register("telegram", telegram)
+    asyncio.run(router.notify(1, "bins", via="discord"))
+    assert discord.calls == [(1, "bins")] and telegram.calls == []

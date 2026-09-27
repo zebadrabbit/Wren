@@ -145,18 +145,18 @@ def test_communication_plugins_defaults_to_discord(monkeypatch):
     reloaded = _reload(monkeypatch)
     try:
         assert reloaded.COMMUNICATION_PLUGINS == ["discord"]
-        assert reloaded.NOTIFY_VIA == "discord"
+        assert reloaded.NOTIFY_VIA == "any"
     finally:
         _reload(monkeypatch)
 
-def test_communication_plugins_parses_list_and_notify_defaults_to_first(monkeypatch):
+def test_communication_plugins_parses_list_and_notify_defaults_to_any(monkeypatch):
     monkeypatch.delenv("NOTIFY_VIA", raising=False)
     reloaded = _reload(monkeypatch, COMMUNICATION_PLUGINS="http, discord")
     try:
         assert reloaded.COMMUNICATION_PLUGINS == ["http", "discord"]
-        # an http-only install must not silently route notifications at a
-        # surface that was never enabled
-        assert reloaded.NOTIFY_VIA == "http"
+        # unset means "whichever running surface can reach you", not the
+        # first entry: listed first, a send-only http ate every reminder
+        assert reloaded.NOTIFY_VIA == "any"
     finally:
         monkeypatch.delenv("COMMUNICATION_PLUGINS", raising=False)
         _reload(monkeypatch)
@@ -196,4 +196,4 @@ def test_discord_token_is_optional(tmp_path):
         cwd=str(tmp_path), env=env, capture_output=True, text=True, timeout=60,
     )
     assert result.returncode == 0, f"importing Wren without DISCORD_TOKEN failed:\n{result.stderr}"
-    assert result.stdout.strip() == "'' ['http'] http"
+    assert result.stdout.strip() == "'' ['http'] any"

@@ -35,6 +35,7 @@ HELP_TEXT = """Here's what I can actually do:
 - "remind me to take out the trash at 6pm" / "in 20 minutes" / "tomorrow morning"
 - "remind me every tuesday at 8pm to water the plants" — also daily, weekly, "every 3 days"
 - "timer 20 minutes" / "how long is left"
+- "set a timer for 10 minutes and notify me on discord" — any reminder can name where it arrives
 - "what are my reminders" — shows all upcoming reminders with times
 - "cancel the trash reminder" / "clear my reminders"
 

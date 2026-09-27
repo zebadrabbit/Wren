@@ -50,6 +50,8 @@ async def notify(user_id: int, text: str, via: str | None = None) -> bool:
         logging.info(f"dry run: would notify {user_id}: {text[:80]!r}")
         return True
     name = via or config.NOTIFY_VIA
+    if via is None and name == config.NOTIFY_ANY:
+        return await _notify_any(user_id, text)
     if via is None:
         # Notifications follow the person: a contact with no id on the default
         # surface but one on another running surface is reached there. A
@@ -67,6 +69,42 @@ async def notify(user_id: int, text: str, via: str | None = None) -> bool:
         )
         return False
     return await surface.notify(user_id, text)
+
+
+async def _notify_any(user_id: int, text: str) -> bool:
+    """NOTIFY_VIA=any: once, on the first running surface that can push and
+    reaches this person, in COMMUNICATION_PLUGINS order.
+
+    Once, not everywhere: with two chat apps on one phone, "both" buzzes twice
+    for every reminder, and a retry after one surface raised would repeat it on
+    the one that had already delivered. Failing over is the point -- Discord
+    down should not delay a reminder Telegram could deliver now.
+
+    Keeps notify()'s contract: True as soon as one delivers; a raise if none
+    did and any failure was transient (the caller retries next poll); False
+    only when every candidate said "permanent", or there were none.
+    """
+    theirs = contacts.surfaces_of(user_id)      # [] for the owner: every surface
+    candidates = [
+        n for n in config.COMMUNICATION_PLUGINS
+        if n in _surfaces and getattr(_surfaces[n], "CAN_NOTIFY", True)
+        and (not theirs or n in theirs)
+    ]
+    transient = None
+    for name in candidates:
+        try:
+            if await _surfaces[name].notify(user_id, text):
+                return True
+        except Exception as e:
+            # Not swallowed: re-raised below unless a later surface delivers.
+            logging.warning(f"notify {user_id} on {name} failed, trying the next surface: {e}")
+            transient = e
+    if transient is not None:
+        raise transient
+    if not candidates:
+        logging.warning(f"Cannot notify {user_id}: no running surface can push "
+                        f"(have: {registered() or 'none'})")
+    return False
 
 
 async def notify_name(contact_name: str, text: str) -> bool:

@@ -47,6 +47,14 @@ def _warn_if_env_readable(path: str) -> None:
 def _warn_if_notifications_go_nowhere(loaded: dict) -> None:
     """Say so loudly at boot rather than silently eating reminders at 3am."""
     target = config.NOTIFY_VIA
+    if target == config.NOTIFY_ANY:
+        if not any(getattr(p, "CAN_NOTIFY", True) for p in loaded.values()):
+            logging.warning(
+                f"No running communication plugin can deliver unprompted messages "
+                f"({', '.join(loaded) or 'none'}). Reminders and watcher alerts will be DISCARDED. "
+                f"Add one that can push, e.g. discord or telegram, to COMMUNICATION_PLUGINS."
+            )
+        return
     surface = loaded.get(target)
     if surface is None:
         logging.warning(
