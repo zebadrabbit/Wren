@@ -325,3 +325,16 @@ def test_set_location_with_locate_words_is_rerouted_even_when_content_was_invent
         asyncio.run(weather_skill.handle("set_location", ctx))
     get.assert_not_called()
     assert [c["kind"] for c in ctx.channel.cards] == ["locate"]
+
+
+@pytest.mark.parametrize("intent,text", [("set_location", "my location is 72715"),
+                                         ("locate_me", "use my current location")])
+def test_location_set_in_env_is_not_changed_from_chat(scratch_settings, monkeypatch, intent, text):
+    # .env is the source of truth for what it defines: say so up front, before
+    # geocoding or asking the browser for a fix that could never be saved.
+    monkeypatch.setattr(config, "ENV_DEFINED", frozenset({"WEATHER_LAT", "WEATHER_LON"}))
+    ctx = _owner(text, "72715" if intent == "set_location" else "")
+    with patch.object(weather_skill.httpx, "get") as get:
+        asyncio.run(weather_skill.handle(intent, ctx))
+    get.assert_not_called()
+    assert len(ctx.channel.sent) == 1 and ".env" in ctx.channel.sent[0]

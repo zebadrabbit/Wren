@@ -374,6 +374,8 @@ def register_routes(app: web.Application, authenticate) -> None:
             ],
             "channels": _channel_rows(),
             "settings": {key: config.serialize_setting(key) for key in config.SETTABLE},
+            # shown read-only: .env defines them, and PATCH would be refused
+            "env_locked": sorted(config.ENV_DEFINED),
             # booleans only, by construction -- the values live in .env on the
             # host and are managed with manage.sh, never through this surface
             "secrets": config.secret_status(),

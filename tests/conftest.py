@@ -1,4 +1,5 @@
 import os
+import sys
 import tempfile
 
 import pytest
@@ -18,4 +19,21 @@ def isolated_db(tmp_path, monkeypatch):
     """Every test gets its own database. Nothing in the suite may ever open
     the real wren.db."""
     monkeypatch.setenv("WREN_DB", str(tmp_path / "wren.db"))
+    yield
+
+
+@pytest.fixture(autouse=True)
+def no_env_locked_settings(monkeypatch):
+    """No setting starts out locked by .env.
+
+    python-dotenv searches parent directories, so the suite loads the LIVE
+    .env (from a worktree too) and config.ENV_DEFINED would lock whatever
+    keys it happens to define -- tests passing or failing by the owner's
+    .env. A test that wants a lock sets ENV_DEFINED itself. Only patched if
+    config is already imported: importing it here would run it before a test
+    module's own os.environ.setdefault(...) lines.
+    """
+    config = sys.modules.get("wren.config")
+    if config is not None:
+        monkeypatch.setattr(config, "ENV_DEFINED", frozenset())
     yield

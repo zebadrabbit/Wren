@@ -64,7 +64,11 @@ Run with `python3 -m wren.run`. Full architecture doc: `README.md`
    only deviations, and `config.SETTABLE` is a positive allowlist — never add
    a credential to it, because `GET /api/plugins` returns its values.
    Model names (`*_MODEL`) are `.env`-only since 2026-09-26; the live
-   picker and its `reload_llm_chain` machinery are gone.
+   picker and its `reload_llm_chain` machinery are gone. **`.env` wins for
+   any settable key it defines** (`config.ENV_DEFINED`, presence not
+   truthiness): `set_override` raises `SettingLocked`, the panel greys it out,
+   and a stored row for it is deleted at boot. Tests start with
+   `ENV_DEFINED` empty (conftest) because dotenv loads the live `.env`.
 
 ## Env vars that changed in the v2 restart
 

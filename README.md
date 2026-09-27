@@ -282,7 +282,16 @@ This looks like a bug and is not.
 
 Settings changes apply immediately (`config.apply_overrides()` writes onto
 `config`'s own globals, which every consumer reads at call time) and persist
-in a `settings` table that overrides `.env`. Wren never writes to `.env`.
+in a `settings` table. Wren never writes to `.env`.
+
+**`.env` wins for anything it defines.** A setting present in `.env`, even
+as an empty `KEY=`, shows in the panel read-only with "Set in .env", the
+API refuses to change it, and saying "my location is …" in chat says so
+instead of saving. A stored row for a key `.env` now defines is dropped at
+startup, with a warning in the log. So the panel only ever edits what you
+left out of `.env`. Before this, a value set in the panel in June silently
+beat a `.env` edit in December. Keep a key commented out in `.env` if you
+want to manage it from the panel.
 
 The panel itself is owner-only: the gear stays hidden for every other
 whitelisted user, because the page probes `GET /api/plugins` on load and
@@ -472,7 +481,8 @@ to the plain frequency.
 ## Weather (optional)
 
 Set `WEATHER_LAT` and `WEATHER_LON` (decimal degrees) in `.env` or the
-plugins panel, or just tell Wren where you are. Forecasts and geocoding come
+plugins panel, or just tell Wren where you are. Set in `.env`, they cannot
+be changed from chat or the panel. Forecasts and geocoding come
 from Open-Meteo — no account, no key, and the only thing sent is the place
 or the coordinates.
 

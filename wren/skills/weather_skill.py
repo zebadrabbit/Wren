@@ -169,6 +169,12 @@ async def handle(intent: str, ctx: Ctx) -> None:
         if ctx.user_id != config.WHITELIST["owner"]:
             await ctx.channel.send("Only the owner can change the location.")
             return
+        if config.ENV_DEFINED & {"WEATHER_LAT", "WEATHER_LON"}:
+            # set_override would refuse anyway; said here so no geocode or
+            # browser location prompt is spent on a value that cannot be kept
+            await ctx.channel.send("Your location is set in .env (WEATHER_LAT / WEATHER_LON). "
+                                   "Change it there and restart me.")
+            return
         if intent == "set_location":
             await _set_location(ctx)
         else:

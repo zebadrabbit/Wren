@@ -1,4 +1,3 @@
-import pytest
 import os, asyncio, pytest
 os.environ.setdefault("DISCORD_TOKEN", "test")
 os.environ.setdefault("WREN_OWNER_ID", "1")
@@ -354,3 +353,19 @@ def test_enabled_must_be_a_real_boolean(value):
                      token=TOKEN_OWNER, json={"enabled": value})
     assert status == 400
     assert registry.is_enabled(notes_skill)
+
+
+def test_settings_defined_in_env_are_listed_as_locked(monkeypatch):
+    monkeypatch.setattr(config, "ENV_DEFINED", frozenset({"TIMEZONE", "SEARXNG_URL"}))
+    status, body = call("get", "/api/plugins", token=TOKEN_OWNER)
+    assert status == 200
+    assert body["env_locked"] == ["SEARXNG_URL", "TIMEZONE"]
+
+
+def test_patching_a_setting_env_defines_is_refused(monkeypatch):
+    monkeypatch.setattr(config, "ENV_DEFINED", frozenset({"TIMEZONE"}))
+    status, body = call("patch", "/api/settings", token=TOKEN_OWNER,
+                        json={"TIMEZONE": "Europe/Paris"})
+    assert status == 400
+    assert ".env" in body["error"]
+    assert settings.get("TIMEZONE") is None

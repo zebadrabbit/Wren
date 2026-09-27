@@ -3,13 +3,15 @@ import os
 import re
 import zoneinfo
 from typing import Callable, NamedTuple
-from dotenv import load_dotenv
+from dotenv import find_dotenv, load_dotenv
 
 from . import providers
 from . import contacts
 from . import db
 
-load_dotenv()
+# Kept so run.py can check the file's permissions; "" when there is no .env.
+ENV_FILE = find_dotenv()
+load_dotenv(ENV_FILE)
 
 def _require(key: str) -> str:
     val = os.environ.get(key)
@@ -365,6 +367,28 @@ def serialize_setting(key: str) -> str:
 _DEFAULTS = {key: globals()[key] for key in SETTABLE}
 
 
+class SettingLocked(ValueError):
+    """A runtime write to a setting .env already defines.
+
+    A ValueError so every existing caller (the panel's 400, the weather
+    skill) already reports it instead of crashing."""
+
+
+def _env_defined(environ) -> set[str]:
+    # Presence, not truthiness: "SEARXNG_URL=" is a deliberate "web search
+    # off" and is as much a decision as any other value. A commented-out line
+    # is absent, and leaves the key to the panel.
+    return {key for key in SETTABLE if key in environ}
+
+
+# Settable keys the environment (in practice .env) defines. .env is the source
+# of truth for these: the panel shows them read-only, set_override refuses
+# them, and a stored row for one is dropped at boot. Without this a value set
+# in the panel in June silently beat a .env edit in December, forever.
+# Read once, here, like every other .env value.
+ENV_DEFINED: frozenset[str] = frozenset(_env_defined(os.environ))
+
+
 def apply_overrides() -> None:
     """Read the settings table onto this module.
 
@@ -385,6 +409,12 @@ def apply_overrides() -> None:
             # log a false "unknown stored setting" warning on every boot,
             # training the operator to ignore the one warning that actually
             # means something (a row written by a genuinely older Wren).
+            continue
+        if key in ENV_DEFINED:
+            # .env wins. Deleted, not skipped: kept, the row would come back
+            # into force the day the .env line is removed, months stale.
+            settings.unset(key)
+            logging.warning(f"dropped stored setting '{key}': .env defines it, and .env wins")
             continue
         spec = SETTABLE.get(key)
         if spec is None:
@@ -417,6 +447,8 @@ def set_override(key: str, raw: str):
 
     if key not in SETTABLE:
         raise KeyError(key)
+    if key in ENV_DEFINED:
+        raise SettingLocked("set in .env, change it there and restart Wren")
     spec = SETTABLE[key]
     value = spec.coerce(raw)         # raises ValueError/RuntimeError if bad
     if db.in_dry_run():

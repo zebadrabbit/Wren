@@ -390,6 +390,9 @@ main footer { padding: 10px 20px 18px; }
   font: inherit; font-size: 13.5px;
 }
 .pset input:focus, .pset select:focus { outline: none; border-color: var(--clay); }
+/* .env defines it: shown so the owner can see the live value, not editable */
+.pset input:disabled, .pset select:disabled { background: var(--well); color: var(--muted); cursor: not-allowed; }
+.pslabel .plock { display: block; font-size: 12.5px; line-height: 1.45; margin-top: 2px; color: var(--warn); }
 .savestat { flex-basis: 100%; font-size: 12.5px; text-align: right; }
 .savestat:empty { display: none; }
 .savestat.ok { color: var(--ok); }
@@ -1219,7 +1222,7 @@ function showTab(name) {
     s.hidden = s.id !== "tab-" + name);
 }
 
-function settingRow(key, value, channels) {
+function settingRow(key, value, channels, locked) {
   const meta = SETTING_META[key] || { group: "Other", label: key };
   const row = document.createElement("div");
   row.className = "pset";
@@ -1249,6 +1252,15 @@ function settingRow(key, value, channels) {
     }
     if (meta.listId) input.setAttribute("list", meta.listId);
     input.value = value;
+  }
+  if (locked) {
+    // .env is the source of truth for anything it defines; the server
+    // refuses the write anyway, this just says so before anyone tries
+    input.disabled = true;
+    const note = document.createElement("small");
+    note.className = "plock";
+    note.textContent = "Set in .env. Edit it there and restart Wren.";
+    row.querySelector(".pslabel").append(note);
   }
   const stat = document.createElement("span");
   stat.className = "savestat";
@@ -1343,7 +1355,7 @@ async function loadPlugins() {
     h.textContent = group;
     $("#psettings").appendChild(h);
     for (const [key, value] of grouped[group]) {
-      $("#psettings").appendChild(settingRow(key, value, d.channels));
+      $("#psettings").appendChild(settingRow(key, value, d.channels, (d.env_locked || []).includes(key)));
     }
   }
 
