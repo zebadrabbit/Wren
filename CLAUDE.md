@@ -105,7 +105,7 @@ Module path renames (for grep/context when reading old plans/specs):
 ```bash
 source venv/bin/activate
 pip install -r requirements.txt
-pytest -q                        # 1207 passed as of 2026-09-26
+pytest -q                        # 1232 passed as of 2026-09-27
 python3 -m wren.run              # needs .env; see .env.example
 ```
 
