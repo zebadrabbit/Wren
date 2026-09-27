@@ -14,6 +14,7 @@ TELEGRAM_TOKEN from @BotFather.
 import asyncio
 import logging
 import sys
+import time
 
 import aiohttp
 
@@ -269,8 +270,22 @@ def _incoming(update: dict) -> tuple[int, str, list[dict]] | None:
     return user_id, text, wanted
 
 
+# Telegram holds unconfirmed updates for 24h and the offset is not persisted,
+# so the first poll after a restart gets everything sent while Wren was down.
+# Acting on it hours late is worse than not acting: "remind me at 6" arriving
+# at 9 sets tomorrow's reminder, and each one costs an LLM call in a burst.
+# Older than this, the sender is told instead. Missing "date" counts as fresh.
+_STALE_SECONDS = 30 * 60
+
+
+def _is_stale(update: dict) -> bool:
+    sent = (update.get("message") or {}).get("date")
+    return isinstance(sent, (int, float)) and time.time() - sent > _STALE_SECONDS
+
+
 async def _poll_once(offset: int | None) -> int | None:
     """One getUpdates round trip. Returns the offset for the next call."""
+    stale: set[int] = set()
     params: dict = {"timeout": _LONG_POLL_SECONDS}
     if offset is not None:
         params["offset"] = offset
@@ -283,11 +298,18 @@ async def _poll_once(offset: int | None) -> int | None:
         # skip — or a message whose handling blew up — would otherwise come
         # back forever and be answered forever.
         offset = update["update_id"] + 1
-        parsed = _incoming(update)
-        if parsed is None:
-            continue
-        user_id, text, wanted = parsed
+        user_id = None
         try:
+            # Parsing is inside the guard too: offset is a local, so a raise
+            # that escapes this loop throws away the whole batch's progress and
+            # Telegram redelivers it -- answered again on every retry.
+            parsed = _incoming(update)
+            if parsed is None:
+                continue
+            user_id, text, wanted = parsed
+            if _is_stale(update):
+                stale.add(user_id)
+                continue
             files: list[Inbound] = []
             for want in wanted:
                 size = want.get("file_size")
@@ -340,7 +362,18 @@ async def _poll_once(offset: int | None) -> int | None:
         except Exception as e:
             # Never log the body — Telegram DMs are as private as reminders
             # (see http_plugin.notify).
-            logging.error(f"telegram: handling a message from {user_id} failed: {e}")
+            logging.error(f"telegram: handling update {update.get('update_id')} "
+                          f"from {user_id} failed: {e}")
+    for chat_id in stale:
+        # Only people Wren would have answered: a stranger gets no reply to
+        # anything, so must not get this one either.
+        if _wren_user_id(chat_id) not in config.id_to_name():
+            continue
+        try:
+            await _send_text(chat_id, "I was offline when some of your messages arrived, so I "
+                                      "didn't act on them. Send again anything that still matters.")
+        except Exception as e:
+            logging.warning(f"telegram: offline notice to {chat_id} failed: {e}")
     return offset
 
 
@@ -381,7 +414,8 @@ async def start() -> None:
 
     # ponytail: the offset lives in memory only. Restarting Wren means
     # Telegram replays whatever it still holds and has not seen confirmed (up
-    # to 24h of it), so a message sent while Wren was down may be answered
+    # to 24h of it). Anything past _STALE_SECONDS gets an "I was offline"
+    # notice instead of an answer; a recent message may still be answered
     # twice — or, if the last poll before the restart confirmed it, not at all.
     # Persisting it is one more row in a state table if that ever stings.
     offset: int | None = None

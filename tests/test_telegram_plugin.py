@@ -712,3 +712,50 @@ def test_notify_to_a_contact_goes_to_their_telegram_chat(hubby_on_both):
     with patch.object(telegram_plugin, "_api", new=api):
         asyncio.run(telegram_plugin.notify(222, "kettle boiled"))
     assert api.await_args.kwargs["data"]["chat_id"] == 42
+
+
+# ── stale backlog after downtime ─────────────────────────────────────────────
+
+def test_stale_messages_are_not_acted_on_and_the_sender_is_told_once(monkeypatch):
+    # Telegram holds 24h of unconfirmed updates; a restart used to answer every
+    # one of them with its own LLM call, hours late.
+    import time
+    monkeypatch.setattr(config, "TELEGRAM_OWNER_ID", 999)
+    old = int(time.time()) - 3 * 3600
+    api = AsyncMock(return_value=[_update(1, text="remind me at 6", user_id=999, date=old),
+                                  _update(2, text="add milk", user_id=999, date=old),
+                                  _update(3, text="hi", user_id=999, date=int(time.time()))])
+    with patch.object(telegram_plugin, "_api", new=api), \
+         patch.object(telegram_plugin, "_send_text", new=AsyncMock()) as send, \
+         patch.object(core, "handle_message", new=AsyncMock()) as handle:
+        assert asyncio.run(telegram_plugin._poll_once(None)) == 4
+    assert [c.args[1] for c in handle.await_args_list] == ["hi"]
+    send.assert_awaited_once()
+    assert send.await_args.args[0] == 999 and "offline" in send.await_args.args[1]
+
+
+def test_stale_messages_from_strangers_get_no_reply(monkeypatch):
+    import time
+    api = AsyncMock(return_value=[_update(1, user_id=5555, date=int(time.time()) - 7200)])
+    with patch.object(telegram_plugin, "_api", new=api), \
+         patch.object(telegram_plugin, "_send_text", new=AsyncMock()) as send, \
+         patch.object(core, "handle_message", new=AsyncMock()) as handle:
+        asyncio.run(telegram_plugin._poll_once(None))
+    handle.assert_not_awaited()
+    send.assert_not_awaited()
+
+
+def test_an_update_that_fails_to_parse_does_not_lose_the_batch(monkeypatch):
+    # Offset progress is a local in _poll_once: one raise outside the
+    # per-message guard lost it, and Telegram redelivered the whole batch.
+    real = telegram_plugin._incoming
+    def flaky(update):
+        if update["update_id"] == 1:
+            raise TypeError("odd shape")
+        return real(update)
+    monkeypatch.setattr(telegram_plugin, "_incoming", flaky)
+    api = AsyncMock(return_value=[_update(1), _update(2)])
+    with patch.object(telegram_plugin, "_api", new=api), \
+         patch.object(core, "handle_message", new=AsyncMock()) as handle:
+        assert asyncio.run(telegram_plugin._poll_once(None)) == 3
+    assert handle.await_count == 1
