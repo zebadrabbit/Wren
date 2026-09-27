@@ -1,3 +1,4 @@
+import pytest
 import os, asyncio, pytest
 os.environ.setdefault("DISCORD_TOKEN", "test")
 os.environ.setdefault("WREN_OWNER_ID", "1")
@@ -342,3 +343,14 @@ def test_dedup_threshold_field_min_matches_the_coercers_exclusive_floor():
     # then rejected by the server-side coerce(), a confusing round trip.
     src = webchat._PAGE.read_text(encoding="utf-8")
     assert "min: 0.01" in src
+
+
+@pytest.mark.parametrize("value", ["false", "0", None, 0])
+def test_enabled_must_be_a_real_boolean(value):
+    # bool("false") is True: a string used to switch a skill ON when asked to
+    # turn it off. Anything but true/false is refused and changes nothing.
+    from wren.skills import notes_skill
+    status, _ = call("patch", "/api/plugins/notes_skill",
+                     token=TOKEN_OWNER, json={"enabled": value})
+    assert status == 400
+    assert registry.is_enabled(notes_skill)

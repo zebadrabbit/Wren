@@ -392,7 +392,11 @@ def register_routes(app: web.Application, authenticate) -> None:
                               "startup from COMMUNICATION_PLUGINS and need a restart"},
                     status=400)
             return web.json_response({"error": "unknown plugin"}, status=404)
-        registry.set_enabled(target, bool(body.get("enabled")))
+        enabled = body.get("enabled")
+        if not isinstance(enabled, bool):
+            # not bool(...): bool("false") is True, and a skill would switch on
+            return web.json_response({"error": '"enabled" must be true or false'}, status=400)
+        registry.set_enabled(target, enabled)
         return web.json_response(dict(_plugin_row(target),
                                       enabled=registry.is_enabled(target)))
 
