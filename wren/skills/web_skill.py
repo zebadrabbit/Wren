@@ -41,6 +41,13 @@ def _clean_url(url: str) -> str:
             url = url[:-1]
     return url
 
+# A digit is a result number only when it is used as one: "#2", "number 2",
+# "the 2nd link", or the whole reply being "2". A bare digit anywhere else is
+# part of the subject -- "GPT-5", "the 2024 budget" -- and must not pick a result.
+_NUMBER_REF = re.compile(
+    r"#\s*(\d+)\b|\b(?:number|no\.?|result|link|item|article)\s*(\d+)\b"
+    r"|\b(\d+)(?:st|nd|rd|th)\b|^\s*(\d+)\s*$", re.I)
+
 def _resolve_target(content: str, results: list[dict]) -> str | None:
     m = _URL_RE.search(content)
     if m:
@@ -51,9 +58,9 @@ def _resolve_target(content: str, results: list[dict]) -> str | None:
     for word, idx in _ORDINALS.items():
         if re.search(rf"\b{word}\b", low):
             return results[idx]["url"] if idx < len(results) else None
-    m = re.search(r"#?(\d+)", content)
+    m = _NUMBER_REF.search(content)
     if m:
-        idx = int(m.group(1)) - 1
+        idx = int(next(g for g in m.groups() if g)) - 1
         return results[idx]["url"] if 0 <= idx < len(results) else None
     return results[0]["url"]  # no explicit reference -> default to top hit
 

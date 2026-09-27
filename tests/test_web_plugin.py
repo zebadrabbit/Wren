@@ -1,4 +1,5 @@
 import os, asyncio
+import pytest
 os.environ.setdefault("DISCORD_TOKEN", "test")
 os.environ.setdefault("WREN_OWNER_ID", "1")
 os.environ.setdefault("LLM_PROVIDERS", "lmstudio")
@@ -108,3 +109,14 @@ def test_handle_disabled_when_unconfigured(monkeypatch):
     ch = CollectingChannel()
     asyncio.run(web_plugin.handle("web_search", Ctx(user_id=1, channel=ch, content="q")))
     assert ch.sent == ["Web lookup isn't configured."]
+
+@pytest.mark.parametrize("text", ["tell me more about GPT-5", "read the 2024 budget one",
+                                  "what did it say about 3 bedrooms"])
+def test_resolve_target_ignores_digits_that_are_not_a_result_number(text):
+    # Any digit used to be read as an ordinal: "GPT-5" asked for result #5.
+    assert web_plugin._resolve_target(text, RESULTS) == "http://a"
+
+@pytest.mark.parametrize("text,url", [("number 2", "http://b"), ("result 3 please", "http://c"),
+                                      ("3", "http://c"), ("the 2nd link", "http://b")])
+def test_resolve_target_explicit_result_numbers(text, url):
+    assert web_plugin._resolve_target(text, RESULTS) == url
