@@ -35,72 +35,92 @@ def _greeting(now: datetime) -> str:
     return "Good evening."
 
 
-def compose(user_id: int) -> str:
-    """The day in one message. Blocking (feeds, HTTP); call under to_thread.
+def gather(user_id: int) -> dict:
+    """Everything the briefing knows, as data. Blocking (feeds, HTTP); call
+    under to_thread. None means a section is off or unconfigured; an empty
+    list or 0 means configured and empty. A calendar that failed is a string
+    so the card can say so in the section's own place.
 
     Composed, never generated: nothing here touches brain. A briefing that
     invents a meeting is worse than no briefing, and a deterministic one is
     free to send every morning. Each source is wrapped on its own so one dead
-    feed costs one line, not the whole message.
+    feed costs one section, not the whole message.
     """
     from .. import registry   # local: registry imports this module
 
     tz = ZoneInfo(config.TIMEZONE)
     now = _now().astimezone(tz)
     today = now.date()
-    lines = [f"{_greeting(now)} {today:%a %b} {today.day}."]
-    empties: list[str] = []
+    data: dict = {"greeting": f"{_greeting(now)} {today:%a %b} {today.day}.",
+                  "weather": None, "calendar": None, "reminders": None,
+                  "email": [], "shopping": None}
 
     if registry.is_enabled(weather_skill) and weather_skill.is_active():
         try:
-            lines.append("Weather: " + weather_skill.summary(0))
+            data["weather"] = weather_skill.summary(0)
         except Exception as e:
             logging.warning(f"briefing: weather failed: {type(e).__name__}: {e}")
-            lines.append("Weather: couldn't reach the weather service.")
+            data["weather"] = "couldn't reach the weather service."
 
     if registry.is_enabled(calendar_skill) and calendar_skill.is_active():
         try:
-            day = calendar_skill.day_lines(calendar_skill.events_between(today, 1), today)
+            data["calendar"] = calendar_skill.day_lines(calendar_skill.events_between(today, 1), today)
         except calendar_skill.FeedError as e:
             logging.warning(f"briefing: calendar failed: {e}")
-            lines.append("Calendar: couldn't reach the feed.")
-        else:
-            if day:
-                lines.append("Calendar:")
-                lines.extend(day)
-            else:
-                empties.append("nothing on the calendar")
+            data["calendar"] = "couldn't reach the feed."
 
     if registry.is_enabled(reminder_skill):
         due = []
         for r in reminders.pending(user_id):
             local = datetime.fromisoformat(r["fire_at"]).astimezone(tz)
             if local.date() == today:
-                due.append(f"  {local:%H:%M}  {r['content']}")
-        if due:
-            lines.append("Reminders today:")
-            lines.extend(due)
-        else:
-            empties.append("no reminders")
+                due.append({"local": f"{local:%H:%M}", "content": r["content"]})
+        data["reminders"] = due
 
     if config.EMAIL_DIGEST:
         # the watcher's last day of watched mail, by this person's alias
         # (EMAIL_WATCH maps senders to aliases, not ids)
         alias = config.id_to_name().get(user_id)
         mail = gmail_state.recent(alias) if alias else []
-        if mail:
-            lines.append("Email:")
-            lines.extend(f"  {m['sender']} — {m['subject']}" for m in mail[:_DIGEST_CAP])
-            if len(mail) > _DIGEST_CAP:
-                lines.append(f"  …and {len(mail) - _DIGEST_CAP} more.")
+        data["email"] = [{"sender": m["sender"], "subject": m["subject"]} for m in mail]
 
     if registry.is_enabled(shopping_skill):
-        n = len(shopping.active_items())
-        if n:
-            lines.append(f"Shopping list: {n} item{'' if n == 1 else 's'}.")
-        else:
-            empties.append("list is empty")
+        data["shopping"] = len(shopping.active_items())
+    return data
 
+
+def render(data: dict) -> str:
+    """The day in one message, from gather()'s data. The same lines the
+    briefing has always sent; the card is the other rendering of this dict."""
+    lines = [data["greeting"]]
+    empties: list[str] = []
+    if data["weather"] is not None:
+        lines.append("Weather: " + data["weather"])
+    cal = data["calendar"]
+    if isinstance(cal, str):
+        lines.append("Calendar: " + cal)
+    elif cal:
+        lines.append("Calendar:")
+        lines.extend(cal)
+    elif cal is not None:
+        empties.append("nothing on the calendar")
+    due = data["reminders"]
+    if due:
+        lines.append("Reminders today:")
+        lines.extend(f"  {r['local']}  {r['content']}" for r in due)
+    elif due is not None:
+        empties.append("no reminders")
+    mail = data["email"]
+    if mail:
+        lines.append("Email:")
+        lines.extend(f"  {m['sender']} — {m['subject']}" for m in mail[:_DIGEST_CAP])
+        if len(mail) > _DIGEST_CAP:
+            lines.append(f"  …and {len(mail) - _DIGEST_CAP} more.")
+    n = data["shopping"]
+    if n:
+        lines.append(f"Shopping list: {n} item{'' if n == 1 else 's'}.")
+    elif n is not None:
+        empties.append("list is empty")
     # Only when every data section came up empty: a briefing that lists what
     # it does not have reads as an apology; one that says nothing reads as broken.
     if empties and not any(l.startswith(("Calendar", "Reminders", "Shopping")) for l in lines):
@@ -109,8 +129,16 @@ def compose(user_id: int) -> str:
     return "\n".join(lines)
 
 
+def compose(user_id: int) -> str:
+    return render(gather(user_id))
+
+
 async def handle(intent: str, ctx: Ctx) -> None:
-    await ctx.channel.send(await asyncio.to_thread(compose, ctx.user_id))
+    data = await asyncio.to_thread(gather, ctx.user_id)
+    # one send: the card is the message, the prose its fallback on Discord
+    # and Telegram, and what the timeline stores
+    await ctx.channel.send_card("briefing", data, render(data),
+                                intent="briefing", params={"content": ""})
 
 
 _STEP = 60                      # seconds between checks; also how quickly a panel change applies

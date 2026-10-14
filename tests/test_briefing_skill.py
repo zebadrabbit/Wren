@@ -128,7 +128,9 @@ def test_reminders_today_use_the_local_day(monkeypatch):
 
 def test_handle_sends_the_briefing():
     ctx = Ctx(user_id=1, channel=CollectingChannel(), text="what's my day look like")
-    with patch.object(briefing_skill, "compose", return_value="Good morning."):
+    data = {"greeting": "Good morning.", "weather": None, "calendar": None,
+            "reminders": None, "email": [], "shopping": None}
+    with patch.object(briefing_skill, "gather", return_value=data):
         asyncio.run(briefing_skill.handle("briefing", ctx))
     assert ctx.channel.sent == ["Good morning."]
 
@@ -303,3 +305,63 @@ def test_briefing_says_nothing_about_email_when_digest_is_off_or_empty(monkeypat
     with patch.object(weather_skill, "summary", return_value="x"), \
          patch.object(calendar_skill, "events_between", return_value=[]):
         assert "Email" not in briefing_skill.compose(2)
+
+
+# --- gather / render (2026-10-13): the briefing as data for the card ------
+
+def test_gather_shape_with_everything_configured():
+    reminders.save(1, "call the vet", "2026-08-26T17:00:00+00:00")
+    shopping.add("milk", "owner")
+    with patch.object(weather_skill, "summary", return_value="72°F and clear."), \
+         patch.object(calendar_skill, "events_between", return_value=[_event("Standup", 9)]):
+        data = briefing_skill.gather(1)
+    assert data["greeting"].startswith("Good morning. Wed Aug 26.")
+    assert data["weather"] == "72°F and clear."
+    assert data["calendar"] == calendar_skill.day_lines([_event("Standup", 9)], NOW.date())
+    assert data["reminders"] == [{"local": "17:00", "content": "call the vet"}]
+    assert data["shopping"] == 1
+    assert data["email"] == []
+
+
+def test_gather_marks_unconfigured_sections_none(monkeypatch):
+    monkeypatch.setattr(config, "CALENDAR_URLS", [])
+    monkeypatch.setattr(config, "WEATHER_LAT", None)
+    data = briefing_skill.gather(1)
+    assert data["weather"] is None and data["calendar"] is None
+    assert data["reminders"] == [] and data["shopping"] == 0
+
+
+def test_render_matches_compose_for_the_same_inputs():
+    reminders.save(1, "call the vet", "2026-08-26T17:00:00+00:00")
+    shopping.add("milk", "owner")
+    with patch.object(weather_skill, "summary", return_value="72°F and clear."), \
+         patch.object(calendar_skill, "events_between", return_value=[_event("Standup", 9)]):
+        assert briefing_skill.render(briefing_skill.gather(1)) == briefing_skill.compose(1)
+
+
+def test_render_of_an_empty_day_reads_as_a_sentence():
+    with patch.object(weather_skill, "summary", return_value="72°F and clear."), \
+         patch.object(calendar_skill, "events_between", return_value=[]):
+        text = briefing_skill.render(briefing_skill.gather(1))
+    assert text.endswith("Nothing on the calendar, no reminders, list is empty.")
+
+
+def test_calendar_error_is_a_string_and_renders_as_the_old_line():
+    with patch.object(weather_skill, "summary", return_value="x"), \
+         patch.object(calendar_skill, "events_between", side_effect=calendar_skill.FeedError("down")):
+        data = briefing_skill.gather(1)
+    assert data["calendar"] == "couldn't reach the feed."
+    assert "Calendar: couldn't reach the feed." in briefing_skill.render(data)
+
+
+def test_handle_sends_a_briefing_card_whose_text_is_the_prose():
+    shopping.add("milk", "owner")
+    ch = CollectingChannel()
+    with patch.object(weather_skill, "summary", return_value="x"), \
+         patch.object(calendar_skill, "events_between", return_value=[]):
+        asyncio.run(briefing_skill.handle("briefing", Ctx(user_id=1, channel=ch)))
+    (card,) = ch.cards
+    assert card["kind"] == "briefing"
+    assert card["intent"] == "briefing" and card["params"] == {"content": ""}
+    assert card["data"]["shopping"] == 1
+    assert card["text"] == ch.sent[0]
