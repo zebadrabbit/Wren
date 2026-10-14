@@ -275,7 +275,7 @@ you between machines.
 | `PATCH /api/plugins/{module}` | `{enabled}` | toggle a skill — owner only |
 | `PATCH /api/settings` | `{KEY: value}` | change a non-secret setting — owner only |
 | `GET /api/contacts` | — | the household's contacts — owner only |
-| `POST /api/contacts` | `{alias, id, ...}` | add a contact — owner only |
+| `POST /api/contacts` | `{alias, surface, id}` | add a contact — owner only |
 | `DELETE /api/contacts/{alias}` | — | remove a contact — owner only |
 
 `before` and `after` are not combined (400), and `limit` is clamped to 200.
