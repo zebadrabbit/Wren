@@ -420,6 +420,15 @@ main footer { padding: 10px 20px 18px; }
   background: var(--code); padding: 10px 12px; border-radius: 8px;
   font-size: 12.5px; overflow-x: auto;
 }
+.premove { border: 1px solid var(--line); border-radius: 8px; padding: 4px 10px; font-size: 12.5px; color: var(--muted); }
+.premove[data-armed] { color: var(--alert); border-color: var(--alert); }
+#padd { flex-wrap: wrap; }
+#padd input { flex: 1 1 140px; }
+#padd button { border: 1px solid var(--line-2); border-radius: 8px; padding: 6px 14px; background: var(--well); color: var(--text); }
+#tab-people pre {
+  background: var(--code); padding: 10px 12px; border-radius: 8px;
+  font-size: 12.5px; overflow-x: auto;
+}
 .perr { color: var(--alert); font-size: 13px; padding: 0 18px 12px; min-height: 18px; }
 
 /* ── phone ─────────────────────────────────────────────────────────────── */
@@ -553,6 +562,7 @@ main footer { padding: 10px 20px 18px; }
     <header><b>Plugins &amp; Settings</b><span id="modeltext" class="pstate"></span><button id="pclose">✕</button></header>
     <nav id="ptabs">
       <button class="tab on" data-tab="plugins">Plugins</button>
+      <button class="tab" data-tab="people">People</button>
       <button class="tab" data-tab="settings">Settings</button>
       <button class="tab" data-tab="secrets">Secrets</button>
     </nav>
@@ -560,6 +570,28 @@ main footer { padding: 10px 20px 18px; }
       <section id="tab-plugins">
         <h4>Skills</h4><div id="pskills"></div>
         <h4>Channels <small>restart required</small></h4><div id="pchannels"></div>
+      </section>
+      <section id="tab-people" hidden>
+        <p class="phint">Who Wren will talk to. Each person has their own notes and
+        reminders; the shopping list is the household's.</p>
+        <div id="pcontacts"></div>
+        <h4>Add someone</h4>
+        <form id="padd" class="pset">
+          <input id="palias" placeholder="name, e.g. hubby" aria-label="name" required>
+          <select id="psurface" aria-label="app"></select>
+          <input id="pid" placeholder="their id in that app" aria-label="id" inputmode="numeric" required>
+          <button type="submit">Add</button>
+          <span class="savestat" id="pstat"></span>
+        </form>
+        <p class="phint">To give someone a second app, add the same name again with
+        the other app and their id there.</p>
+        <h4>Sign-in links</h4>
+        <p class="phint">To let someone use this page, make them a sign-in token on
+        the computer Wren runs on, then send them a link with it:</p>
+        <pre>./manage.sh token add THEIR_ID</pre>
+        <pre>https://your-wren/#token=THE_TOKEN</pre>
+        <p class="phint">Opening that link signs their browser in and drops the
+        token from the address bar. Tokens are never shown here.</p>
       </section>
       <section id="tab-settings" hidden><div id="psettings"></div></section>
       <section id="tab-secrets" hidden>
@@ -1637,7 +1669,51 @@ async function loadPlugins() {
     }
     $("#psecrets").appendChild(row);
   });
+  loadPeople();
 }
+
+async function loadPeople() {
+  const box = $("#pcontacts"); box.innerHTML = "";
+  let people = [];
+  try { people = await api("/api/contacts"); }
+  catch (e) { $("#perr").textContent = String(e.message || e); return; }
+  const sel = $("#psurface");
+  if (!sel.options.length) {
+    // ponytail: surfaces hardcoded to the two the server accepts; ceiling is a third chat plugin
+    for (const s of ["discord", "telegram"]) {
+      const o = document.createElement("option"); o.value = o.textContent = s; sel.append(o);
+    }
+  }
+  if (!people.length) { box.innerHTML = '<p class="phint">Just you so far.</p>'; return; }
+  for (const p of people) {
+    const row = document.createElement("div"); row.className = "prow";
+    row.innerHTML = '<span class="dot ok"></span><span class="pname"></span><span class="pstate"></span>' +
+                    '<button class="premove" type="button">Remove</button>';
+    row.querySelector(".pname").textContent = p.alias;
+    row.querySelector(".pstate").textContent =
+      ["discord", "telegram"].filter(s => p[s]).map(s => s + " " + p[s]).join(" · ") || "no app yet";
+    const rm = row.querySelector(".premove");
+    // inline confirm: the first click arms, the second removes, anything else disarms
+    rm.onclick = async () => {
+      if (!rm.dataset.armed) { rm.dataset.armed = "1"; rm.textContent = "Remove " + p.alias + "?"; return; }
+      try { await api("/api/contacts/" + encodeURIComponent(p.alias), { method: "DELETE" }); loadPeople(); }
+      catch (e) { $("#perr").textContent = String(e.message || e); }
+    };
+    rm.onblur = () => { delete rm.dataset.armed; rm.textContent = "Remove"; };
+    box.append(row);
+  }
+}
+$("#padd").onsubmit = async e => {
+  e.preventDefault();
+  const stat = $("#pstat"); stat.textContent = "…"; stat.className = "savestat";
+  try {
+    await api("/api/contacts", { method: "POST", body: JSON.stringify(
+      { alias: $("#palias").value, surface: $("#psurface").value, id: $("#pid").value }) });
+    $("#palias").value = ""; $("#pid").value = "";
+    stat.textContent = "✓ added"; stat.classList.add("ok");
+    loadPeople();
+  } catch (err) { stat.textContent = String(err.message || err); stat.classList.add("err"); }
+};
 
 /* ── wiring ────────────────────────────────────────────────────────────── */
 $("#signin").onclick = async () => {

@@ -505,3 +505,11 @@ def test_page_lists_spaces_and_can_return_to_today():
     assert "function openSpace" in html
     assert "openKey" in html
     assert 'toggle("on", s.key === openKey)' in html
+
+
+def test_panel_has_a_people_tab_with_the_invite_explanation():
+    _, _, html = asyncio.run(_page_request())
+    assert 'data-tab="people"' in html and 'id="tab-people"' in html
+    assert "/api/contacts" in html
+    assert "#token=" in html                      # the invite link is explained here
+    assert "manage.sh token add" in html           # and only here (owner's panel)
