@@ -194,7 +194,7 @@ self-signed certificate is fine here and avoids the trap of a publicly
 resolvable name: your browser asks once, and reaching a public hostname would
 route over the internet rather than the LAN anyway.
 
-Note the page uses absolute paths (`/api/conversations`), so it must be proxied
+Note the page uses absolute paths (`/api/timeline`), so it must be proxied
 at a server root — a subpath like `/wren/` needs URL rewriting.
 
 **The http plugin is passive.** It cannot push to a phone, but it does not
@@ -234,11 +234,6 @@ What you see when you open it:
 On a Reminders card, a one-off reminder has a tick, "done"; a repeating one has
 a cross, "stop this reminder", because ticking a repeating reminder would only
 schedule the next one.
-
-Replies are **not** streamed — `brain` returns a finished string and intent
-detection has to happen first, so you get a thinking indicator rather than
-tokens appearing. That is the main thing that will feel different from
-claude.ai.
 
 ### Signing in
 
@@ -376,6 +371,10 @@ A reminder can name its own channel, and that beats either: "set a timer for
 10 minutes and notify me on discord", "remind me on telegram to call mum at
 6". So you can set a reminder by voice from a laptop and have it ping you on
 your phone.
+
+Replies arrive whole rather than word by word, so you see a thinking indicator
+rather than text appearing. That is the main thing that will feel different
+from claude.ai.
 
 ## Voice (optional)
 

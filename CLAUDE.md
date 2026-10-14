@@ -47,7 +47,8 @@ Run with `python3 -m wren.run`. Full architecture doc: `README.md`
    caption is a question, a question about the picture (`brain.describe`).
    If a skill has a place of its own to open (shopping lists, notes, reminders),
    declare `SPACES` -- a list, or a callable returning one, of `{key, label,
-   intent, params}`; `registry.spaces()` collects them for the sidebar. If a destructive intent can be reversed, declare `UNDO = {intent: async
+   intent, params}`; `registry.spaces()` collects them for the sidebar.
+   If a destructive intent can be reversed, declare `UNDO = {intent: async
    fn(ctx)}`; core runs it on a typed "undo that" within ten minutes of the
    intent, with the same `Ctx`. Skills that need to know *what* was deleted
    keep it themselves (see `shopping_store._last_cleared`).
