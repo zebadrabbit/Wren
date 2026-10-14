@@ -41,8 +41,7 @@
 html, body { height: 100%; margin: 0; }
 body {
   display: flex; background: var(--bg); color: var(--text);
-  font: 15px/1.6 "Inter", "Source Sans 3", -apple-system, BlinkMacSystemFont,
-       "Segoe UI", Roboto, system-ui, sans-serif;
+  font: 15px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, "Inter", "Source Sans 3", sans-serif;
 }
 /* background: transparent is load-bearing, not tidiness. Without it a button
    that declares no background of its own gets the browser default -- white --
@@ -86,28 +85,12 @@ aside header b { font-size: 16px; }
 /* Clear space 0.35 x height (Brand/README.md): at 20px that's a 7px minimum
    gap, so the 8px gap above already satisfies it. */
 .sidemark { width: 20px; height: 20px; flex: none; }
-#new {
-  margin: 2px 10px 10px; padding: 8px; border: 0; border-radius: 10px;
-  background: var(--accent); color: var(--accent-fg); font-weight: 600;
-  font-size: 14px; box-shadow: var(--shadow);
-}
-#new:hover { filter: brightness(1.06); }
-#convos { flex: 1; overflow-y: auto; padding: 2px 8px; }
-.convo {
-  display: flex; align-items: center; gap: 4px; padding: 8px 10px;
-  border-radius: 8px; cursor: pointer; font-size: 14px;
-}
-.convo:hover { background: var(--wash); }
-.convo.active { background: var(--wash); font-weight: 600; }
-.convo span {
-  flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.convo button {
-  border: 0; background: transparent; color: var(--muted); padding: 2px 4px;
-  border-radius: 4px; font-size: 12px; opacity: 0; line-height: 1;
-}
-.convo:hover button { opacity: 1; }
-.convo button:hover { background: var(--line); }
+#sidenav { flex: 1; overflow-y: auto; padding: 2px 8px; display: flex; flex-direction: column; gap: 2px; }
+.nav { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px;
+       border: 0; text-align: left; font-size: 14px; width: 100%; }
+.nav:hover { background: var(--wash); }
+.nav.on { background: var(--wash); font-weight: 600; }
+.lab { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); padding: 12px 10px 4px; }
 #side-foot {
   border-top: 1px solid var(--line); padding: 10px;
   display: flex; flex-direction: column; gap: 8px;
@@ -128,10 +111,10 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
   border-bottom: 1px solid var(--line); min-height: 48px;
 }
 /* The toggle follows the sidebar: at the far end of its header while the
-   sidebar is on screen (expanded or peeked), and at the window's top-left --
-   where the topbar now starts -- once it is gone. position:fixed works there
-   because the collapsed sidebar is positioned but never transformed, so it
-   never becomes a containing block and never drags the button away with it. */
+   sidebar is on screen, and at the window's top-left -- where the topbar now
+   starts -- once it is gone. position:fixed works there because the
+   collapsed sidebar is positioned but never transformed, so it never becomes
+   a containing block and never drags the button away with it. */
 #rail {
   margin-left: auto; flex: none; display: flex;
   padding: 4px; border-radius: 6px; color: var(--muted);
@@ -141,27 +124,22 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
   width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5;
   stroke-linecap: round; stroke-linejoin: round;
 }
-#app.railed:not(.peek) #rail { position: fixed; top: 12px; left: 12px; z-index: 7; }
+#app.railed #rail { position: fixed; top: 12px; left: 12px; z-index: 7; }
 /* ...and the title steps aside for it, exactly as it does for the sidebar. */
-#app.railed:not(.peek) #topbar { padding-left: 46px; }
-/* Collapsed, the sidebar overlays the chat rather than sitting in the flex
-   row -- a hover-triggered peek must not reflow the conversation under the
-   pointer. `left` rather than `transform` for the same containing-block
-   reason as above. */
+#app.railed #topbar { padding-left: 46px; }
+/* Collapsed, the sidebar is parked off the left edge rather than removed.
+   `left` rather than `transform` for the same containing-block reason as
+   above. */
 #app.railed aside {
   position: absolute; top: 0; left: -260px; height: 100%; z-index: 6;
   transition: left .18s ease; box-shadow: var(--shadow-lg);
 }
-#app.railed.peek aside { left: 0; }
-/* The rollout trigger: a strip of window edge that only exists while
-   collapsed. Under #rail's z-index, so the button still takes its own clicks. */
-#edge { display: none; }
-#app.railed #edge { display: block; position: fixed; left: 0; top: 0;
-                    width: 14px; height: 100%; z-index: 5; }
 #ctitle {
   flex: 1; font-weight: 600; font-size: 15px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+#cdate { color: var(--muted); font-size: 13px; margin-left: auto; white-space: nowrap; }
+#menu { border: 0; padding: 4px 8px; border-radius: 6px; font-size: 18px; line-height: 1; }
 /* position:relative is load-bearing: every message carries an absolutely
    positioned .sr speaker label, and an absolute box anchors to the nearest
    positioned ancestor. Without this that is #app, so sixteen 1px labels
@@ -170,7 +148,9 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
    in a short window (seen 2026-09-26). */
 #log { flex: 1; overflow-y: auto; padding: 28px 20px; position: relative; }
 #inner { max-width: 760px; margin: 0 auto; }
-.msg { margin-bottom: 20px; display: flex; gap: 10px; }
+/* wrap, with no row gap: a .via label takes a line of its own under the
+   bubble (see .via below); nothing else in a row ever wraps */
+.msg { margin-bottom: 20px; display: flex; gap: 0 10px; flex-wrap: wrap; }
 /* Off-screen but still in the layout, so it lands in a copy/paste (and in a
    screen reader) while staying invisible. display:none would drop it from both. */
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden;
@@ -180,7 +160,9 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
   max-width: 82%; padding: 10px 14px; border-radius: 14px; overflow-wrap: anywhere;
 }
 .msg.user .body { background: var(--wash); border-bottom-right-radius: 4px; }
-.msg.assistant .body { background: transparent; padding: 2px 0 0; max-width: 100%; }
+/* the row less the avatar and its gap (22 + 10), so the body fits beside the
+   avatar instead of wrapping under it now that .msg wraps */
+.msg.assistant .body { background: transparent; padding: 2px 0 0; max-width: calc(100% - 32px); }
 .mavatar { width: 22px; height: 22px; flex: none; margin-top: 2px; }
 .msg .body > :first-child { margin-top: 0; }
 .msg .body > :last-child { margin-bottom: 0; }
@@ -196,8 +178,21 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .msg a { color: var(--accent); }
 .msg ul { padding-left: 20px; margin: 6px 0; }
 .msg .dl { display: inline-block; margin-top: 6px; color: var(--accent); }
+/* day separators: a hairline each side of a small caps label */
+.day { display: flex; align-items: center; gap: 10px; margin: 18px 0 14px; font-size: 11.5px;
+       letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.day::before, .day::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
+/* where a turn came from, under its bubble: a full-width flex item, so it
+   wraps below the body; on Wren's side it is indented past the avatar */
+.via { font-size: 11.5px; color: var(--muted); margin-top: 3px; flex-basis: 100%; }
+.msg.user .via { text-align: right; }
+.msg:not(.user) .via { padding-left: 32px; }
+/* Wren spoke first: quiet, dashed, with a bell */
+.msg.notice .body { background: var(--panel); border: 1px dashed var(--line-2); border-radius: 10px;
+                    padding: 7px 11px; color: var(--muted); max-width: 82%; }
+.msg.notice .body b { color: var(--text); font-weight: 600; }
 /* Card surfaces follow the panel idiom: paper ground, hairline border, the
-   soft shadow. Rows borrow .convo's controls -- muted, quiet until hover. */
+   soft shadow. Row controls are muted and quiet until hover. */
 .card { border: 1px solid var(--line); border-radius: 14px; background: var(--panel);
         box-shadow: var(--shadow); overflow: hidden; }
 .card header {
@@ -213,14 +208,18 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
   border: 0; background: transparent; color: var(--muted); padding: 2px 6px;
   border-radius: 4px; font-size: 13px; line-height: 1; cursor: pointer;
 }
-/* Deliberately NOT .convo's opacity:0 -- renaming a chat is a rare action you
-   can hunt for, ticking something off a shopping list is the whole point of
-   the card, and a control that only exists on hover does not exist on a
-   phone. Dimmed, not hidden. */
+/* Deliberately not opacity:0 -- ticking something off a list is the whole
+   point of the card, and a control that only exists on hover does not exist
+   on a phone. Dimmed, not hidden. */
 .card .cx { opacity: .5; }
 .card li:hover .cx, .card .cx:focus-visible { opacity: 1; }
 .card .cx:hover { background: var(--line); color: var(--alert); }
 .card .cx:disabled { opacity: .25; cursor: default; }
+/* tick boxes on list cards: the brochure's checkbox, not a delete cross */
+.card .ctick { width: 16px; height: 16px; border: 1.5px solid var(--line-2); border-radius: 4px;
+               background: transparent; padding: 0; flex: none; cursor: pointer; }
+.card .ctick:hover { border-color: var(--ok); }
+.card li.cgone .ctick { background: var(--ok); border-color: var(--ok); }
 /* A row waiting out its undo window: still in place, visibly on its way out. */
 .card li.cgone { opacity: .55; }
 .card li.cgone .citem { text-decoration: line-through; }
@@ -259,12 +258,6 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .landmark { width: 56px; height: 56px; display: block; margin: 0 auto 18px; }
 /* clamp so the greeting still fits a phone without a second media query */
 #greet { font-size: clamp(24px, 3.4vw, 32px); font-weight: 500; margin: 0 0 4px; }
-#pills { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 18px; }
-.pill {
-  border: 1px solid var(--line); background: var(--panel); border-radius: 999px;
-  padding: 7px 16px; font-size: 13px; color: var(--muted); box-shadow: var(--shadow);
-}
-.pill:hover { color: var(--accent); border-color: var(--clay); }
 
 .dots span {
   display: inline-block; width: 6px; height: 6px; margin-right: 3px;
@@ -286,9 +279,15 @@ main footer { padding: 10px 20px 18px; }
 .cmark { width: 22px; height: 22px; flex: none; align-self: flex-end;
          margin: 0 0 7px 6px; opacity: .35; transition: opacity .18s ease; }
 #composer:focus-within .cmark { opacity: .9; }
+/* the read chips above the composer, one per skill that can answer */
+#reads { max-width: 760px; margin: 0 auto 6px; display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+#reads:empty { display: none; }
+.read { flex: none; border: 1px solid var(--line); background: var(--panel); border-radius: 999px;
+        padding: 5px 12px; font-size: 13px; color: var(--muted); }
+.read:hover { color: var(--accent); border-color: var(--clay); }
 /* pending attachments, above the input */
-#chips { max-width: 760px; margin: 0 auto 6px; display: flex; flex-wrap: wrap; gap: 6px; }
-#chips[hidden] { display: none; }
+#attach { max-width: 760px; margin: 0 auto 6px; display: flex; flex-wrap: wrap; gap: 6px; }
+#attach[hidden] { display: none; }
 .chip { position: relative; width: 56px; height: 56px; border-radius: 8px; overflow: hidden;
         border: 1px solid var(--line); background: var(--panel); display: flex;
         align-items: center; justify-content: center; font-size: 11px; color: var(--muted); }
@@ -311,8 +310,6 @@ main footer { padding: 10px 20px 18px; }
   align-self: flex-end; height: 36px;
 }
 #send:disabled { opacity: .5; cursor: default; }
-#modeltext { color: var(--muted); font-size: 13px; align-self: center; }
-#modeltext.err { color: var(--alert); }
 
 /* ── plugins & settings sheet ──────────────────────────────────────────── */
 #plugins { position: fixed; inset: 0; background: rgba(36,31,26,.4); display: flex; justify-content: flex-end; }
@@ -326,6 +323,8 @@ main footer { padding: 10px 20px 18px; }
   display: flex; align-items: center; padding: 14px 18px 10px;
 }
 #plugins header b { flex: 1; font-size: 16px; }
+/* which model is answering: a fact for whoever runs Wren, so it lives here */
+#modeltext { margin-right: 10px; }
 #ptabs { display: flex; gap: 4px; padding: 0 18px; border-bottom: 1px solid var(--line); }
 #ptabs .tab {
   border: 0; padding: 8px 12px; font-size: 14px; color: var(--muted);
@@ -392,7 +391,9 @@ main footer { padding: 10px 20px 18px; }
 .pset input:focus, .pset select:focus { outline: none; border-color: var(--clay); }
 /* .env defines it: shown so the owner can see the live value, not editable */
 .pset input:disabled, .pset select:disabled { background: var(--well); color: var(--muted); cursor: not-allowed; }
-.pslabel .plock { display: block; font-size: 12.5px; line-height: 1.45; margin-top: 2px; color: var(--warn); }
+.pslabel .plock { display: block; font-size: 12.5px; line-height: 1.45; margin-top: 2px; }
+/* .env-locked settings read as information, not as a warning */
+.pslabel .plock { color: var(--muted); }
 .savestat { flex-basis: 100%; font-size: 12.5px; text-align: right; }
 .savestat:empty { display: none; }
 .savestat.ok { color: var(--ok); }
@@ -403,11 +404,6 @@ main footer { padding: 10px 20px 18px; }
   font-size: 12.5px; overflow-x: auto;
 }
 .perr { color: var(--alert); font-size: 13px; padding: 0 18px 12px; min-height: 18px; }
-
-@media (max-width: 640px) {
-  aside { width: 200px; }
-  #app.railed aside { left: -200px; }
-}
 </style>
 </head>
 <body>
@@ -447,16 +443,15 @@ main footer { padding: 10px 20px 18px; }
      restore #3A322B here. The bird's own clay fills are untouched. -->
 <g transform="translate(154.24,105.28)"><path d="M0.45 -35.01 13.82 0.00H18.94L26.50 -23.23L34.11 0.00H39.17L52.74 -35.01H48.13L36.74 -5.70L28.48 -30.72H24.58L16.32 -5.70L5.18 -35.01Z M60.74 0.00H65.47V-20.42C65.47 -26.94 68.80 -30.53 75.39 -31.17V-35.84C70.34 -35.58 67.33 -33.86 65.47 -30.02V-35.01H60.74Z M82.18 -17.66C82.18 -7.30 90.30 0.83 100.67 0.83C108.61 0.83 115.46 -4.86 117.70 -11.52H112.77C110.78 -6.72 105.86 -3.52 100.54 -3.52C93.38 -3.52 87.30 -9.02 86.91 -15.94H118.59C118.59 -28.35 110.72 -35.84 100.35 -35.84C90.18 -35.84 82.18 -27.84 82.18 -17.66ZM87.04 -20.22C88.32 -26.94 93.63 -31.49 100.29 -31.49C107.07 -31.49 112.26 -27.20 113.86 -20.22Z M128.64 0.00H133.38V-19.26C133.38 -27.84 137.73 -31.49 144.06 -31.49C150.53 -31.49 154.88 -27.90 154.88 -18.37V0.00H159.62V-18.37C159.62 -30.66 153.41 -35.84 144.64 -35.84C140.03 -35.84 136.32 -34.05 133.38 -30.46V-35.01H128.64Z" fill="currentColor"/></g>
 </svg>
-  <p>Paste a token from this Wren's <code>WREN_TOKENS</code> — the part
-     <em>before</em> the colon. New tokens are minted on the host with
-     <code>./manage.sh token add</code>.</p>
-  <input id="token" type="password" placeholder="token" autocomplete="current-password">
+  <p>Paste the sign-in token you were given. Whoever set up this Wren can
+     make one for you, and a link they send you signs you in on its own.</p>
+  <input id="token" type="password" placeholder="sign-in token" autocomplete="current-password">
   <button id="signin">Connect</button>
   <div class="err" id="loginerr"></div>
 </div>
 
 <div id="app">
-  <div id="edge" aria-hidden="true"></div>
+  <div id="scrim" hidden></div>
   <aside>
     <header>
       <!-- Inlined from Brand/brand/mark-simple.svg (one-colour silhouette --
@@ -474,8 +469,11 @@ main footer { padding: 10px 20px 18px; }
         </svg>
       </button>
     </header>
-    <button id="new">+ New chat</button>
-    <div id="convos"></div>
+    <nav id="sidenav">
+      <button class="nav on" id="nav-today">Today</button>
+      <div class="lab" id="spaces-label" hidden>Spaces</div>
+      <div id="spaces" hidden></div>
+    </nav>
     <footer id="side-foot">
       <div id="whoname"></div>
       <div class="footbtns">
@@ -486,12 +484,15 @@ main footer { padding: 10px 20px 18px; }
   </aside>
   <main>
     <header id="topbar">
-      <span id="ctitle"></span>
-      <span id="modeltext" hidden></span>
+      <button id="menu" type="button" hidden aria-label="Menu">☰</button>
+      <span id="ctitle">Today</span>
+      <span id="cdate"></span>
     </header>
+    <div id="today" hidden></div>
     <div id="log"><div id="inner"></div></div>
     <footer>
-      <div id="chips" hidden></div>
+      <div id="reads"></div>
+      <div id="attach" hidden></div>
       <div id="composer">
         <svg class="cmark" aria-hidden="true"><use href="#wren-mark"/></svg>
         <textarea id="text" rows="1" placeholder="Message Wren…"></textarea>
@@ -503,7 +504,7 @@ main footer { padding: 10px 20px 18px; }
 
 <div id="plugins" hidden>
   <div class="sheet">
-    <header><b>Plugins &amp; Settings</b><button id="pclose">✕</button></header>
+    <header><b>Plugins &amp; Settings</b><span id="modeltext" class="pstate"></span><button id="pclose">✕</button></header>
     <nav id="ptabs">
       <button class="tab on" data-tab="plugins">Plugins</button>
       <button class="tab" data-tab="settings">Settings</button>
@@ -545,7 +546,17 @@ main footer { padding: 10px 20px 18px; }
 <script>
 const $ = s => document.querySelector(s);
 let token = localStorage.getItem("wren_token") || "";
-let active = null, busy = false;
+// A link with ?token= signs this browser in and then forgets it was ever in
+// the address bar, so it is not left in history or pasted on by accident.
+{
+  const t = takeToken(location.href);
+  if (t.token) {
+    token = t.token;
+    try { localStorage.setItem("wren_token", token); } catch (e) {}
+    history.replaceState(null, "", t.clean);
+  }
+}
+let busy = false;
 
 /* ── markdown ───────────────────────────────────────────────────────────
    Replies can contain text Wren did not write: web_skill summarises scraped
@@ -583,6 +594,36 @@ function md(src) {
   return out.replace(/\uE000(\d+)\uE000/g, (_, i) => blocks[i]);
 }
 
+/* ── timeline helpers ──────────────────────────────────────────────────── */
+function parseIso(iso) {
+  // sqlite rows carry six fractional digits; some engines reject more than three
+  return new Date(String(iso).replace(/(\.\d{3})\d+/, "$1"));
+}
+function sameDay(a, b) {
+  const d = parseIso(a), e = parseIso(b);
+  return d.getFullYear() === e.getFullYear() && d.getMonth() === e.getMonth() && d.getDate() === e.getDate();
+}
+function dayLabel(iso, now = new Date()) {
+  const d = parseIso(iso);
+  const day = x => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((day(now) - day(d)) / 86400000);
+  if (diff === 0) return "Today";
+  if (diff === 1) return "Yesterday";
+  return d.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
+}
+const DOOR = { telegram: "Telegram", discord: "Discord", voice: "voice" };
+function turnLabel(row) {
+  if (row.kind === "notice") return row.channel === "web" || !row.channel ? "sent here" : "sent to " + (DOOR[row.channel] || row.channel);
+  if (row.channel === "voice") return "by voice";
+  return DOOR[row.channel] ? "from " + DOOR[row.channel] : "";
+}
+function takeToken(href) {
+  const url = new URL(href);
+  const token = url.searchParams.get("token");
+  url.searchParams.delete("token");
+  return { token, clean: url.toString() };
+}
+
 async function api(path, opts = {}) {
   const res = await fetch(path, {
     ...opts,
@@ -604,15 +645,19 @@ function signOut(message = "") {
 }
 
 /* ── rendering ─────────────────────────────────────────────────────────── */
-function bubble(role, html) {
+// role is "user", "assistant" or "notice" (Wren spoke first); anything not the
+// user is Wren, avatar and all. opts.detach builds the bubble without placing
+// it, for the timeline, which places rows itself.
+function bubble(role, html, opts = {}) {
   const d = document.createElement("div");
   d.className = "msg " + role;
-  const avatar = role === "assistant"
+  const avatar = role !== "user"
     ? '<svg class="mavatar" aria-hidden="true"><use href="#wren-mark"/></svg>' : "";
   // Speaker label is invisible on screen but comes out in a copied transcript,
   // which is otherwise an unattributed wall of alternating lines.
-  const who = '<span class="sr">' + (role === "assistant" ? "Wren: " : "You: ") + "</span>";
+  const who = '<span class="sr">' + (role === "user" ? "You: " : "Wren: ") + "</span>";
   d.innerHTML = who + avatar + '<div class="body">' + html + "</div>";
+  if (opts.detach) return d;
   $("#inner").append(d);
   $("#log").scrollTop = $("#log").scrollHeight;
   return d;
@@ -695,8 +740,8 @@ function shoppingCard(data, mount) {
   const list = data.list || "shopping";
   const title = list === "shopping" ? "Shopping" : list.charAt(0).toUpperCase() + list.slice(1);
   const rows = items.map(i =>
-    '<li><span class="citem">' + esc(i.text) + '</span>' +
-    '<button class="cx" data-item="' + esc(i.text) + '" title="remove">✕</button></li>'
+    '<li><button class="ctick" data-item="' + esc(i.text) + '" title="got it" aria-label="got it"></button>' +
+    '<span class="citem">' + esc(i.text) + "</span></li>"
   ).join("");
   const sugg = (data.suggestions || []).length
     ? '<p class="csugg">You often get: ' +
@@ -715,7 +760,7 @@ function shoppingCard(data, mount) {
 
   const { guarded, refresh } = cardShell(mount, "recall_shopping", { list });
 
-  for (const b of mount.querySelectorAll(".cx")) {
+  for (const b of mount.querySelectorAll(".ctick")) {
     b.onclick = async () => {
       // F3: serialise dispatches per card -- an in-flight flag on the mount
       // node itself, so a second click while this one is outstanding is
@@ -839,9 +884,9 @@ function remindersCard(data, mount) {
   const items = data.reminders || [];
   const { action } = cardShell(mount, "recall_reminders", {});
   const rows = items.map(r =>
-    '<li><span class="cwhen">' + esc(r.local) + "</span>" +
-    '<span class="citem">' + esc(r.content) + "</span>" +
-    '<button class="cx" data-item="' + esc(r.content) + '" title="cancel">✕</button></li>'
+    '<li><button class="ctick" data-item="' + esc(r.content) + '" title="done" aria-label="done"></button>' +
+    '<span class="cwhen">' + esc(r.local) + "</span>" +
+    '<span class="citem">' + esc(r.content) + "</span></li>"
   ).join("");
   mount.innerHTML =
     '<div class="card reminders">' +
@@ -850,7 +895,7 @@ function remindersCard(data, mount) {
                     : '<p class="cempty">Nothing scheduled.</p>') +
       '<p class="cstatus" hidden></p>' +
     "</div>";
-  for (const b of mount.querySelectorAll(".cx")) {
+  for (const b of mount.querySelectorAll(".ctick")) {
     b.onclick = () => action("cancel_reminder", b.dataset.item);
   }
 }
@@ -885,66 +930,17 @@ function renderCard(card, mount, files) {
 async function mountStoredCard(card, mount) {
   try {
     const r = await dispatch(card.intent, card.params || {});
-    if (r.cards && r.cards.length) renderCard(r.cards[0], mount, r.files);
+    if (r.cards && r.cards.length) {
+      // a card is taller than the prose it replaces: a reader at the newest
+      // end of the timeline stays there rather than ending up a card short
+      const log = $("#log"), pinned = log.scrollTop + log.clientHeight >= log.scrollHeight - 40;
+      renderCard(r.cards[0], mount, r.files);
+      if (pinned) log.scrollTop = log.scrollHeight;
+    }
   } catch (e) { /* prose stays */ }
 }
 
-async function loadConvos() {
-  const list = await api("/api/conversations");
-  const box = $("#convos");
-  box.innerHTML = "";
-  for (const c of list) {
-    // the topbar title lives here so a rename and an auto-title (the server
-    // names a chat from its first message) both land in one place
-    if (c.id === active) $("#ctitle").textContent = c.title;
-    const el = document.createElement("div");
-    el.className = "convo" + (c.id === active ? " active" : "");
-    const name = document.createElement("span");
-    name.textContent = c.title;
-    el.append(name);
-    for (const [label, fn] of [["✎", () => renameConvo(c)], ["✕", () => delConvo(c)]]) {
-      const b = document.createElement("button");
-      b.textContent = label;
-      b.onclick = e => { e.stopPropagation(); fn(); };
-      el.append(b);
-    }
-    el.onclick = () => openConvo(c.id);
-    box.append(el);
-  }
-}
-
-async function renameConvo(c) {
-  const title = prompt("Rename conversation", c.title);
-  if (title === null || !title.trim()) return;
-  await api("/api/conversations/" + c.id, { method: "PATCH", body: JSON.stringify({ title }) });
-  loadConvos();
-}
-async function delConvo(c) {
-  if (!confirm("Delete “" + c.title + "”?")) return;
-  await api("/api/conversations/" + c.id, { method: "DELETE" });
-  if (active === c.id) {
-    active = null; $("#inner").innerHTML = ""; $("#ctitle").textContent = "";
-    showEmpty();
-  }
-  loadConvos();
-}
-const STARTERS = {
-  shopping_skill: "add ",
-  notes_skill:    "remember that ",
-  reminder_skill: "remind me to ",
-  pins_skill:     "pin: ",
-  web_skill:      "look up ",
-};
-// Pills whose skill can just *answer*: dispatch the read intent and draw the
-// card, instead of typing a sentence at the model to get back what one call
-// already knows. Nothing is written to the conversation -- same contract as a
-// card button. Add a skill here when its pill should show rather than compose.
-const PILL_READS = { shopping_skill: "recall_shopping" };
-
-// contacts_skill is deliberately absent: it is owner-only administration, not
-// something to invite a household member into. A module with no starter here
-// simply renders no pill, which is also what a disabled skill does.
-
+/* ── the empty timeline ────────────────────────────────────────────────── */
 function greeting(name) {
   const h = new Date().getHours();   // the reader's clock, not the host's --
   // TIMEZONE exists so reminders fire correctly on the server, which is a
@@ -953,82 +949,160 @@ function greeting(name) {
   return name ? `Good ${part}, ${name}.` : `Good ${part}.`;
 }
 
+// An empty timeline: the mark and a greeting. The read chips above the
+// composer are what to press first, so the landing itself offers nothing.
 async function showEmpty(mePromise) {
   const inner = $("#inner");
   inner.innerHTML = `<div id="landing">
       <svg class="landmark" aria-hidden="true"><use href="#wren-mark"/></svg>
       <h2 id="greet"></h2>
-      <div id="pills"></div>
     </div>`;
-  // Captured now, not re-queried after the await below: if a later caller
-  // (double-click "New", or send() on the very first message of a fresh
-  // install) rebuilds #inner or removes #landing before /api/me resolves,
+  // Captured now, not re-queried after the await below: if the first message
+  // or a poll draws a row (and so removes #landing) before /api/me resolves,
   // this reference stops matching what's on the page and the isConnected
-  // check further down bails instead of writing a greeting/pills into a
-  // landing screen that already isn't the one showing.
+  // check further down bails instead of writing into a landing that is gone.
   const landing = $("#landing");
   // Render the fallback greeting first so the screen is never blank or
   // waiting: /api/me only upgrades it with a name.
   $("#greet").textContent = greeting(null);
   let me;
   try {
-    // start() already has an /api/me in flight for the topbar's model text
-    // and passes it in here so the same page load doesn't fetch it twice. Later calls (delConvo, openConvo, a fresh "New") pass nothing
-    // and get their own current fetch.
+    // start() already has an /api/me in flight and hands it down through
+    // loadTimeline(), so one page load fetches it once. A later call (Today
+    // on an empty timeline) passes nothing and gets its own fetch.
     me = await (mePromise || api("/api/me"));
   } catch (e) {
-    return;                       // greeting stays; no pills
+    return;                       // the greeting stays nameless
   }
   if (!landing.isConnected) return;   // superseded while /api/me was in flight
   $("#greet").textContent = greeting(me.name);
-  me.skills.filter(m => STARTERS[m]).forEach(m => {
-    const b = document.createElement("button");
-    b.className = "pill";
-    b.textContent = m.replace("_skill", "").replace(/^./, c => c.toUpperCase());
-    b.onclick = PILL_READS[m] ? () => showList(PILL_READS[m]) : () => {
-      $("#text").value = STARTERS[m];
-      $("#text").focus();
-      $("#text").setSelectionRange($("#text").value.length, $("#text").value.length);
-    };
-    $("#pills").appendChild(b);
-  });
 }
 
-async function showList(intent) {
+/* ── the timeline ───────────────────────────────────────────────────────── */
+let rows = [];             // every row on screen, oldest first
+let lastId = 0;            // poll cursor: the newest id read from the timeline
+let oldestId = null;       // page-back cursor
+let exhausted = false;     // no older page exists
+const PAGE = 50, POLL_MS = 30000;
+
+function rowNode(r, prev, live) {
+  // `live` is the card data from this very response, matched in order; a
+  // row drawn from the timeline later re-fetches through mountStoredCard
+  const frag = document.createDocumentFragment();
+  if (!prev || !sameDay(prev.created_at, r.created_at)) {
+    const d = document.createElement("div"); d.className = "day"; d.textContent = dayLabel(r.created_at);
+    frag.append(d);
+  }
+  const role = r.kind === "notice" ? "notice" : r.role;
+  const html = r.role === "user" ? esc(r.content) : md(r.content);
+  const b = bubble(role, html, { detach: true });
+  const label = turnLabel(r);
+  if (label) { const v = document.createElement("div"); v.className = "via"; v.textContent = label; b.querySelector(".body").after(v); }
+  if (r.card) {
+    const card = live && live.cards.length ? live.cards.shift() : null;
+    if (card) renderCard(card, b.querySelector(".body"), live.files);
+    // A card with no refresh intent (locate) is one-shot: re-mounting it would
+    // re-ask the browser for a position on every reload, or 400 trying.
+    else if (r.card.intent) mountStoredCard(r.card, b.querySelector(".body"));
+  }
+  frag.append(b);
+  return frag;
+}
+function redraw() {
+  const inner = $("#inner");
+  inner.innerHTML = "";
+  if (!rows.length) { showEmpty(); return; }
+  let prev = null;
+  for (const r of rows) { inner.append(rowNode(r, prev)); prev = r; }
+}
+function append(newRows, live) {
+  const inner = $("#inner");
+  const atBottom = $("#log").scrollTop + $("#log").clientHeight >= $("#log").scrollHeight - 40;
+  let prev = rows[rows.length - 1] || null;
+  for (const r of newRows) {
+    // A poll that lands while a send is in flight draws that turn's stored
+    // rows before the send's own response does. Each id is drawn once, and a
+    // skipped card row still takes its live card so later ones stay matched.
+    if (rows.some(x => x.id === r.id)) { if (r.card && live && live.cards.length) live.cards.shift(); continue; }
+    // the landing goes only when a row arrives: an empty poll keeps it
+    const gone = $("#landing"); if (gone) gone.remove();
+    inner.append(rowNode(r, prev, live)); rows.push(r); prev = r;
+  }
+  // Only timeline reads move the cursor, never a send's own rows: a notice
+  // written while a turn was being answered has an id between the turn's
+  // rows, and a cursor moved past them would never read it. The next poll
+  // re-reads the turn, skips it above, and picks the notice up.
+  if (newRows.length && !live) lastId = Math.max(lastId, newRows[newRows.length - 1].id);
+  if (oldestId === null && rows.length) oldestId = rows[0].id;
+  if (atBottom || live) $("#log").scrollTop = $("#log").scrollHeight;
+}
+async function loadTimeline(me) {
+  const page = await api("/api/timeline?limit=" + PAGE);
+  // cleared, not appended to: signing out and back in (perhaps as someone
+  // else, on a shared screen) must not leave the last thread on the page
+  $("#inner").innerHTML = "";
+  rows = []; lastId = 0; oldestId = null; exhausted = page.length < PAGE;
+  append(page);
+  if (!rows.length) showEmpty(me);
+}
+async function loadOlder() {
+  if (exhausted || oldestId === null || loadOlder.busy) return;
+  loadOlder.busy = true;
+  try {
+    const page = await api("/api/timeline?before=" + oldestId + "&limit=" + PAGE);
+    exhausted = page.length < PAGE;
+    if (!page.length) return;
+    const log = $("#log"), before = log.scrollHeight;
+    rows = page.concat(rows); oldestId = rows[0].id;
+    redraw();
+    log.scrollTop = log.scrollHeight - before;     // keep what was on screen where it was
+  } finally { loadOlder.busy = false; }
+}
+async function poll() {
+  // busy: a send in flight has its words on screen as an unstored bubble, and
+  // a poll now would draw the stored copy beside it until the reply lands
+  if (!token || document.hidden || busy) return;
+  // after=0 names no row, and the server reads nothing after a row it cannot
+  // find: until something is drawn, ask for the newest page instead
+  const q = lastId ? "after=" + lastId : "limit=" + PAGE;
+  try { append(await api("/api/timeline?" + q)); }
+  catch (e) { /* a blip; the next tick tries again, and a 401 has already signed out */ }
+}
+$("#log").addEventListener("scroll", () => { if ($("#log").scrollTop < 40) loadOlder(); });
+setInterval(poll, POLL_MS);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
+
+/* ── read chips ─────────────────────────────────────────────────────────── */
+// One chip per skill that can answer a read without the model. Click draws
+// the card as an unstored bubble, same contract as a card button.
+const READS = [
+  ["briefing_skill", "Catch me up", "briefing"],
+  ["shopping_skill", "Shopping", "recall_shopping"],
+  ["reminder_skill", "Reminders", "recall_reminders"],
+  ["notes_skill", "Notes", "recall_notes"],
+  ["notes_skill", "Ideas", "recall_ideas"],
+];
+function drawReads(skills) {
+  const box = $("#reads"); box.innerHTML = "";
+  for (const [skill, label, intent] of READS) {
+    if (!skills.includes(skill)) continue;
+    const b = document.createElement("button"); b.className = "read"; b.textContent = label;
+    b.onclick = () => showRead(intent);
+    box.append(b);
+  }
+}
+async function showRead(intent) {
   const gone = $("#landing"); if (gone) gone.remove();
   try {
-    const r = await dispatch(intent, {});
-    const card = (r.cards || [])[0];
-    const b = bubble("assistant", md((card && card.text) || (r.replies || []).join("\n")));
-    if (card) renderCard(card, b.querySelector(".body"), r.files);
+    // the card gets the reply's own files: that is where a notes card finds
+    // its thumbnails
+    const data = await dispatch(intent, {});
+    const c = (data.cards || [])[0];
+    const b = bubble("assistant", md((c && c.text) || (data.replies || []).join("\n")));
+    if (c) renderCard(c, b.querySelector(".body"), data.files);
   } catch (e) {
     bubble("assistant", "<em>" + esc(e.message || "Something went wrong.") + "</em>");
   }
-}
-
-async function openConvo(id) {
-  active = id;
-  const convo = await api("/api/conversations/" + id);
-  if (active !== id) return;   // a later click superseded this fetch: without
-  // this, the slower response would render conversation A's history while
-  // `active` (and every subsequent send) points at conversation B
-  $("#ctitle").textContent = convo.title;
-  $("#inner").innerHTML = "";
-  if (!convo.messages.length) showEmpty();
-  for (const m of convo.messages) {
-    const b = bubble(m.role, m.role === "user" ? esc(m.content) : md(m.content));
-    // A card with no refresh intent (locate) is one-shot: re-mounting it would
-    // re-ask the browser for a position on every reopen, or 400 trying.
-    if (m.card && m.card.intent) mountStoredCard(m.card, b.querySelector(".body"));
-  }
-  loadConvos();
-  $("#text").focus();
-}
-
-async function newConvo() {
-  const c = await api("/api/conversations", { method: "POST" });
-  await loadConvos();
-  await openConvo(c.id);
 }
 
 /* ── attachments ───────────────────────────────────────────────────────── */
@@ -1047,7 +1121,7 @@ function addFiles(list) {
 }
 
 function drawChips() {
-  const box = $("#chips");
+  const box = $("#attach");
   box.innerHTML = "";
   box.hidden = pendingFiles.length === 0;
   pendingFiles.forEach((f, i) => {
@@ -1088,20 +1162,20 @@ $("#composer").ondrop = e => {
 async function send() {
   const text = $("#text").value.trim();
   if ((!text && !pendingFiles.length) || busy) return;
-  // busy is set BEFORE the first await: a second Enter during newConvo()'s
-  // round-trip used to pass the guard above and create a duplicate
-  // conversation plus a double post of the same message.
+  // busy is set BEFORE the first await, so a second Enter while this one is
+  // in flight cannot pass the guard above and post the same message twice.
   busy = true; $("#send").disabled = true;
   $("#text").value = ""; $("#text").style.height = "auto";
   const files = pendingFiles; pendingFiles = []; drawChips();
-  let thinking = null;
+  let thinking = null, ub = null;
   try {
-    if (active === null) await newConvo();
     const gone = $("#landing"); if (gone) gone.remove();
+    // Drawn now so the words land the moment Enter is pressed; replaced by
+    // the stored row once the reply says what was actually written.
     const thumbs = files.filter(f => f.type.startsWith("image/"))
       .map(f => '<img class="rimg" alt="" src="' + URL.createObjectURL(f) + '">').join("");
     const names = files.filter(f => !f.type.startsWith("image/")).map(f => "📎 " + esc(f.name)).join(" ");
-    const ub = bubble("user", thumbs + (names ? "<div>" + names + "</div>" : "") + esc(text));
+    ub = bubble("user", thumbs + (names ? "<div>" + names + "</div>" : "") + esc(text));
     for (const img of ub.querySelectorAll(".rimg")) {
       img.onload = () => URL.revokeObjectURL(img.src);   // the decoded image survives the revoke
     }
@@ -1115,20 +1189,24 @@ async function send() {
     } else {
       opts = { method: "POST", body: JSON.stringify({ text }) };
     }
-    const data = await api("/api/conversations/" + active + "/message", opts);
+    const data = await api("/message", opts);
     thinking.remove(); thinking = null;
-    if ((data.cards || []).length) {
-      // one bubble per card; its prose is the fallback if the kind is unknown
-      for (const c of data.cards) {
-        const b = bubble("assistant", md(c.text || ""));
-        renderCard(c, b.querySelector(".body"), data.files);
+    ub.remove();
+    // exactly the rows this turn stored, the user's own first; each card
+    // row takes the next live card, so it draws without a second fetch
+    append(data.messages || [], { cards: (data.cards || []).slice(), files: data.files || [] });
+    // A note's first picture is already its card row's thumbnail (notesCard
+    // matches by name); every other file the reply carried gets its own bubble.
+    const shown = new Set();
+    for (const c of data.cards || []) {
+      for (const n of (c.kind === "notes" && (c.data || {}).notes) || []) {
+        const first = (n.files || []).find(a => a.mime.startsWith("image/") &&
+                                                (data.files || []).some(f => f.filename === a.filename));
+        if (first) shown.add(first.filename);
       }
-    } else {
-      for (const r of data.replies) bubble("assistant", md(r));
     }
-    for (const f of data.files || []) bubble("assistant", fileLink(f));
+    for (const f of data.files || []) if (!shown.has(f.filename)) bubble("assistant", fileLink(f));
     if (!data.replies.length && !(data.files || []).length) bubble("assistant", "<em>(no reply)</em>");
-    loadConvos();
   } catch (e) {
     if (thinking) thinking.remove();
     pendingFiles = files; drawChips();
@@ -1259,7 +1337,7 @@ function settingRow(key, value, channels, locked) {
     input.disabled = true;
     const note = document.createElement("small");
     note.className = "plock";
-    note.textContent = "Set in .env. Edit it there and restart Wren.";
+    note.textContent = "Set in .env on the host. Change it there and restart Wren.";
     row.querySelector(".pslabel").append(note);
   }
   const stat = document.createElement("span");
@@ -1384,7 +1462,7 @@ $("#signin").onclick = async () => {
   if (!v) return;
   token = v;
   try {
-    await api("/api/conversations");
+    await api("/api/timeline?limit=1");     // any authed read proves the token
     localStorage.setItem("wren_token", v);
     start();
   } catch { $("#loginerr").textContent = "That token was rejected."; }
@@ -1392,7 +1470,6 @@ $("#signin").onclick = async () => {
 $("#token").onkeydown = e => { if (e.key === "Enter") $("#signin").click(); };
 function setRail(railed) {
   $("#app").classList.toggle("railed", railed);
-  $("#app").classList.remove("peek");
   $("#rail").title = railed ? "Show sidebar" : "Hide sidebar";
   $("#rail").setAttribute("aria-expanded", railed ? "false" : "true");
 }
@@ -1401,12 +1478,8 @@ $("#rail").onclick = () => {
   setRail(railed);
   localStorage.setItem("wren_rail", railed ? "1" : "");
 };
-// Peek is deliberately not persisted and not a toggle: the pointer reaching
-// the window edge rolls the sidebar out, leaving it puts it back. Collapsed
-// stays collapsed either way.
-$("#edge").onmouseenter = () => $("#app").classList.add("peek");
-$("aside").onmouseleave = () => $("#app").classList.remove("peek");
-$("#new").onclick = newConvo;
+// Today is the whole thread, drawn fresh and read from the newest end.
+$("#nav-today").onclick = () => { redraw(); $("#log").scrollTop = $("#log").scrollHeight; };
 $("#send").onclick = send;
 $("#signout").onclick = () => signOut();
 $("#text").onkeydown = e => {
@@ -1436,26 +1509,24 @@ async function start() {
   $("#login").style.display = "none";
   $("#app").classList.add("on");
   if (localStorage.getItem("wren_rail")) setRail(true);
+  $("#cdate").textContent = new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
   // The endpoint 403s for non-owners -- use that to decide whether the gear
   // is even shown, and fail closed (hidden) on any error rather than risk
   // flashing it at someone it should never appear for.
   $("#gear").hidden = true;
   api("/api/plugins").then(() => { $("#gear").hidden = false; }).catch(() => {});
-  // Fetched once and shared: the model selector's fallback needs .model, the
-  // sidebar footer needs .name, and showEmpty() (below) needs the same
-  // response for the greeting and pills. Awaiting the same promise from all
-  // three places makes one network request serve them, and each still fails
-  // closed independently.
+  // Fetched once and shared: the sidebar footer needs .name, the read chips
+  // .skills, the panel header .model, and an empty timeline's greeting the
+  // name again -- loadTimeline() hands this same promise on to showEmpty().
+  // One request serves them all, and each still fails closed on its own.
   const me = api("/api/me");
-  me.then(m => { $("#whoname").textContent = m.name || "Signed in"; }).catch(() => {});
-  me.then(m => showModel(m.model)).catch(() => showModel(null));
-  const list = await api("/api/conversations");
-  if (list.length) await openConvo(list[0].id); else { showEmpty(me); await loadConvos(); }
+  me.then(m => { $("#whoname").textContent = m.name || "Signed in"; drawReads(m.skills || []); showModel(m.model); }).catch(() => {});
+  await loadTimeline(me);
   $("#text").focus();
 }
 
 if (token) {
-  api("/api/conversations").then(start).catch(() => {
+  api("/api/timeline?limit=1").then(start).catch(() => {
     localStorage.removeItem("wren_token"); token = "";
   });
 }

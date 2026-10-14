@@ -264,25 +264,30 @@ def test_the_mark_is_defined_once_and_referenced():
     assert src.count('href="#wren-mark"') >= 2
 
 
-def test_landing_greets_and_offers_starters():
+def test_landing_greets_and_the_read_chips_exist():
+    # the pills left the landing; the read chips above the composer replaced them
     src = PAGE.read_text(encoding="utf-8")
     assert "/api/me" in src
     assert "Good " in src            # the greeting template
-    assert "STARTERS" in src
+    assert "const READS" in src
+    assert "STARTERS" not in src and "PILL_READS" not in src
 
 
-def test_every_pill_starter_maps_to_a_real_skill_module():
-    # A renamed module would otherwise leave a pill that silently does nothing.
+def test_every_read_chip_maps_to_a_real_skill_and_one_of_its_intents():
+    # A renamed module or intent would otherwise leave a chip that silently
+    # draws nothing (a 404 from /api/dispatch, swallowed into an error bubble).
+    import json
     from wren import registry
     src = PAGE.read_text(encoding="utf-8")
-    block = src[src.index("const STARTERS"):]
-    block = block[:block.index("}")]
-    real = {registry.skill_key(p) for p in registry.PLUGINS}
-    for line in block.splitlines():
-        if ":" not in line or "_skill" not in line:
-            continue
-        module = line.split(":")[0].strip().strip('"\',')
-        assert module in real, f"{module} is not a registered skill module"
+    block = src[src.index("const READS = ["):]
+    block = block[block.index("["):block.index("];") + 1]
+    entries = json.loads(block.replace(",\n]", "\n]"))
+    assert entries, "no read chips declared"
+    modules = {registry.skill_key(p): p for p in registry.PLUGINS}
+    for skill, label, intent in entries:
+        assert skill in modules, f"{skill} is not a registered skill module"
+        assert intent in modules[skill].INTENTS, f"{intent} is not one of {skill}'s intents"
+        assert label.strip(), f"chip for {intent} has no label"
 
 
 def test_showEmpty_bails_if_its_own_landing_was_superseded():
@@ -296,7 +301,7 @@ def test_showEmpty_bails_if_its_own_landing_was_superseded():
     # node up front and checks it is still connected before writing into it.
     src = PAGE.read_text(encoding="utf-8")
     start = src.index("async function showEmpty")
-    end = src.index("\nasync function openConvo")
+    end = src.index("\n}\n", start)
     block = src[start:end]
     assert "landing.isConnected" in block, (
         "no guard against a stale #landing -- the /api/me continuation can "
@@ -315,6 +320,8 @@ def test_api_me_is_fetched_once_per_page_load_and_shared():
     # observe actual network traffic, only that start()'s source calls
     # api("/api/me") exactly once and forwards that value into showEmpty(...)
     # rather than the bare call that would fetch a second time.
+    # The empty-timeline landing is drawn by loadTimeline() now, so the
+    # promise travels start() -> loadTimeline(me) -> showEmpty(me).
     src = PAGE.read_text(encoding="utf-8")
     start = src.index("async function start()")
     end = src.index("\nif (token)")
@@ -322,11 +329,13 @@ def test_api_me_is_fetched_once_per_page_load_and_shared():
     assert block.count('api("/api/me")') == 1, (
         "start() should fetch /api/me exactly once per page load"
     )
-    assert "showEmpty(me)" in block, (
-        "start() should forward its own /api/me fetch into showEmpty(...) "
-        "instead of calling showEmpty() with no argument, which would fetch "
-        "/api/me a second time"
+    assert "loadTimeline(me)" in block, (
+        "start() should forward its own /api/me fetch into loadTimeline(...) "
+        "instead of letting the empty landing fetch /api/me a second time"
     )
+    lt = src[src.index("async function loadTimeline("):]
+    lt = lt[:lt.index("\n}\n")]
+    assert "showEmpty(me)" in lt, "loadTimeline() drops the /api/me it was handed"
 
 
 def test_card_renderer_escapes_every_value_it_draws():
@@ -351,8 +360,11 @@ def test_card_controls_dispatch_intents_not_sentences():
 
 def test_a_card_message_renders_a_card_and_not_just_prose():
     src = PAGE.read_text(encoding="utf-8")
-    # both paths must honour m.card: the live reply and a reloaded transcript
-    assert src.count("m.card") >= 1
+    # both paths must honour a row's card: the live reply and a reloaded
+    # timeline both draw through rowNode, which reads r.card
+    block = src[src.index("function rowNode("):]
+    block = block[:block.index("\n}\n")]
+    assert "r.card" in block and "renderCard(" in block and "mountStoredCard(" in block
     assert "cards" in src
 
 
@@ -404,14 +416,15 @@ def test_card_remove_handler_has_a_full_failure_path():
     # F2 + F3: a try/catch/finally around both dispatches, the button
     # re-enabled in finally (not just on the happy path), the skill's own
     # message surfaced via cardStatus, and the in-flight guard from F3.
+    # the row control is a tick box now (.ctick), not a delete cross (.cx)
     block = _shopping_card_source()
-    cx_start = block.index('mount.querySelectorAll(".cx")')
+    cx_start = block.index('mount.querySelectorAll(".ctick")')
     cx_end = block.index('mount.querySelector(".cadd")')
     cx_block = block[cx_start:cx_end]
     assert "try {" in cx_block
     assert "catch" in cx_block
     assert "finally" in cx_block
-    assert "b.disabled = false" in cx_block, "the ✕ button is never re-enabled on failure"
+    assert "b.disabled = false" in cx_block, "the tick is never re-enabled on failure"
     assert "cardStatus(mount" in cx_block, "neither success nor failure is surfaced in the card"
     assert "if (mount._busy) return;" in cx_block, "no guard against a second click mid-dispatch"
     assert "mount._busy = true" in cx_block and "mount._busy = false" in cx_block
@@ -465,7 +478,7 @@ def test_bubbles_carry_a_copyable_speaker_label():
     # page still emits the labels and still hides them with a technique that
     # survives copy/paste (display:none would not), which is the whole point.
     src = PAGE.read_text(encoding="utf-8")
-    start = src.index("function bubble(role, html)")
+    start = src.index("function bubble(role, html")      # (role, html, opts) since the timeline
     block = src[start:src.index("}", src.index("d.innerHTML", start))]
     assert '"Wren: "' in block and '"You: "' in block, "copied transcripts lose attribution"
     assert 'class="sr"' in block
@@ -576,3 +589,80 @@ def test_card_actions_dispatch_the_right_intents():
     src = PAGE.read_text(encoding="utf-8")
     assert "discard_idea" in src
     assert "cancel_reminder" in src
+
+
+# ── timeline helpers (pure, extracted the same way as md()) ────────────────
+
+def run_js(expr: str, tmp_path) -> str:
+    js = tmp_path / "h.mjs"
+    js.write_text(_renderer_js() + f"\nprocess.stdout.write(String({expr}));", encoding="utf-8")
+    out = subprocess.run(["node", str(js)], capture_output=True, text=True, timeout=30)
+    assert out.returncode == 0, out.stderr
+    return out.stdout
+
+
+def test_parse_iso_accepts_microseconds(tmp_path):
+    # sqlite rows carry six fractional digits; Date() must not come back invalid
+    assert run_js('parseIso("2026-10-13T22:40:49.123456+00:00").getTime()', tmp_path) != "NaN"
+    assert run_js('parseIso("2026-10-13T22:40:49.123456+00:00").getUTCHours()', tmp_path) == "22"
+
+
+def test_same_day_compares_local_dates(tmp_path):
+    assert run_js('sameDay("2026-10-13T10:00:00+00:00", "2026-10-13T11:00:00.000001+00:00")', tmp_path) == "true"
+    assert run_js('sameDay("2026-10-13T10:00:00+00:00", "2026-10-14T10:00:00+00:00")', tmp_path) == "false"
+
+
+def test_day_label_today_yesterday_and_a_date(tmp_path):
+    now = 'new Date(2026, 9, 13, 12)'
+    assert run_js(f'dayLabel("2026-10-13T01:00:00.000000", {now})', tmp_path) == "Today"
+    assert run_js(f'dayLabel("2026-10-12T23:00:00.000000", {now})', tmp_path) == "Yesterday"
+    assert "October" in run_js(f'dayLabel("2026-10-01T09:00:00.000000", {now})', tmp_path)
+
+
+@pytest.mark.parametrize("row, label", [
+    ('{"channel": "web", "kind": null}', ""),
+    ('{"channel": null, "kind": null}', ""),
+    ('{"channel": "telegram", "kind": null}', "from Telegram"),
+    ('{"channel": "discord", "kind": null}', "from Discord"),
+    ('{"channel": "voice", "kind": null}', "by voice"),
+    ('{"channel": "telegram", "kind": "notice"}', "sent to Telegram"),
+    ('{"channel": "web", "kind": "notice"}', "sent here"),
+    ('{"channel": null, "kind": "notice"}', "sent here"),
+])
+def test_turn_label(row, label, tmp_path):
+    assert run_js(f"turnLabel({row})", tmp_path) == label
+
+
+def test_take_token_strips_only_the_token(tmp_path):
+    out = run_js('JSON.stringify(takeToken("https://w/?token=abc&x=1#top"))', tmp_path)
+    assert out == '{"token":"abc","clean":"https://w/?x=1#top"}'
+    out = run_js('JSON.stringify(takeToken("https://w/"))', tmp_path)
+    assert out == '{"token":null,"clean":"https://w/"}'
+
+
+def _js_function(src: str, head: str) -> str:
+    start = src.index(head)
+    return src[start:src.index("\n}\n", start)]
+
+
+def test_the_timeline_draws_each_row_once_and_keeps_its_poll_honest():
+    # Substring guards, like the card fixes above; every one of these was seen
+    # on a scratch instance (2026-10-14), not reasoned about. The plan's first
+    # draft of append()/poll() had each of them, so a later task pasting from
+    # the plan would bring them back.
+    src = PAGE.read_text(encoding="utf-8")
+    append = _js_function(src, "function append(")
+    # a poll that lands mid-send draws the turn's stored rows first; the
+    # send's own response must not draw them a second time
+    assert "rows.some(x => x.id === r.id)" in append, "a row can be drawn twice"
+    # a send's rows never move the cursor, or a notice written mid-turn is skipped
+    assert "newRows.length && !live" in append
+    # an empty poll used to wipe the greeting off an empty timeline
+    assert append.index("rows.some(") < append.index('$("#landing")'), (
+        "the landing is removed before knowing whether any row will be drawn")
+    poll = _js_function(src, "async function poll(")
+    # after=0 names no row and the server returns [] for it, forever
+    assert '"limit=" + PAGE' in poll, "an empty timeline never sees a notice arrive"
+    assert "busy" in poll, "a poll mid-send draws the stored copy of the words being sent"
+    # sign out and back in, same tab: the last thread must not stay on the page
+    assert '$("#inner").innerHTML = ""' in _js_function(src, "async function loadTimeline(")

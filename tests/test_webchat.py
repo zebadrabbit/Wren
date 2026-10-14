@@ -308,7 +308,7 @@ def _page():
 
 def test_page_has_the_attachment_plumbing():
     page = _page()
-    assert 'id="chips"' in page
+    assert 'id="attach"' in page
     assert "pendingFiles" in page
     assert "new FormData()" in page
     assert 'addEventListener("paste"' in page or ".onpaste" in page
@@ -439,3 +439,32 @@ def test_conversation_routes_are_gone():
                          ("get", "/api/conversations/1"), ("post", "/api/conversations/1/message")):
         status, _ = call(method, path, token=TOKEN_A, expect_json=False)
         assert status in (404, 405), (method, path)
+
+
+# ── the page is the timeline ───────────────────────────────────────────────
+
+def test_page_polls_the_timeline_and_has_no_conversation_list():
+    _, _, html = asyncio.run(_page_request())
+    assert "/api/timeline" in html
+    assert "/api/conversations" not in html
+    assert 'id="new"' not in html and 'id="convos"' not in html
+    assert "prompt(" not in html and "confirm(" not in html
+    for anchor in ('id="nav-today"', 'id="spaces"', 'id="today"', 'id="reads"',
+                   'id="attach"', 'id="menu"', 'id="modeltext"'):
+        assert anchor in html, anchor
+
+
+def test_page_posts_to_the_shared_message_route():
+    _, _, html = asyncio.run(_page_request())
+    assert 'api("/message"' in html
+
+
+def test_page_font_stack_is_system_first():
+    _, _, html = asyncio.run(_page_request())
+    assert "font: 15px/1.6 system-ui" in html
+
+
+def test_sign_in_copy_names_no_env_var_or_command():
+    _, _, html = asyncio.run(_page_request())
+    login = html[html.index('id="login"'):html.index('id="app"')]
+    assert "WREN_TOKENS" not in login and "manage.sh" not in login
