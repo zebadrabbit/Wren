@@ -5,6 +5,7 @@ import time
 
 from . import brain
 from . import config
+from . import conversations
 from . import flourish
 from .skills import notes_store as notes
 from .skills import memory_skill
@@ -207,28 +208,82 @@ def _status_lines() -> list[str]:
     ]
 
 
+class _Recording:
+    """The surface's Channel, with every reply written to the person's
+    timeline as it goes out. Skills still see a Channel and nothing under
+    wren/skills/ knows this exists. A reply that fails to send is not
+    recorded: send first, then write, so the timeline never claims a
+    delivery that raised."""
+
+    def __init__(self, inner: Channel, home: int) -> None:
+        self.inner = inner
+        self.NAME = inner.NAME
+        self._home = home
+        self.written: list[int] = []
+
+    async def send(self, text: str) -> None:
+        await self.inner.send(text)
+        self.written.append(conversations.add_message(self._home, "assistant", text, channel=self.NAME))
+
+    async def send_file(self, data: bytes, filename: str) -> None:
+        # files are not persisted (see WebChannel's old send_file): the reply
+        # text that accompanies them is the row
+        await self.inner.send_file(data, filename)
+
+    async def send_card(self, kind: str, data: dict, text: str,
+                        *, intent: str = "", params: dict | None = None) -> None:
+        await self.inner.send_card(kind, data, text, intent=intent, params=params)
+        # the ref, never the rows: a card is live and re-reads itself from
+        # intent+params (skill-cards design); `data` would be stale by tomorrow
+        self.written.append(conversations.add_message(
+            self._home, "assistant", text, channel=self.NAME,
+            card={"kind": kind, "intent": intent, "params": params or {}}))
+
+    async def ack(self, state: str) -> None:
+        await self.inner.ack(state)
+
+
 async def handle_message(user_id: int, text: str, channel: Channel, *, source: str = "text",
-                         files: list[Inbound] | None = None) -> None:
+                         files: list[Inbound] | None = None) -> list[int]:
     """Transport-free dispatch. Surfaces authenticate the caller, build a
     Channel, and call this. Nothing below here knows what a Discord is.
 
-    `source` is "text" or "voice" — voice gets a yes/no confirmation before
+    Returns the ids of every timeline row this turn wrote, the user's own
+    turn first, so a surface that wants to show exactly what was stored (the
+    web page) can read them back. Empty when the gate refused.
+
+    `source` is "text" or "voice" -- voice gets a yes/no confirmation before
     running anything destructive, since transcription mis-hears; text is
     unaffected and always acts immediately.
 
     `files` are attachments that arrived with the words. With a caption they
     become a note; without one Wren asks what the photo is and the next
     message answers."""
-    # authorization gate — surfaces do authn (who are you), this does authz.
+    # authorization gate -- surfaces do authn (who are you), this does authz.
     # Kept here rather than per-surface so a new surface cannot forget it.
     if user_id not in config.id_to_name():
-        return
+        return []
 
     text = (text or "").strip()
     files = list(files or [])
     if not text and not files:
-        return
+        return []
 
+    # The transcript is recorded here for the same reason the gate is: one
+    # place, so no surface can forget. The user's turn goes in before anything
+    # else happens, so a failed LLM call keeps what was typed; the reply side
+    # is the _Recording wrapper. A bare photo leaves a placeholder so the turn
+    # is visible in the timeline.
+    home = conversations.home(user_id)
+    stored = text or "(sent " + ", ".join(f.filename for f in files) + ")"
+    turn_id = conversations.add_message(home, "user", stored, channel=channel.NAME)
+    recording = _Recording(channel, home)
+    await _handle(user_id, text, recording, source=source, files=files, before_id=turn_id)
+    return [turn_id, *recording.written]
+
+
+async def _handle(user_id: int, text: str, channel: Channel, *, source: str,
+                  files: list[Inbound], before_id: int) -> None:
     await channel.ack("seen")
 
     # Answering a question core asked last turn happens BEFORE the classifier:
@@ -304,7 +359,11 @@ async def handle_message(user_id: int, text: str, channel: Channel, *, source: s
         return
 
     try:
-        history = await channel.history(limit=10)
+        # From the store, not the channel: the timeline is every door's
+        # history at once, so "what did I just say" on Telegram sees what was
+        # typed in the web chat. before_id excludes this very turn, which the
+        # model already receives as `text`.
+        history = conversations.recent(user_id, before_id=before_id, limit=10)
 
         # to_thread: brain talks to the LLM over synchronous httpx and takes
         # seconds. Inline, it freezes the event loop shared by every surface
@@ -410,5 +469,10 @@ async def handle_message(user_id: int, text: str, channel: Channel, *, source: s
         await channel.ack("done")
     except Exception as e:
         logging.error(f"Error handling message from {user_id}: {e}")
-        await channel.send("Something went wrong, try again.")
-        await channel.ack("error")
+        # The surface that just failed to deliver may fail again here; a dead
+        # door must not turn into an unhandled exception in every caller.
+        try:
+            await channel.send("Something went wrong, try again.")
+            await channel.ack("error")
+        except Exception as e2:
+            logging.error(f"Could not report the failure to {user_id}: {e2}")

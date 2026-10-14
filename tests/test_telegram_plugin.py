@@ -282,10 +282,6 @@ def test_channel_send_file_posts_multipart_send_document():
     assert _form_fields(form) == {"chat_id": "42", "document": b"# notes"}
 
 
-def test_channel_history_is_none():
-    assert asyncio.run(telegram_plugin.TelegramChannel(42).history()) is None
-
-
 def test_channel_ack_seen_sends_typing():
     api = AsyncMock(return_value=True)
     with patch.object(telegram_plugin, "_api", new=api):

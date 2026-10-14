@@ -177,6 +177,8 @@ def _telegram_chat_id(user_id: int) -> int:
 class TelegramChannel:
     """Channel implementation backed by one Telegram chat."""
 
+    NAME = "telegram"
+
     def __init__(self, chat_id: int):
         self._chat_id = chat_id
 
@@ -200,15 +202,6 @@ class TelegramChannel:
         # Inline keyboards would mean a callback route and a per-surface
         # interaction model. Prose is what send_card's signature exists for.
         await self.send(text)
-
-    async def history(self, limit: int = 10) -> list[dict] | None:
-        # ponytail: None, same as CollectingChannel — but here it is a protocol
-        # limit, not a shortcut. A bot cannot read a chat's backlog: getUpdates
-        # only ever hands over messages that arrived after it started, and the
-        # Bot API has no "fetch the last N messages" call at all. The only way
-        # to have history on Telegram is to keep our own table of what went
-        # past, which is the wren/conversations.py path, not this one.
-        return None
 
     async def ack(self, state: str) -> None:
         # Discord draws acks as reactions. Telegram's bot reactions

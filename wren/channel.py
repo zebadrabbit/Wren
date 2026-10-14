@@ -4,13 +4,18 @@ from typing import Protocol
 
 class Channel(Protocol):
     """How a surface talks back. Implemented by each surface; capability
-    plugins only ever see this, never a discord.Message."""
+    plugins only ever see this, never a discord.Message.
+
+    NAME is which door this is -- "web", "voice", "discord" or "telegram".
+    core records it with every turn so the timeline can say where a message
+    came from; it is the only thing a skill could learn about the transport,
+    and none reads it."""
+
+    NAME: str
 
     async def send(self, text: str) -> None: ...
 
     async def send_file(self, data: bytes, filename: str) -> None: ...
-
-    async def history(self, limit: int = 10) -> list[dict] | None: ...
 
     async def ack(self, state: str) -> None:
         """state is "seen" | "done" | "error". Discord draws these as
@@ -78,7 +83,8 @@ class CollectingChannel:
     build a JSON response, and by tests to assert on plain lists rather than
     mocking Discord."""
 
-    def __init__(self) -> None:
+    def __init__(self, name: str = "web") -> None:
+        self.NAME = name
         self.sent: list[str] = []
         self.files: list[tuple[bytes, str]] = []
         self.acks: list[str] = []
@@ -89,11 +95,6 @@ class CollectingChannel:
 
     async def send_file(self, data: bytes, filename: str) -> None:
         self.files.append((data, filename))
-
-    async def history(self, limit: int = 10) -> list[dict] | None:
-        # ponytail: no conversation history off Discord — voice/HTTP requests
-        # are one-shot. Add a history table if multi-turn ever matters.
-        return None
 
     async def ack(self, state: str) -> None:
         self.acks.append(state)

@@ -11,66 +11,8 @@ from .. import core
 from ..channel import CollectingChannel, Ctx
 from .http_plugin import file_entries, read_message
 
-HISTORY_LIMIT = 20
-
 _PAGE = pathlib.Path(__file__).with_name("chat.html")
 
-
-class WebChannel:
-    """Channel backed by the conversations table.
-
-    Unlike CollectingChannel this one has real history — it is the only
-    non-Discord surface that does, because a chat UI is multi-turn by
-    definition.
-    """
-
-    def __init__(self, conversation_id: int, owner_id: int, before_id: int | None = None):
-        self._conversation_id = conversation_id
-        self._owner_id = owner_id
-        self._before_id = before_id
-        self.sent: list[str] = []
-        self.files: list[tuple[bytes, str]] = []
-        self.cards: list[dict] = []
-
-    async def send(self, text: str) -> None:
-        self.sent.append(text)
-        conversations.add_message(self._conversation_id, "assistant", text)
-
-    async def send_file(self, data: bytes, filename: str) -> None:
-        # returned inline, not stored — matches what the machine API does
-        self.files.append((data, filename))
-
-    async def send_card(self, kind: str, data: dict, text: str,
-                        *, intent: str = "", params: dict | None = None) -> None:
-        """`data` goes to the page for this render; `intent`+`params` are what
-        get stored, because that is what re-renders the card an hour from now.
-
-        intent/params are keyword-only and defaulted so this still satisfies the
-        Channel protocol, which knows nothing about them -- a surface that draws
-        cards needs them, and one that prints prose does not.
-        """
-        ref = {"kind": kind, "intent": intent, "params": params or {}}
-        # `text` rides along in the response but is NOT in `ref`, so it is not
-        # stored twice -- the messages row already holds it in `content`. The
-        # page needs it to draw the bubble a card sits in.
-        self.cards.append({**ref, "data": data, "text": text})
-        # Mirrors send()'s bookkeeping half so `replies` still carries the
-        # prose (a card-blind reader of the response sees a normal reply) --
-        # but not send()'s add_message call, which would double the row.
-        self.sent.append(text)
-        conversations.add_message(self._conversation_id, "assistant", text, card=ref)
-
-    async def history(self, limit: int = HISTORY_LIMIT) -> list[dict] | None:
-        rows = conversations.messages(
-            self._conversation_id, before_id=self._before_id, limit=limit
-        )
-        if not rows:
-            return None
-        return [{"role": r["role"], "content": r["content"]} for r in rows]
-
-    async def ack(self, state: str) -> None:
-        # the page renders its own thinking indicator
-        return None
 
 
 def _conversation_or_404(conversation_id, user_id) -> dict:
@@ -227,26 +169,8 @@ def register_routes(app: web.Application, authenticate) -> None:
         text, files = await read_message(request)
         if not text.strip() and not files:
             return web.json_response({"error": "missing 'text'"}, status=400)
-        # The transcript stores words only (files are not persisted, see
-        # send_file); a bare photo leaves a placeholder so the turn is visible.
-        stored = text.strip() or "(sent " + ", ".join(f.filename for f in files) + ")"
-
-        # persist first so a failed LLM call doesn't lose what was typed, then
-        # exclude it from history — core passes it separately as `text`, and
-        # without before_id the model would see the same message twice
-        # Auto-title from the first message, but only if the user hasn't named
-        # it themselves. Both conditions are needed: title alone would clobber
-        # a conversation renamed before its first message, and emptiness alone
-        # would clobber one renamed straight after creation. Renaming an
-        # established chat to "New chat" is safe — it already has messages.
-        untitled = convo["title"] == "New chat" and not conversations.messages(convo_id, limit=1)
-        user_msg_id = conversations.add_message(convo_id, "user", stored)
-        if untitled:
-            conversations.rename(convo_id, user_id, conversations.title_from(stored))
-
-        channel = WebChannel(convo_id, user_id, before_id=user_msg_id)
+        channel = CollectingChannel()
         await core.handle_message(user_id, text, channel, files=files)
-        conversations.touch(convo_id, user_id)
 
         return web.json_response({
             "replies": channel.sent,

@@ -141,22 +141,6 @@ def test_list_is_empty_for_a_fresh_user():
     assert listed == []
 
 
-def test_get_returns_messages(monkeypatch):
-    monkeypatch.setattr(core, "handle_message", _replies("Saved."))
-    cid = new_convo()
-    call("post", f"/api/conversations/{cid}/message", token=TOKEN_A,
-         json={"text": "note this"})
-
-    status, body = call("get", f"/api/conversations/{cid}", token=TOKEN_A)
-    assert status == 200
-    assert body["id"] == cid
-    assert [(m["role"], m["content"]) for m in body["messages"]] == [
-        ("user", "note this"),
-        ("assistant", "Saved."),
-    ]
-    assert all(m["created_at"] for m in body["messages"])
-
-
 def test_get_on_a_brand_new_conversation_has_no_messages():
     cid = new_convo()
     status, body = call("get", f"/api/conversations/{cid}", token=TOKEN_A)
@@ -190,24 +174,6 @@ def test_patch_with_non_json_body_is_400():
     assert status == 400
     assert "JSON" in body["error"]
 
-
-def test_delete_removes_conversation_and_its_messages(monkeypatch):
-    monkeypatch.setattr(core, "handle_message", _replies("ok"))
-    cid = new_convo()
-    call("post", f"/api/conversations/{cid}/message", token=TOKEN_A,
-         json={"text": "hello"})
-    assert conversations.messages(cid)
-
-    status, body = call("delete", f"/api/conversations/{cid}", token=TOKEN_A)
-    assert status == 200
-    assert body == {"ok": True}
-
-    assert conversations.messages(cid) == []
-    assert call("get", f"/api/conversations/{cid}", token=TOKEN_A)[0] == 404
-    assert call("get", "/api/conversations", token=TOKEN_A)[1] == []
-
-
-# ── unknown / malformed ids ────────────────────────────────────────────────
 
 @pytest.mark.parametrize("bad", ["abc", "1.5", "%20", "12x", "-", "1;drop"])
 def test_non_integer_id_is_404_not_500(bad):
@@ -317,20 +283,6 @@ def test_message_dispatches_and_returns_replies(monkeypatch):
     assert seen == {"user_id": USER_A, "text": "note this"}
 
 
-def test_message_persists_both_roles(monkeypatch):
-    monkeypatch.setattr(core, "handle_message", _replies("one", "two"))
-    cid = new_convo()
-    call("post", f"/api/conversations/{cid}/message", token=TOKEN_A,
-         json={"text": "hello"})
-
-    rows = conversations.messages(cid)
-    assert [(r["role"], r["content"]) for r in rows] == [
-        ("user", "hello"),
-        ("assistant", "one"),
-        ("assistant", "two"),
-    ]
-
-
 def test_message_returns_files_base64(monkeypatch):
     monkeypatch.setattr(core, "handle_message",
                         _replies("here", files=[(b"# notes", "notes.md")]))
@@ -342,93 +294,6 @@ def test_message_returns_files_base64(monkeypatch):
         {"filename": "notes.md", "mime": "application/octet-stream",
          "data": base64.b64encode(b"# notes").decode()}
     ]
-
-
-def test_send_file_does_not_write_a_message_row(monkeypatch):
-    monkeypatch.setattr(core, "handle_message",
-                        _replies(files=[(b"data", "export.md")]))
-    cid = new_convo()
-    status, body = call("post", f"/api/conversations/{cid}/message", token=TOKEN_A,
-                        json={"text": "export"})
-    assert status == 200
-    assert body["replies"] == []
-    assert len(body["files"]) == 1
-    # only the user's own message got persisted — the attachment is inline-only
-    assert [(r["role"], r["content"]) for r in conversations.messages(cid)] == [
-        ("user", "export")
-    ]
-
-
-def test_webchannel_send_file_collects_without_persisting():
-    cid = conversations.create(USER_A)
-    channel = webchat.WebChannel(cid, USER_A)
-
-    async def go():
-        await channel.send_file(b"bytes", "a.md")
-        await channel.ack("done")
-
-    asyncio.run(go())
-    assert channel.files == [(b"bytes", "a.md")]
-    assert channel.sent == []
-    assert conversations.messages(cid) == []
-
-
-def test_webchannel_send_persists_an_assistant_row():
-    cid = conversations.create(USER_A)
-    channel = webchat.WebChannel(cid, USER_A)
-    asyncio.run(channel.send("hi there"))
-    assert channel.sent == ["hi there"]
-    assert [(r["role"], r["content"]) for r in conversations.messages(cid)] == [
-        ("assistant", "hi there")
-    ]
-
-
-def test_message_updates_updated_at(monkeypatch):
-    ticks = iter([f"2026-01-01T00:00:{n:02d}+00:00" for n in range(1, 60)])
-    monkeypatch.setattr(conversations, "_now", lambda: next(ticks))
-    monkeypatch.setattr(core, "handle_message", _replies("ok"))
-
-    cid = new_convo()
-    _, before = call("get", f"/api/conversations/{cid}", token=TOKEN_A)
-    call("post", f"/api/conversations/{cid}/message", token=TOKEN_A,
-         json={"text": "hello"})
-    _, after = call("get", f"/api/conversations/{cid}", token=TOKEN_A)
-
-    assert after["updated_at"] > before["updated_at"]
-    assert after["created_at"] == before["created_at"]
-
-
-def test_first_message_auto_titles_a_new_chat(monkeypatch):
-    monkeypatch.setattr(core, "handle_message", _replies("ok"))
-    cid = new_convo()
-    call("post", f"/api/conversations/{cid}/message", token=TOKEN_A,
-         json={"text": "  what's the weather   in Chicago "})
-
-    _, body = call("get", f"/api/conversations/{cid}", token=TOKEN_A)
-    assert body["title"] == "what's the weather in Chicago"
-
-
-def test_second_message_does_not_retitle(monkeypatch):
-    monkeypatch.setattr(core, "handle_message", _replies("ok"))
-    cid = new_convo()
-    call("post", f"/api/conversations/{cid}/message", token=TOKEN_A,
-         json={"text": "first thing"})
-    call("post", f"/api/conversations/{cid}/message", token=TOKEN_A,
-         json={"text": "second thing"})
-
-    _, body = call("get", f"/api/conversations/{cid}", token=TOKEN_A)
-    assert body["title"] == "first thing"
-
-
-def test_renamed_conversation_is_not_auto_titled(monkeypatch):
-    monkeypatch.setattr(core, "handle_message", _replies("ok"))
-    cid = new_convo()
-    call("patch", f"/api/conversations/{cid}", token=TOKEN_A, json={"title": "Plumber"})
-    call("post", f"/api/conversations/{cid}/message", token=TOKEN_A,
-         json={"text": "the sink is leaking"})
-
-    _, body = call("get", f"/api/conversations/{cid}", token=TOKEN_A)
-    assert body["title"] == "Plumber"
 
 
 def test_missing_text_is_400(monkeypatch):
@@ -468,69 +333,6 @@ def test_non_json_body_is_400():
 
 
 # ── history correctness ────────────────────────────────────────────────────
-
-def test_history_excludes_the_in_flight_message(monkeypatch):
-    """The subtle one: core passes the current text separately, so if history
-    included it the model would see the same message twice."""
-    seen = []
-
-    async def fake(user_id, text, channel, *, files=None):
-        seen.append({"text": text, "history": await channel.history()})
-        await channel.send(f"echo:{text}")
-
-    monkeypatch.setattr(core, "handle_message", fake)
-    cid = new_convo()
-    call("post", f"/api/conversations/{cid}/message", token=TOKEN_A,
-         json={"text": "first"})
-    call("post", f"/api/conversations/{cid}/message", token=TOKEN_A,
-         json={"text": "second"})
-
-    assert [s["text"] for s in seen] == ["first", "second"]
-    # nothing preceded the very first message
-    assert seen[0]["history"] is None
-
-    history = seen[1]["history"]
-    assert history == [
-        {"role": "user", "content": "first"},
-        {"role": "assistant", "content": "echo:first"},
-    ]
-    assert "second" not in [m["content"] for m in history]
-
-
-def test_history_is_scoped_to_one_conversation(monkeypatch):
-    seen = []
-
-    async def fake(user_id, text, channel, *, files=None):
-        seen.append(await channel.history())
-        await channel.send(f"echo:{text}")
-
-    monkeypatch.setattr(core, "handle_message", fake)
-    one, two = new_convo(), new_convo()
-    call("post", f"/api/conversations/{one}/message", token=TOKEN_A,
-         json={"text": "in one"})
-    call("post", f"/api/conversations/{two}/message", token=TOKEN_A,
-         json={"text": "in two"})
-    call("post", f"/api/conversations/{two}/message", token=TOKEN_A,
-         json={"text": "also two"})
-
-    assert seen[0] is None
-    assert seen[1] is None                      # separate conversation, no bleed
-    assert [m["content"] for m in seen[2]] == ["in two", "echo:in two"]
-
-
-def test_history_is_capped_and_keeps_the_newest(monkeypatch):
-    cid = conversations.create(USER_A)
-    for n in range(30):
-        conversations.add_message(cid, "user", f"m{n}")
-    channel = webchat.WebChannel(cid, USER_A)
-    history = asyncio.run(channel.history())
-
-    assert len(history) == webchat.HISTORY_LIMIT
-    # newest N, oldest-first — not the oldest N
-    assert [m["content"] for m in history] == [f"m{n}" for n in range(10, 30)]
-
-
-# ── hardening found by the adversarial audit (2026-08-08) ───────────────────
 
 def test_non_whitelisted_user_is_refused_and_writes_nothing(monkeypatch):
     """authn is not authz. A valid token whose user was de-whitelisted (owner
@@ -573,26 +375,6 @@ def test_non_string_title_is_400_not_500(monkeypatch):
     assert status == 400
 
 
-def test_conversation_renamed_before_first_message_keeps_its_name(monkeypatch):
-    monkeypatch.setattr(core, "handle_message", _replies("ok"))
-    cid = new_convo()
-    call("patch", f"/api/conversations/{cid}", token=TOKEN_A, json={"title": "Plumber"})
-    call("post", f"/api/conversations/{cid}/message", token=TOKEN_A,
-         json={"text": "the sink is leaking"})
-    assert call("get", f"/api/conversations/{cid}", token=TOKEN_A)[1]["title"] == "Plumber"
-
-
-def test_established_conversation_renamed_to_new_chat_is_not_retitled(monkeypatch):
-    monkeypatch.setattr(core, "handle_message", _replies("ok"))
-    cid = new_convo()
-    call("post", f"/api/conversations/{cid}/message", token=TOKEN_A, json={"text": "first"})
-    call("patch", f"/api/conversations/{cid}", token=TOKEN_A, json={"title": "New chat"})
-    call("post", f"/api/conversations/{cid}/message", token=TOKEN_A, json={"text": "second"})
-    assert call("get", f"/api/conversations/{cid}", token=TOKEN_A)[1]["title"] == "New chat"
-
-
-# ── cards ───────────────────────────────────────────────────────────────────
-
 def test_a_card_comes_back_in_the_message_response():
     async def fake_handle(user_id, text, channel, *, files=None):
         await channel.send_card(
@@ -613,46 +395,6 @@ def test_a_card_comes_back_in_the_message_response():
         "text": "milk",
     }]
 
-
-def test_a_card_survives_a_reload_but_its_rows_do_not():
-    # what is persisted is how to re-fetch, never the rows -- that is what makes
-    # a card live when you scroll back to it an hour later
-    async def fake_handle(user_id, text, channel, *, files=None):
-        await channel.send_card("shopping", {"items": [{"text": "milk"}]}, "milk",
-                                intent="recall_shopping", params={"content": ""})
-
-    _, convo = call("post", "/api/conversations", token=TOKEN_A)
-    with patch.object(core, "handle_message", new=fake_handle):
-        call("post", f"/api/conversations/{convo['id']}/message",
-             token=TOKEN_A, json={"text": "what's on shopping"})
-
-    _, reloaded = call("get", f"/api/conversations/{convo['id']}", token=TOKEN_A)
-    assistant = [m for m in reloaded["messages"] if m["role"] == "assistant"][0]
-    assert assistant["content"] == "milk"
-    assert assistant["card"] == {"kind": "shopping", "intent": "recall_shopping",
-                                 "params": {"content": ""}}
-    assert "data" not in assistant["card"]        # rows are never stored
-
-
-def test_the_model_does_not_see_cards():
-    # history() feeds brain.detect_intent; a card must be invisible there
-    async def fake_handle(user_id, text, channel, *, files=None):
-        await channel.send_card("shopping", {"items": [{"text": "milk"}]}, "milk",
-                                intent="recall_shopping", params={"content": ""})
-
-    _, convo = call("post", "/api/conversations", token=TOKEN_A)
-    with patch.object(core, "handle_message", new=fake_handle):
-        call("post", f"/api/conversations/{convo['id']}/message",
-             token=TOKEN_A, json={"text": "what's on shopping"})
-
-    channel = webchat.WebChannel(convo["id"], USER_A)
-    # asyncio.run, not get_event_loop().run_until_complete — the latter raises
-    # "no current event loop" on 3.12 outside a running loop
-    history = asyncio.run(channel.history())
-    assert all(set(m) == {"role", "content"} for m in history)
-
-
-# ── dispatch ────────────────────────────────────────────────────────────────
 
 def test_dispatch_runs_an_intent_without_the_llm():
     from wren import brain
@@ -892,32 +634,6 @@ def _multipart(text, *files):
 def _convo(token=TOKEN_A):
     _, body = call("post", "/api/conversations", token=token, json={})
     return body["id"]
-
-
-def test_post_message_accepts_multipart_and_stores_the_caption(monkeypatch):
-    seen = {}
-
-    async def fake(user_id, text, channel, *, files=None):
-        seen["text"], seen["files"] = text, files
-        await channel.send("Saved, 1 image.")
-    monkeypatch.setattr(core, "handle_message", fake)
-    cid = _convo()
-    status, body = call("post", f"/api/conversations/{cid}/message", token=TOKEN_A,
-                        data=_multipart("receipt", ("r.jpg", JPEG)))
-    assert status == 200 and body["replies"] == ["Saved, 1 image."]
-    assert seen["text"] == "receipt" and [f.filename for f in seen["files"]] == ["r.jpg"]
-    assert conversations.messages(cid)[0]["content"] == "receipt"
-
-
-def test_post_message_with_a_file_and_no_caption_stores_a_placeholder(monkeypatch):
-    async def fake(user_id, text, channel, *, files=None):
-        await channel.send("What is this?")
-    monkeypatch.setattr(core, "handle_message", fake)
-    cid = _convo()
-    status, _ = call("post", f"/api/conversations/{cid}/message", token=TOKEN_A,
-                     data=_multipart(None, ("r.jpg", JPEG)))
-    assert status == 200
-    assert conversations.messages(cid)[0]["content"] == "(sent r.jpg)"
 
 
 def test_post_message_reply_files_carry_mime(monkeypatch):

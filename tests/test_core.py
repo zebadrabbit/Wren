@@ -8,6 +8,7 @@ os.environ.setdefault("LMSTUDIO_MODEL", "test-model")
 
 from wren import brain
 from wren import config
+from wren import conversations
 from wren import core
 from wren import registry as plugins
 from wren import settings
@@ -22,6 +23,7 @@ OWNER = 1
 @pytest.fixture(autouse=True)
 def authorized(monkeypatch):
     """Authorization comes from config, not the real .env."""
+    conversations.init_db()
     monkeypatch.setattr(config, "whitelist", lambda: {"owner": OWNER})
     monkeypatch.setattr(config, "id_to_name", lambda: {OWNER: "owner"})
 
@@ -126,7 +128,7 @@ def test_plugin_intent_is_routed_to_that_plugin_with_a_ctx(detected, monkeypatch
     ctx = seen["ctx"]
     assert isinstance(ctx, Ctx)
     assert ctx.user_id == OWNER
-    assert ctx.channel is ch
+    assert ctx.channel.inner is ch      # core wraps the surface channel to record the transcript
     assert ctx.content == "buy milk"
     assert ctx.tags == ["grocery"]
     assert ctx.person == "hubby"
@@ -759,3 +761,74 @@ def test_undo_is_per_person(detected, undoable, monkeypatch):
     asyncio.run(core.handle_message(OWNER, "I've got the milk", ch))
     asyncio.run(core.handle_message(2, "undo", ch))
     assert ch.sent[-1] == "Nothing to undo."
+
+
+# --- the transcript (2026-10-13): core records every turn ----------------
+
+def test_turn_is_recorded_with_the_channel_name(detected):
+    detected(intent="help")
+    ch = CollectingChannel(name="telegram")
+    written = asyncio.run(core.handle_message(OWNER, "what can you do", ch))
+    rows = conversations.timeline(OWNER)
+    assert [(r["role"], r["channel"], r["kind"]) for r in rows] == [
+        ("user", "telegram", None), ("assistant", "telegram", None)]
+    assert rows[0]["content"] == "what can you do"
+    assert rows[1]["content"] == ch.sent[0]
+    assert written == [rows[0]["id"], rows[1]["id"]]
+
+
+def test_refused_user_writes_nothing_and_returns_no_ids(detected):
+    detected(intent="help")
+    assert asyncio.run(core.handle_message(999, "hi", CollectingChannel())) == []
+    assert conversations.timeline(999) == []
+
+
+def test_history_excludes_the_in_flight_turn_and_crosses_channels(detected):
+    calls = detected(intent="help")
+    asyncio.run(core.handle_message(OWNER, "first", CollectingChannel(name="telegram")))
+    asyncio.run(core.handle_message(OWNER, "second", CollectingChannel(name="web")))
+    history = calls[-1][2]
+    assert history[0] == {"role": "user", "content": "first"}
+    assert history[1]["role"] == "assistant"
+    assert "second" not in [h["content"] for h in history]
+    assert all(set(h) == {"role", "content"} for h in history)
+
+
+def test_card_reply_stores_its_ref_not_its_rows(detected):
+    detected(intent="recall_shopping", content="")
+    shopping_store.init_db()
+    shopping_store.add("milk", "owner")
+    asyncio.run(core.handle_message(OWNER, "what's on the list", CollectingChannel()))
+    row = conversations.timeline(OWNER)[-1]
+    assert row["card"] == {"kind": "shopping", "intent": "recall_shopping",
+                           "params": {"content": "", "list": "shopping"}}
+    assert "milk" in row["content"]            # the prose fallback is the content
+
+
+def test_bare_photo_records_a_placeholder_and_the_question(detected):
+    from wren.channel import Inbound
+    asyncio.run(core.handle_message(
+        OWNER, "", CollectingChannel(), files=[Inbound("receipt.jpg", "image/jpeg", b"x")]))
+    rows = conversations.timeline(OWNER)
+    assert [r["content"] for r in rows] == ["(sent receipt.jpg)", "What is this?"]
+
+
+def test_failed_turn_keeps_what_was_typed(monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("llm down")
+    monkeypatch.setattr(brain, "detect_intent", boom)
+    asyncio.run(core.handle_message(OWNER, "remind me later", CollectingChannel()))
+    rows = conversations.timeline(OWNER)
+    assert [r["content"] for r in rows] == ["remind me later", "Something went wrong, try again."]
+
+
+def test_a_reply_that_fails_to_send_is_not_recorded(detected):
+    detected(intent="help")
+
+    class Broken(CollectingChannel):
+        async def send(self, text):
+            raise RuntimeError("rate limited")
+
+    asyncio.run(core.handle_message(OWNER, "help", Broken()))
+    rows = conversations.timeline(OWNER)
+    assert [r["role"] for r in rows] == ["user"]

@@ -61,14 +61,6 @@ def test_ack_starts_empty():
     assert CollectingChannel().acks == []
 
 
-def test_history_returns_none():
-    assert asyncio.run(CollectingChannel().history()) is None
-
-
-def test_history_returns_none_with_explicit_limit():
-    assert asyncio.run(CollectingChannel().history(limit=50)) is None
-
-
 def test_collecting_channels_do_not_share_state():
     a, b = CollectingChannel(), CollectingChannel()
 
@@ -145,3 +137,11 @@ def test_send_card_records_the_card_and_the_prose():
 
 def test_cards_start_empty():
     assert CollectingChannel().cards == []
+
+
+def test_default_name_is_web():
+    assert CollectingChannel().NAME == "web"
+
+
+def test_name_is_settable():
+    assert CollectingChannel(name="voice").NAME == "voice"

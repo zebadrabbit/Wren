@@ -184,6 +184,8 @@ def test_voice_destructive_intent_asks_for_confirmation_end_to_end(monkeypatch):
     from wren import stt, brain, settings
     from wren.skills import shopping_store, memory_store
 
+    from wren import conversations
+    conversations.init_db()
     settings.init_db()
     shopping_store.init_db()
     memory_store.init_db()          # harmless here -- the chat branch is never reached
@@ -313,6 +315,7 @@ def test_dry_run_message_leaves_no_rows_end_to_end(monkeypatch):
     # The real core and a real store: the only fake is the classifier.
     from wren import brain, contacts, settings
     from wren.skills import shopping_store
+    from wren import conversations; conversations.init_db()
     contacts.init_db(); settings.init_db(); shopping_store.init_db()
     monkeypatch.setattr(brain, "detect_intent", lambda *a, **k: {
         "intent": "add_shopping_item", "content": "potatoes", "tags": [], "person": None})
@@ -438,6 +441,7 @@ def test_multipart_photo_end_to_end_saves_a_note_with_the_image(monkeypatch):
     # Real core, real notes skill, real store; only the classifier is faked.
     from wren import brain, contacts, settings
     from wren.skills import notes_store
+    from wren import conversations; conversations.init_db()
     contacts.init_db(); settings.init_db(); notes_store.init_db()
     monkeypatch.setattr(brain, "detect_intent", lambda *a, **k: {
         "intent": "chat", "content": "", "tags": ["receipt"], "person": None})
@@ -451,6 +455,7 @@ def test_multipart_photo_end_to_end_saves_a_note_with_the_image(monkeypatch):
 def test_multipart_photo_in_a_dry_run_leaves_no_note(monkeypatch):
     from wren import brain, contacts, settings
     from wren.skills import notes_store
+    from wren import conversations; conversations.init_db()
     contacts.init_db(); settings.init_db(); notes_store.init_db()
     monkeypatch.setattr(brain, "detect_intent", lambda *a, **k: {
         "intent": "chat", "content": "", "tags": [], "person": None})

@@ -103,11 +103,12 @@ def _wants_dry_run(request: web.Request) -> bool:
 
 
 async def _dispatch(user_id: int, text: str, *, source: str = "text",
-                    dry: bool = False, files: list[Inbound] | None = None, **extra) -> web.Response:
+                    dry: bool = False, files: list[Inbound] | None = None,
+                    name: str = "web", **extra) -> web.Response:
     """dry: run against a discarded snapshot of the database (see db.dry_run)
     and echo `dry_run: true` so a caller can never mistake which one it got.
     For testing a live install without touching its data."""
-    channel = CollectingChannel()
+    channel = CollectingChannel(name=name)
     if dry:
         extra["dry_run"] = True
         with db.dry_run():
@@ -162,7 +163,7 @@ async def voice(request: web.Request) -> web.Response:
 
     if not transcript.strip():
         return web.json_response({"transcript": "", "replies": [], "files": []})
-    return await _dispatch(user_id, transcript, source="voice", dry=_wants_dry_run(request),
+    return await _dispatch(user_id, transcript, source="voice", name="voice", dry=_wants_dry_run(request),
                            transcript=transcript)
 
 

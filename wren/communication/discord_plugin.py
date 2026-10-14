@@ -22,6 +22,8 @@ _client: discord.Client | None = None
 class DiscordChannel:
     """Channel implementation backed by a discord.Message."""
 
+    NAME = "discord"
+
     def __init__(self, message: discord.Message, client: discord.Client):
         self._message = message
         self._client = client
@@ -38,14 +40,6 @@ class DiscordChannel:
         # Discord could draw an embed, but a card is interactive and an embed is
         # not; prose is the honest degradation rather than a half-card.
         await self.send(text)
-
-    async def history(self, limit: int = 10) -> list[dict] | None:
-        try:
-            raw = [m async for m in self._message.channel.history(limit=limit, before=self._message)]
-            return discord_utils.history_to_messages(raw, self._client.user.id)
-        except Exception as e:
-            logging.warning(f"Could not fetch history: {e}")
-            return None
 
     async def ack(self, state: str) -> None:
         emoji = _ACK_EMOJI.get(state)
