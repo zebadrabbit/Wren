@@ -474,3 +474,11 @@ def test_page_mounts_the_today_panel_from_the_briefing():
     _, _, html = asyncio.run(_page_request())
     assert "briefing: briefingCard" in html
     assert 'dispatch("briefing"' in html
+
+
+def test_page_has_a_phone_layout():
+    _, _, html = asyncio.run(_page_request())
+    assert "@media (max-width: 700px)" in html
+    assert "matchMedia(" in html
+    assert 'id="scrim"' in html
+    assert "@media (max-width: 640px)" not in html

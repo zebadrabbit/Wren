@@ -115,8 +115,10 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
    starts -- once it is gone. position:fixed works there because the
    collapsed sidebar is positioned but never transformed, so it never becomes
    a containing block and never drags the button away with it. */
+/* border: 0 -- without it the browser's default button border framed the
+   icon's own frame twice over (seen in the 1280 screenshots, 2026-10-14) */
 #rail {
-  margin-left: auto; flex: none; display: flex;
+  margin-left: auto; flex: none; display: flex; border: 0;
   padding: 4px; border-radius: 6px; color: var(--muted);
 }
 #rail:hover { background: var(--wash); color: var(--accent); }
@@ -415,6 +417,34 @@ main footer { padding: 10px 20px 18px; }
   font-size: 12.5px; overflow-x: auto;
 }
 .perr { color: var(--alert); font-size: 13px; padding: 0 18px 12px; min-height: 18px; }
+
+/* ── phone ─────────────────────────────────────────────────────────────── */
+/* Hidden by default, ahead of the media block: the same selector after it
+   would win on source order and keep the button hidden on a phone too. */
+#menu { display: none; }
+#scrim { display: none; }
+/* Under 700px the sidebar is a drawer: closed by default, opened from the
+   top bar, closed by the scrim, by choosing an entry, or by the button again.
+   `left`, not transform, so the fixed #rail logic above keeps working. The
+   #app.narrow selectors tie #app.railed's on specificity and come later, so
+   a sidebar collapsed on the desktop does not leak its offsets in here. */
+@media (max-width: 700px) {
+  #menu { display: inline-block; }
+  #app.narrow aside { position: fixed; top: 0; left: -260px; height: 100%; z-index: 6;
+                      transition: left .18s ease; box-shadow: none; }
+  #app.narrow.open aside { left: 0; box-shadow: var(--shadow-lg); }
+  #app.narrow.open #scrim { display: block; position: fixed; inset: 0; background: rgba(36,31,26,.35); z-index: 5; }
+  #app.narrow #rail { display: none; }
+  #app.narrow #topbar { padding: 8px 12px; }
+  #log { padding: 16px 12px; }
+  main footer { padding: 8px 12px 12px; }
+  .msg .body { max-width: 92%; }
+  .bgrid { grid-template-columns: 1fr; }
+  #today { padding: 0 12px; }
+  #plugins .sheet { width: 100%; }
+  .pset input, .pset select { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) { #app aside { transition: none; } }
 </style>
 </head>
 <body>
@@ -462,7 +492,7 @@ main footer { padding: 10px 20px 18px; }
 </div>
 
 <div id="app">
-  <div id="scrim" hidden></div>
+  <div id="scrim"></div>
   <aside>
     <header>
       <!-- Inlined from Brand/brand/mark-simple.svg (one-colour silhouette --
@@ -1623,6 +1653,26 @@ $("#rail").onclick = () => {
   setRail(railed);
   localStorage.setItem("wren_rail", railed ? "1" : "");
 };
+// Narrow is a media query, not a saved choice: rotate a tablet and the
+// drawer appears or goes away with the width.
+// ponytail: no Escape key and no focus trap, and a closed drawer is only
+// parked off screen, so its buttons stay in the tab order. Fine for touch;
+// set `inert` on the closed aside if keyboard use at phone width turns up.
+const narrow = matchMedia("(max-width: 700px)");
+function setNarrow() {
+  $("#app").classList.toggle("narrow", narrow.matches);
+  $("#app").classList.remove("open");
+  $("#menu").hidden = !narrow.matches;
+  $("#menu").setAttribute("aria-expanded", "false");
+}
+narrow.addEventListener("change", setNarrow);
+function openDrawer(on) {
+  $("#app").classList.toggle("open", on);
+  $("#menu").setAttribute("aria-expanded", on ? "true" : "false");
+}
+$("#menu").onclick = () => openDrawer(!$("#app").classList.contains("open"));
+$("#scrim").onclick = () => openDrawer(false);
+$("#sidenav").addEventListener("click", e => { if (e.target.closest(".nav")) openDrawer(false); });
 // Today is the whole thread, drawn fresh and read from the newest end.
 $("#nav-today").onclick = () => { redraw(); $("#log").scrollTop = $("#log").scrollHeight; };
 $("#send").onclick = send;
@@ -1634,7 +1684,9 @@ $("#text").oninput = e => {
   e.target.style.height = "auto";
   e.target.style.height = Math.min(e.target.scrollHeight, 180) + "px";
 };
-$("#gear").onclick = () => { $("#plugins").hidden = false; loadPlugins(); };
+// The drawer shuts first: the sheet has no z-index of its own, so an open
+// drawer (z-index 6) would sit on top of its left side.
+$("#gear").onclick = () => { openDrawer(false); $("#plugins").hidden = false; loadPlugins(); };
 $("#pclose").onclick = () => { $("#plugins").hidden = true; };
 $("#plugins").onclick = e => { if (e.target.id === "plugins") $("#plugins").hidden = true; };
 $("#ptabs").onclick = e => {
@@ -1666,6 +1718,7 @@ async function start() {
   // One request serves them all, and each still fails closed on its own.
   const me = api("/api/me");
   me.then(m => { $("#whoname").textContent = m.name || "Signed in"; drawReads(m.skills || []); showModel(m.model); }).catch(() => {});
+  setNarrow();
   await loadTimeline(me);
   loadToday();
   $("#text").focus();
