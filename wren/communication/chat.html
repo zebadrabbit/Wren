@@ -90,6 +90,10 @@ aside header b { font-size: 16px; }
        border: 0; text-align: left; font-size: 14px; width: 100%; }
 .nav:hover { background: var(--wash); }
 .nav.on { background: var(--wash); font-weight: 600; }
+#space { flex: 1; overflow-y: auto; padding: 20px; }
+#space[hidden] { display: none; }
+#space .smount { max-width: 760px; margin: 0 auto; }
+#app.in-space #today, #app.in-space #log, #app.in-space footer { display: none; }
 .lab { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); padding: 12px 10px 4px; }
 #side-foot {
   border-top: 1px solid var(--line); padding: 10px;
@@ -530,6 +534,7 @@ main footer { padding: 10px 20px 18px; }
       <span id="cdate"></span>
     </header>
     <div id="today" hidden></div>
+    <div id="space" hidden><div class="smount"></div></div>
     <div id="log"><div id="inner"></div></div>
     <footer>
       <div id="reads"></div>
@@ -707,6 +712,8 @@ function signOut(message = "") {
   // chips or this name while their own are still loading.
   $("#inner").innerHTML = ""; $("#reads").innerHTML = ""; $("#whoname").textContent = "";
   $("#today").innerHTML = ""; $("#today").hidden = true;
+  $("#spaces").innerHTML = ""; $("#spaces").hidden = $("#spaces-label").hidden = true;
+  spaces = []; showToday();
   rows = []; lastId = 0; oldestId = null; exhausted = false;
 }
 
@@ -1197,6 +1204,7 @@ async function poll() {
   if (busy || !token) return;
   append(page);
   loadToday();
+  loadSpaces();
 }
 $("#log").addEventListener("scroll", () => { if ($("#log").scrollTop < 40) loadOlder(); });
 // ponytail: a 30-second poll, not push (SSE or a websocket), so a reminder
@@ -1673,8 +1681,49 @@ function openDrawer(on) {
 $("#menu").onclick = () => openDrawer(!$("#app").classList.contains("open"));
 $("#scrim").onclick = () => openDrawer(false);
 $("#sidenav").addEventListener("click", e => { if (e.target.closest(".nav")) openDrawer(false); });
-// Today is the whole thread, drawn fresh and read from the newest end.
-$("#nav-today").onclick = () => { redraw(); $("#log").scrollTop = $("#log").scrollHeight; };
+let spaces = [];
+// ponytail: spaces are re-fetched every poll tick rather than on change; one
+// small GET, and the sidebar is rebuilt each time, so ceiling is a few dozen spaces.
+async function loadSpaces() {
+  let list;
+  try { list = await api("/api/spaces"); } catch (e) { list = []; }
+  if (!token) return;
+  spaces = list;
+  const box = $("#spaces"); box.innerHTML = "";
+  const open = document.querySelector("#sidenav .nav.on")?.dataset.key;
+  for (const s of spaces) {
+    const b = document.createElement("button"); b.className = "nav"; b.dataset.key = s.key;
+    b.classList.toggle("on", s.key === open && $("#app").classList.contains("in-space"));
+    b.textContent = s.label; b.onclick = () => openSpace(s);
+    box.append(b);
+  }
+  box.hidden = $("#spaces-label").hidden = spaces.length === 0;
+}
+// A space is a card drawn full-pane instead of in a bubble. Same renderer,
+// same dispatch; nothing is written to the timeline.
+async function openSpace(s) {
+  $("#app").classList.add("in-space");
+  $("#space").hidden = false;
+  $("#ctitle").textContent = s.label;
+  for (const n of document.querySelectorAll("#sidenav .nav")) n.classList.toggle("on", n.dataset.key === s.key);
+  const mount = $("#space .smount");
+  mount.innerHTML = '<p class="phint">Loading…</p>';
+  try {
+    const r = await dispatch(s.intent, s.params || {});
+    const card = (r.cards || [])[0];
+    mount.innerHTML = "";
+    if (!card || !renderCard(card, mount, r.files)) mount.innerHTML = md((r.replies || []).join("\n"));
+  } catch (e) { mount.innerHTML = "<em>" + esc(e.message || "Something went wrong.") + "</em>"; }
+}
+function showToday() {
+  $("#app").classList.remove("in-space");
+  $("#space").hidden = true;
+  $("#space .smount").innerHTML = "";
+  $("#ctitle").textContent = "Today";
+  for (const n of document.querySelectorAll("#sidenav .nav")) n.classList.toggle("on", n.id === "nav-today");
+  $("#log").scrollTop = $("#log").scrollHeight;
+}
+$("#nav-today").onclick = showToday;
 $("#send").onclick = send;
 $("#signout").onclick = () => signOut();
 $("#text").onkeydown = e => {
@@ -1721,6 +1770,7 @@ async function start() {
   setNarrow();
   await loadTimeline(me);
   loadToday();
+  loadSpaces();
   $("#text").focus();
 }
 

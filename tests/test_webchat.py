@@ -496,3 +496,10 @@ def test_spaces_route_lists_spaces_for_any_whitelisted_user():
 def test_spaces_route_requires_a_token():
     status, _ = call("get", "/api/spaces")
     assert status == 401
+
+
+def test_page_lists_spaces_and_can_return_to_today():
+    _, _, html = asyncio.run(_page_request())
+    assert "/api/spaces" in html
+    assert 'id="space"' in html
+    assert "function openSpace" in html
