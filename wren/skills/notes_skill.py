@@ -16,6 +16,10 @@ ACCEPTS_FILES = ["save_note"]
 DESTRUCTIVE = ["discard_idea"]
 CONFIRM = {"discard_idea": 'discard the idea "{content}"'}
 PLUGIN_NAME = "Notes & Ideas"
+SPACES = [
+    {"key": "notes", "label": "Notes", "intent": "recall_notes", "params": {"content": "", "tags": []}},
+    {"key": "ideas", "label": "Ideas", "intent": "recall_ideas", "params": {"content": ""}},
+]
 
 PROMPT_GUIDELINES = """- save_note: user is capturing something for later (grocery item, plan, reminder)
 - recall_notes: user wants to retrieve or search past SAVED notes (not the same as asking about this conversation/chat itself, e.g. "do you remember what I said" is chat, not recall_notes); only set tags if the user explicitly names a category to filter by (e.g. "show my grocery notes") — otherwise leave tags empty to see everything, since you don't know what tags were used when notes were saved

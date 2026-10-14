@@ -13,6 +13,7 @@ INTENTS = ["set_reminder", "recall_reminders", "cancel_reminder"]
 DESTRUCTIVE = ["cancel_reminder"]
 CONFIRM = {"cancel_reminder": 'cancel the reminder "{content}"'}
 PLUGIN_NAME = "Reminders"
+SPACES = [{"key": "reminders", "label": "Reminders", "intent": "recall_reminders", "params": {"content": ""}}]
 
 PROMPT_GUIDELINES = """- set_reminder: user wants to be reminded of something at a specific time; content is what to remind them of, and you must compute "when" as an absolute ISO 8601 datetime in the LOCAL timezone you were already told "today" is in (e.g. 2026-07-12T21:00:00, no UTC conversion) based on the current date/time and the relative or absolute time they gave (e.g. "in 20 minutes", "at 6pm", "tomorrow morning"); a timer ("timer 20 minutes", "set a 10 minute timer") is set_reminder too, with nothing to remind about; for a repeating reminder ("every tuesday at 8pm", "every morning") "when" is the FIRST occurrence — the repetition is handled elsewhere
 - recall_reminders: user wants to see their upcoming reminders, or how long is left on a timer ("how long is left", "how long on the timer")

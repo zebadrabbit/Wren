@@ -107,6 +107,20 @@ def file_intents() -> set[str]:
             for intent in getattr(plugin, "ACCEPTS_FILES", [])}
 
 
+def spaces() -> list[dict]:
+    """Sidebar entries declared by enabled skills: SPACES is a list of
+    {key, label, intent, params} or a zero-arg function returning one (a
+    skill whose spaces depend on data). Same renderer as the chat cards,
+    second mount point (skill-cards design, slice 3)."""
+    out: list[dict] = []
+    for plugin in enabled_plugins():
+        declared = getattr(plugin, "SPACES", None)
+        if callable(declared):
+            declared = declared()
+        out.extend(declared or [])
+    return out
+
+
 def undo_for(intent: str):
     """The inverse of a destructive intent, declared by its skill as
     UNDO = {intent: async fn(ctx)}; None when the skill offers none. Core

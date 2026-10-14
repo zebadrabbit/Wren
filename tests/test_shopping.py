@@ -166,3 +166,15 @@ def test_a_pre_2026_09_26_table_keeps_its_rows_on_the_shopping_list(tmp_path, mo
     shopping.init_db()
     assert [i["item"] for i in shopping.active_items()] == ["milk"]
     assert shopping.active_items(list_name="packing") == []
+
+
+def test_list_names_is_shopping_first_then_named_lists_with_active_items():
+    shopping.add("tent", "owner", list_name="packing")
+    shopping.add("drill", "owner", list_name="hardware")
+    shopping.add("gone", "owner", list_name="zzz")
+    shopping.remove("gone", list_name="zzz")
+    assert shopping.list_names() == ["shopping", "hardware", "packing"]
+
+
+def test_list_names_with_nothing_is_just_shopping():
+    assert shopping.list_names() == ["shopping"]

@@ -21,6 +21,17 @@ CONFIRM = {"remove_shopping_item": 'remove "{content}" from the list',
            "clear_shopping": "clear the whole list"}
 PLUGIN_NAME = "Shopping List"
 
+
+def SPACES() -> list[dict]:
+    """One sidebar entry per list. A function, not a constant: a packing
+    list shows up the day it is created."""
+    return [{"key": f"list:{name}",
+             "label": "Shopping" if name == "shopping" else name.capitalize(),
+             "intent": "recall_shopping",
+             "params": {"content": "", "list": name}}
+            for name in shopping.list_names()]
+
+
 PROMPT_GUIDELINES = """- add_shopping_item: user wants to add an item to the shared shopping list, or to another named list ("add a tent to the packing list") — same intents, content is the item only
 - remove_shopping_item: user got/bought/already has a SPECIFIC named item and wants that one item off the shopping list
 - restore_shopping_item: user wants an item they just removed put BACK on the list ("undo", "put the milk back", "I still need the eggs after all")

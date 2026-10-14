@@ -482,3 +482,17 @@ def test_page_has_a_phone_layout():
     assert "matchMedia(" in html
     assert 'id="scrim"' in html
     assert "@media (max-width: 640px)" not in html
+
+
+def test_spaces_route_lists_spaces_for_any_whitelisted_user():
+    from wren.skills import shopping_store
+    shopping_store.init_db()
+    status, spaces = call("get", "/api/spaces", token=TOKEN_B)
+    assert status == 200
+    assert {"key": "list:shopping", "label": "Shopping", "intent": "recall_shopping",
+            "params": {"content": "", "list": "shopping"}} in spaces
+
+
+def test_spaces_route_requires_a_token():
+    status, _ = call("get", "/api/spaces")
+    assert status == 401

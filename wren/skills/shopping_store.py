@@ -115,6 +115,15 @@ def active_items(list_name: str = "shopping") -> list[dict]:
         ).fetchall()
     return [dict(r) for r in rows]
 
+def list_names() -> list[str]:
+    """Every list with something on it, the shopping list first whether or
+    not it is empty: it is the one that always exists."""
+    with db.conn() as con:
+        rows = con.execute(
+            "SELECT DISTINCT list FROM shopping_items WHERE status='active' AND list<>'shopping' ORDER BY list"
+        ).fetchall()
+    return ["shopping", *(r[0] for r in rows)]
+
 def common_items(threshold: int = 3, limit: int = 5, list_name: str = "shopping") -> list[dict]:
     with db.conn() as con:
         con.row_factory = sqlite3.Row

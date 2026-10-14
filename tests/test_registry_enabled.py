@@ -133,3 +133,31 @@ def test_telegram_explains_that_it_needs_a_token(monkeypatch):
     monkeypatch.setattr(config, "TELEGRAM_TOKEN", "")
     assert telegram_plugin.is_active() is False
     assert "TELEGRAM_TOKEN" in telegram_plugin.inactive_reason()
+
+
+def test_spaces_come_from_enabled_skills_only():
+    from wren.skills import shopping_store, notes_skill
+    settings.init_db()
+    shopping_store.init_db()
+    keys = [s["key"] for s in registry.spaces()]
+    assert "list:shopping" in keys and "notes" in keys and "ideas" in keys and "reminders" in keys
+    registry.set_enabled(notes_skill, False)
+    keys = [s["key"] for s in registry.spaces()]
+    assert "notes" not in keys and "ideas" not in keys and "list:shopping" in keys
+
+
+def test_shopping_spaces_follow_the_lists_that_exist():
+    from wren.skills import shopping_store
+    shopping_store.init_db()
+    shopping_store.add("tent", "owner", list_name="packing")
+    packing = next(s for s in registry.spaces() if s["key"] == "list:packing")
+    assert packing == {"key": "list:packing", "label": "Packing", "intent": "recall_shopping",
+                       "params": {"content": "", "list": "packing"}}
+
+
+def test_every_space_names_an_intent_its_skill_owns():
+    from wren.skills import shopping_store
+    shopping_store.init_db()
+    for s in registry.spaces():
+        assert s["intent"] in registry.INTENT_HANDLERS, s
+        assert set(s) == {"key", "label", "intent", "params"}

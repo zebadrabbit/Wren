@@ -206,6 +206,13 @@ def register_routes(app: web.Application, authenticate) -> None:
             "files": file_entries(channel.files),
         })
 
+    async def get_spaces(request):
+        # Any whitelisted user, like /api/me: the sidebar is the same for the
+        # household.
+        _auth(request)
+        from .. import registry
+        return web.json_response(registry.spaces())
+
     async def get_me(request):
         # Any authenticated whitelisted user, NOT owner-only: /api/plugins is,
         # so a household member loading the page would get a 403 and no
@@ -297,6 +304,7 @@ def register_routes(app: web.Application, authenticate) -> None:
     app.router.add_get("/api/timeline", timeline)
     app.router.add_post("/api/dispatch", dispatch)
     app.router.add_get("/api/me", get_me)
+    app.router.add_get("/api/spaces", get_spaces)
     app.router.add_get("/api/plugins", get_plugins)
     app.router.add_patch("/api/plugins/{module}", patch_plugin)
     app.router.add_patch("/api/settings", patch_settings)
