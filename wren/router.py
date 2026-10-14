@@ -16,6 +16,18 @@ def _channel_of(name: str, surface) -> str:
     return getattr(surface, "CHANNEL", name)
 
 
+def _record(user_id: int, text: str, name: str, surface) -> None:
+    """Put a delivered notice on the person's timeline. Never raises: the
+    message is already on their phone, and turning a failed sqlite write
+    into a 'transient' delivery failure would push it again (or retry a
+    reminder that fired). A notice missing from the timeline is the lesser
+    harm, and it is logged."""
+    try:
+        conversations.notice(user_id, text, _channel_of(name, surface))
+    except Exception as e:
+        logging.error(f"notice for {user_id} delivered on {name} but not recorded: {e}")
+
+
 def register(name: str, surface) -> None:
     _surfaces[name] = surface
 
@@ -81,7 +93,7 @@ async def notify(user_id: int, text: str, via: str | None = None) -> bool:
         # is "retry next poll" -- neither happened yet as far as the person
         # is concerned, and the timeline must never say Wren told them
         # something it did not.
-        conversations.notice(user_id, text, _channel_of(name, surface))
+        _record(user_id, text, name, surface)
     return ok
 
 
@@ -108,7 +120,7 @@ async def _notify_any(user_id: int, text: str) -> bool:
     for name in candidates:
         try:
             if await _surfaces[name].notify(user_id, text):
-                conversations.notice(user_id, text, _channel_of(name, _surfaces[name]))
+                _record(user_id, text, name, _surfaces[name])
                 return True
         except Exception as e:
             # Not swallowed: re-raised below unless a later surface delivers.
@@ -126,7 +138,7 @@ async def _notify_any(user_id: int, text: str) -> bool:
         surface = _surfaces.get(name)
         if surface is not None and getattr(surface, "PASSIVE", False):
             if await surface.notify(user_id, text):
-                conversations.notice(user_id, text, _channel_of(name, surface))
+                _record(user_id, text, name, surface)
                 return True
     if not candidates:
         logging.warning(f"Cannot notify {user_id}: no running surface can push "

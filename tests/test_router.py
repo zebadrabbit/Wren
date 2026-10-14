@@ -455,3 +455,25 @@ def test_dry_run_records_nothing(monkeypatch):
     with db.dry_run():
         assert asyncio.run(router.notify(1, "x")) is True
     assert _notices(1) == []
+
+
+def test_a_recording_failure_never_turns_into_a_redelivery(monkeypatch, caplog):
+    monkeypatch.setattr(config, "NOTIFY_VIA", "any")
+    monkeypatch.setattr(config, "COMMUNICATION_PLUGINS", ["discord", "telegram"])
+    discord, telegram = FakeSurface(True), FakeSurface(True)
+    router.register("discord", discord)
+    router.register("telegram", telegram)
+    def boom(*a, **k):
+        raise RuntimeError("database is locked")
+    monkeypatch.setattr(conversations, "notice", boom)
+    with caplog.at_level(logging.ERROR):
+        assert asyncio.run(router.notify(1, "x")) is True
+    assert telegram.calls == []            # delivered once, on discord
+    assert "not recorded" in caplog.text
+
+
+def test_explicit_surface_recording_failure_still_returns_true(monkeypatch):
+    monkeypatch.setattr(config, "NOTIFY_VIA", "telegram")
+    router.register("telegram", FakeSurface(True))
+    monkeypatch.setattr(conversations, "notice", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("locked")))
+    assert asyncio.run(router.notify(1, "x")) is True
