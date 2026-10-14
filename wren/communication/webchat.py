@@ -291,7 +291,15 @@ def register_routes(app: web.Application, authenticate) -> None:
                                       enabled=registry.is_enabled(target)))
 
     def _contact_row(alias: str) -> dict:
-        return contacts.get(alias) or {"alias": alias, **{s: None for s in contacts.SURFACES}}
+        """Ids as strings, never numbers: a Discord id is 18 digits, past the
+        2**53 a JSON number survives in a browser, and JSON.parse rounds
+        123456789012345678 to ...680 without a word. `wren_id` is the one they
+        sign in as (contacts' COALESCE rule), which is what a token is minted for."""
+        row = contacts.get(alias) or {"alias": alias, **{s: None for s in contacts.SURFACES}}
+        wren_id = contacts.all().get(alias)
+        return {"alias": row["alias"],
+                **{s: (str(row[s]) if row[s] is not None else None) for s in contacts.SURFACES},
+                "wren_id": str(wren_id) if wren_id is not None else None}
 
     async def list_contacts(request):
         _owner(request)
@@ -321,6 +329,16 @@ def register_routes(app: web.Application, authenticate) -> None:
             return web.json_response({"error": "that name is taken"}, status=409)
         if existing and surface in contacts.surfaces_of(contacts.all()[alias]):
             return web.json_response({"error": f"{alias} already has a {surface} id"}, status=409)
+        if existing and surface == "discord" and contacts.all()[alias] == contacts.get(alias)["telegram"]:
+            # Their Wren id is COALESCE(discord, telegram), so a Discord id
+            # added now would become who they are: their token, notes and
+            # reminders stay filed under the Telegram id and nothing finds them.
+            # ponytail: refused here only; contacts_skill's "add 555 as kim on
+            # discord" still allows it -- that is the pre-existing id model,
+            # and a stable Wren id per person is the real fix.
+            return web.json_response(
+                {"error": "that would change how they sign in and leave their saved things "
+                          "behind; add Discord first for new people"}, status=409)
         try:
             if existing:
                 contacts.set_id(alias, surface, surface_id)

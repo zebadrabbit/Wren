@@ -118,6 +118,19 @@ def test_dispatch_runs_an_intent_without_the_llm():
     assert body["replies"] == ["Shopping list is empty."]
 
 
+def test_dispatch_writes_nothing_to_the_timeline():
+    # a card button or refresh is not a turn: nothing the person typed, and
+    # nothing Wren said, so the timeline stays exactly as it was
+    from wren import settings
+    from wren.skills import shopping_store
+    settings.init_db()
+    shopping_store.init_db()
+    shopping_store.add("milk", "ann")
+    status, body = call("post", "/api/dispatch", token=TOKEN_A, json={"intent": "recall_shopping"})
+    assert status == 200 and body["cards"][0]["kind"] == "shopping"
+    assert conversations.timeline(USER_A) == []
+
+
 def test_dispatch_requires_a_token():
     status, _ = call("post", "/api/dispatch", json={"intent": "recall_shopping"})
     assert status == 401

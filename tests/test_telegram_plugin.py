@@ -262,6 +262,11 @@ def test_notify_raises_on_transient_failure(error):
 
 # ── TelegramChannel ──────────────────────────────────────────────────────────
 
+def test_channel_names_itself_telegram():
+    # what the timeline files a Telegram turn under; a rename relabels every stored row
+    assert telegram_plugin.TelegramChannel(42).NAME == "telegram"
+
+
 def test_channel_send_posts_send_message():
     api = AsyncMock(return_value={})
     with patch.object(telegram_plugin, "_api", new=api):

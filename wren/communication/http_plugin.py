@@ -194,6 +194,13 @@ PASSIVE = True       # a notice is "delivered" by landing on the timeline the pa
 CHANNEL = "web"      # what the timeline calls this door
 
 
+def reaches(user_id: int) -> bool:
+    """Whether this person can open the page at all. The router asks before
+    its passive fallback calls a notice delivered: someone with no sign-in
+    token would never see it, and "delivered" would mark their mail seen."""
+    return user_id in config.WREN_TOKENS.values()
+
+
 async def notify(user_id: int, text: str) -> bool:
     # Passive: nothing is sent. The router records every notice it delivers
     # on the person's timeline, and the web page polls that, so answering

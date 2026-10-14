@@ -832,3 +832,28 @@ def test_a_reply_that_fails_to_send_is_not_recorded(detected):
     asyncio.run(core.handle_message(OWNER, "help", Broken()))
     rows = conversations.timeline(OWNER)
     assert [r["role"] for r in rows] == ["user"]
+
+
+@pytest.mark.parametrize("intent", ["help", "recall_shopping"])   # send, send_card
+def test_a_reply_sent_but_not_recorded_is_logged_not_raised(detected, monkeypatch, caplog, intent):
+    """The reply is already on their screen. Raising into the skill would
+    turn a failed transcript write into "Something went wrong" after a reply
+    that worked -- the same call router._record makes for notices."""
+    import logging, sqlite3
+    detected(intent=intent, content="")
+    shopping_store.init_db()
+    real, calls = conversations.add_message, []
+
+    def flaky(*a, **k):
+        calls.append(a)
+        if len(calls) == 2:          # the first is the user's turn, the second the reply
+            raise sqlite3.OperationalError("database is locked")
+        return real(*a, **k)
+
+    monkeypatch.setattr(conversations, "add_message", flaky)
+    ch = CollectingChannel()
+    with caplog.at_level(logging.ERROR):
+        asyncio.run(core.handle_message(OWNER, "go on", ch))
+    assert len(ch.sent) == 1
+    assert "Something went wrong" not in ch.sent[0]
+    assert "not recorded" in caplog.text

@@ -248,6 +248,12 @@ def test_http_notify_is_passive_and_answers_true():
     assert asyncio.run(http_surface.notify(1, "reminder")) is True
 
 
+def test_http_reaches_only_people_with_a_sign_in_token():
+    # the router's passive fallback asks this before calling a notice delivered
+    assert http_surface.reaches(1) is True
+    assert http_surface.reaches(2) is False
+
+
 def test_start_refuses_to_run_without_tokens(monkeypatch):
     monkeypatch.setattr(config, "WREN_TOKENS", {})
     with pytest.raises(RuntimeError, match="WREN_TOKENS"):

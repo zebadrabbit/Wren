@@ -133,10 +133,13 @@ async def _notify_any(user_id: int, text: str) -> bool:
     # router put it on the timeline, where the page shows it on its next
     # poll. Last, never first: a phone buzz beats a row the person has to
     # open a browser to see. Not after a transient failure either -- that
-    # message is coming back next poll, and would then be said twice.
+    # message is coming back next poll, and would then be said twice. And
+    # only to someone the surface reaches: a page they have no token for is
+    # not a delivery, and False is what lets the caller say so.
     for name in config.COMMUNICATION_PLUGINS:
         surface = _surfaces.get(name)
-        if surface is not None and getattr(surface, "PASSIVE", False):
+        if (surface is not None and getattr(surface, "PASSIVE", False)
+                and getattr(surface, "reaches", lambda u: True)(user_id)):
             if await surface.notify(user_id, text):
                 _record(user_id, text, name, surface)
                 return True

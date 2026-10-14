@@ -149,3 +149,10 @@ def test_notify_id_splits_too():
     assert len(calls) == 3
     assert all(len(part) <= 2000 for part in calls)
     assert "".join(calls) == long_text
+
+
+def test_discord_channel_names_itself_discord():
+    # what the timeline files a Discord turn under, and what the page's
+    # "via discord" label reads; a rename here relabels every stored row
+    from wren.communication.discord_plugin import DiscordChannel
+    assert DiscordChannel(MagicMock(), MagicMock()).NAME == "discord"

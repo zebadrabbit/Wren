@@ -163,12 +163,27 @@ cmd_token_add() {
     echo "  $tok"
     echo
     host=$(env_get WREN_HTTP_HOST); port=$(env_get WREN_HTTP_PORT)
+    # unset is config.py's default, loopback. Set but empty, or 0.0.0.0, binds
+    # every interface: where the server listens, not an address anyone opens.
+    # ponytail: no guess at the LAN address (hostname -I and friends differ by
+    # OS and pick wrong with docker or a VPN up); the owner knows the name.
+    grep -q '^WREN_HTTP_HOST=' "$ENV_FILE" 2>/dev/null || host=127.0.0.1
     echo "or send them this link, which signs their browser in on its own"
     echo "(the part after # never reaches the server, so it stays out of its access log):"
     echo
-    echo "  http://${host:-127.0.0.1}:${port:-8787}/#token=$tok"
-    echo
-    echo "(use the https address of your reverse proxy if you have one)"
+    case $host in
+        ""|0.0.0.0)
+            echo "  http://<this machine's address>:${port:-8787}/#token=$tok"
+            echo
+            echo "(replace <this machine's address> with the name or IP people use to reach this computer,"
+            echo " or use the https address of your reverse proxy if you have one)"
+            ;;
+        *)
+            echo "  http://$host:${port:-8787}/#token=$tok"
+            echo
+            echo "(use the https address of your reverse proxy if you have one)"
+            ;;
+    esac
     echo
     echo "Restart wren to apply: $0 restart"
 }

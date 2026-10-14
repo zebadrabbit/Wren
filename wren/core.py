@@ -221,9 +221,20 @@ class _Recording:
         self._home = home
         self.written: list[int] = []
 
+    def _write(self, text: str, **card) -> None:
+        # Never raises, for router._record's reason: the reply is already on
+        # their screen, and an exception here would reach the skill and then
+        # core's "Something went wrong" -- after a reply that worked. A row
+        # missing from the timeline is the lesser harm, and it is logged.
+        try:
+            self.written.append(conversations.add_message(
+                self._home, "assistant", text, channel=self.NAME, **card))
+        except Exception as e:
+            logging.error(f"reply on {self.NAME} sent but not recorded: {e}")
+
     async def send(self, text: str) -> None:
         await self.inner.send(text)
-        self.written.append(conversations.add_message(self._home, "assistant", text, channel=self.NAME))
+        self._write(text)
 
     async def send_file(self, data: bytes, filename: str) -> None:
         # files are not persisted: the reply text that accompanies them is the row
@@ -234,9 +245,7 @@ class _Recording:
         await self.inner.send_card(kind, data, text, intent=intent, params=params)
         # the ref, never the rows: a card is live and re-reads itself from
         # intent+params (skill-cards design); `data` would be stale by tomorrow
-        self.written.append(conversations.add_message(
-            self._home, "assistant", text, channel=self.NAME,
-            card={"kind": kind, "intent": intent, "params": params or {}}))
+        self._write(text, card={"kind": kind, "intent": intent, "params": params or {}})
 
     async def ack(self, state: str) -> None:
         await self.inner.ack(state)

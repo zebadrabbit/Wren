@@ -170,7 +170,8 @@ def recent(owner_id: int, *, before_id: int, limit: int = 10) -> list[dict]:
 def by_ids(ids: list[int]) -> list[dict]:
     """Timeline-shaped rows for exactly these ids, in timeline order. What the
     HTTP surface hands the page after a turn, so the page draws what was
-    stored and not a second rendering of the same reply."""
+    stored and not a second rendering of the same reply. Not owner-scoped:
+    callers pass only ids they wrote this turn."""
     if not ids:
         return []
     marks = ",".join("?" * len(ids))

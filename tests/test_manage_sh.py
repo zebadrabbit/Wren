@@ -75,3 +75,24 @@ def test_a_readable_env_file_is_warned_about(tmp_path):
     assert "chmod 600" in run(env, "secret", "list").stderr
     os.chmod(env, 0o600)
     assert "chmod 600" not in run(env, "secret", "list").stderr
+
+
+def test_token_add_on_every_interface_prints_a_link_to_fill_in(tmp_path):
+    # 0.0.0.0 (or an empty host, which binds the same) is where the server
+    # listens, not an address anyone can open
+    for i, host in enumerate(("0.0.0.0", "")):
+        env = tmp_path / f"env{i}"
+        env.write_text(f"WREN_HTTP_HOST={host}\nWREN_HTTP_PORT=9000\n")
+        r = run(env, "token", "add", "42")
+        assert r.returncode == 0
+        assert "http://<this machine's address>:9000/#token=" in r.stdout
+        assert "replace <this machine's address> with the name or IP" in r.stdout
+        assert "0.0.0.0" not in r.stdout
+
+
+def test_token_add_with_no_host_set_links_to_loopback(tmp_path):
+    # unset is config.py's default, 127.0.0.1 -- the address it really listens on
+    env = tmp_path / "env"
+    env.write_text("WREN_TOKENS=existing:1\n")
+    r = run(env, "token", "add", "42")
+    assert "http://127.0.0.1:8787/#token=" in r.stdout

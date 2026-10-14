@@ -381,13 +381,20 @@ def test_contacts_list_is_owner_only():
     assert (status, rows) == (200, [])
 
 
+# 18 digits, like every real Discord id: past 2**53, so a JSON number would
+# reach the page as 123456789012345680 (JSON.parse rounds to a double)
+SNOWFLAKE = "123456789012345678"
+
+
 def test_add_a_contact_then_a_second_surface_then_remove():
     status, row = call("post", "/api/contacts", token=TOKEN_OWNER,
-                       json={"alias": "Hubby", "surface": "discord", "id": "123"})
-    assert (status, row) == (201, {"alias": "hubby", "discord": 123, "telegram": None})
+                       json={"alias": "Hubby", "surface": "discord", "id": SNOWFLAKE})
+    assert (status, row) == (201, {"alias": "hubby", "discord": SNOWFLAKE, "telegram": None,
+                                   "wren_id": SNOWFLAKE})
     status, row = call("post", "/api/contacts", token=TOKEN_OWNER,
                        json={"alias": "hubby", "surface": "telegram", "id": 456})
-    assert (status, row) == (200, {"alias": "hubby", "discord": 123, "telegram": 456})
+    assert (status, row) == (200, {"alias": "hubby", "discord": SNOWFLAKE, "telegram": "456",
+                                   "wren_id": SNOWFLAKE})
     assert call("get", "/api/contacts", token=TOKEN_OWNER)[1] == [row]
     assert call("delete", "/api/contacts/hubby", token=TOKEN_OWNER) == (200, {"ok": True})
     assert call("delete", "/api/contacts/hubby", token=TOKEN_OWNER)[0] == 404
@@ -429,3 +436,22 @@ def test_add_contact_refuses_a_name_already_in_the_whitelist(monkeypatch):
     status, out = call("post", "/api/contacts", token=TOKEN_OWNER,
                        json={"alias": "kim", "surface": "discord", "id": "1"})
     assert status == 409
+
+
+def test_a_telegram_only_contact_signs_in_as_their_telegram_id():
+    status, row = call("post", "/api/contacts", token=TOKEN_OWNER,
+                       json={"alias": "kim", "surface": "telegram", "id": "55"})
+    assert (status, row) == (201, {"alias": "kim", "discord": None, "telegram": "55", "wren_id": "55"})
+
+
+def test_adding_discord_to_a_telegram_first_contact_is_refused():
+    # Their Wren id is COALESCE(discord, telegram): a Discord id added now
+    # would become their id, and every note, reminder and token filed under
+    # the Telegram one would be left behind.
+    call("post", "/api/contacts", token=TOKEN_OWNER, json={"alias": "kim", "surface": "telegram", "id": "55"})
+    status, out = call("post", "/api/contacts", token=TOKEN_OWNER,
+                       json={"alias": "kim", "surface": "discord", "id": SNOWFLAKE})
+    assert status == 409
+    assert "sign in" in out["error"] and "Discord first" in out["error"]
+    assert call("get", "/api/contacts", token=TOKEN_OWNER)[1] == [
+        {"alias": "kim", "discord": None, "telegram": "55", "wren_id": "55"}]

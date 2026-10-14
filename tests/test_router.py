@@ -477,3 +477,29 @@ def test_explicit_surface_recording_failure_still_returns_true(monkeypatch):
     router.register("telegram", FakeSurface(True))
     monkeypatch.setattr(conversations, "notice", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("locked")))
     assert asyncio.run(router.notify(1, "x")) is True
+
+
+def test_any_skips_a_passive_surface_that_does_not_reach_the_person(monkeypatch):
+    """The page needs a sign-in token. Someone with none would never see the
+    notice, so the fallback must not call it delivered: False lets the caller
+    say "Couldn't reach" instead of marking mail seen on a lie."""
+    monkeypatch.setattr(config, "NOTIFY_VIA", "any")
+    monkeypatch.setattr(config, "COMMUNICATION_PLUGINS", ["http", "telegram"])
+    passive = PassiveSurface(True)
+    passive.reaches = lambda user_id: False
+    router.register("http", passive)
+    router.register("telegram", FakeSurface(False))
+    assert asyncio.run(router.notify(1, "x")) is False
+    assert passive.calls == []
+    assert _notices(1) == []
+
+
+def test_any_falls_back_to_a_passive_surface_that_reaches_the_person(monkeypatch):
+    monkeypatch.setattr(config, "NOTIFY_VIA", "any")
+    monkeypatch.setattr(config, "COMMUNICATION_PLUGINS", ["http", "telegram"])
+    passive = PassiveSurface(True)
+    passive.reaches = lambda user_id: user_id == 1
+    router.register("http", passive)
+    router.register("telegram", FakeSurface(False))
+    assert asyncio.run(router.notify(1, "x")) is True
+    assert _notices(1) == [("x", "web", "notice")]
