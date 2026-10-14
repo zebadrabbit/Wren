@@ -301,7 +301,7 @@ def register_routes(app: web.Application, authenticate) -> None:
         """The same rules as contacts_skill.add_contact, over HTTP: the owner's
         name and the placeholder "owner" are taken, a surface a person already
         has an id on is taken, and an id already registered under another
-        name is a conflict. Kept in step by hand; a shared helper would be
+        name is a conflict. ponytail: kept in step by hand; a shared helper would be
         the right move the third time a rule is added."""
         _owner(request)
         body = await _json_object(request)
@@ -313,7 +313,7 @@ def register_routes(app: web.Application, authenticate) -> None:
             return web.json_response({"error": '"owner" is the placeholder for you, not a contact'}, status=400)
         if surface not in contacts.SURFACES:
             return web.json_response({"error": f"surface must be one of {', '.join(contacts.SURFACES)}"}, status=400)
-        if not isinstance(raw_id, (str, int)) or isinstance(raw_id, bool) or not str(raw_id).strip().isdigit():
+        if not isinstance(raw_id, (str, int)) or isinstance(raw_id, bool) or not (str(raw_id).strip().isascii() and str(raw_id).strip().isdigit()):
             return web.json_response({"error": "id must be the number that app calls them"}, status=400)
         surface_id = int(str(raw_id).strip())
         existing = alias in contacts.all()

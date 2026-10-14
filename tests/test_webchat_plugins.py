@@ -400,6 +400,7 @@ def test_add_a_contact_then_a_second_surface_then_remove():
     {"alias": "x", "surface": "discord", "id": "abc"},
     {"alias": "x", "surface": "discord"},
     {"alias": 5, "surface": "discord", "id": "1"},
+    {"alias": "x", "surface": "discord", "id": "\u00b2"},
 ])
 def test_add_contact_rejects_bad_bodies(body):
     status, out = call("post", "/api/contacts", token=TOKEN_OWNER, json=body)
@@ -421,3 +422,10 @@ def test_add_contact_refuses_an_id_registered_under_another_name():
 def test_contact_routes_are_not_for_non_owners():
     assert call("post", "/api/contacts", token=TOKEN_OTHER, json={"alias": "x", "surface": "discord", "id": "1"})[0] == 403
     assert call("delete", "/api/contacts/x", token=TOKEN_OTHER)[0] == 403
+
+
+def test_add_contact_refuses_a_name_already_in_the_whitelist(monkeypatch):
+    monkeypatch.setitem(config.WHITELIST, "kim", 777)
+    status, out = call("post", "/api/contacts", token=TOKEN_OWNER,
+                       json={"alias": "kim", "surface": "discord", "id": "1"})
+    assert status == 409
