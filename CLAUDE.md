@@ -29,7 +29,9 @@ Run with `python3 -m wren.run`. Full architecture doc: `README.md`
    and calls `core.handle_message(user_id, text, channel)`. No "if item on
    shopping list" inside `discord_plugin.py`.
 3. **Every communication plugin declares `ROLE`**: `"chat"` (input + output,
-   needs `async start()` + a `Channel` impl, e.g. `discord_plugin.py`) or
+   needs `async start()` + a `Channel` impl that declares `NAME`, the door's
+   name on the timeline -- `"web"`, `"voice"`, `"discord"`, `"telegram"` --
+   e.g. `discord_plugin.py`) or
    `"input"` (one-way, needs `async start()` that calls
    `router.notify_name(...)`, e.g. `gmail_plugin.py`). Nothing else is
    special-cased between plugins of the same role.
@@ -43,7 +45,9 @@ Run with `python3 -m wren.run`. Full architecture doc: `README.md`
    files sent alongside the words, declare `ACCEPTS_FILES = [...]`; a
    captioned photo whose intent is not in that set is a note, or, if the
    caption is a question, a question about the picture (`brain.describe`).
-   If a destructive intent can be reversed, declare `UNDO = {intent: async
+   If a skill has a place of its own to open (shopping lists, notes, reminders),
+   declare `SPACES` -- a list, or a callable returning one, of `{key, label,
+   intent, params}`; `registry.spaces()` collects them for the sidebar. If a destructive intent can be reversed, declare `UNDO = {intent: async
    fn(ctx)}`; core runs it on a typed "undo that" within ten minutes of the
    intent, with the same `Ctx`. Skills that need to know *what* was deleted
    keep it themselves (see `shopping_store._last_cleared`).
@@ -69,6 +73,9 @@ Run with `python3 -m wren.run`. Full architecture doc: `README.md`
    truthiness): `set_override` raises `SettingLocked`, the panel greys it out,
    and a stored row for it is deleted at boot. Tests start with
    `ENV_DEFINED` empty (conftest) because dotenv loads the live `.env`.
+8. **Core records the transcript.** `core.handle_message` writes the user
+   turn and wraps the channel so every reply is written; the router writes
+   notices. A surface never writes to `conversations` itself.
 
 ## Env vars that changed in the v2 restart
 
@@ -109,7 +116,7 @@ Module path renames (for grep/context when reading old plans/specs):
 ```bash
 source venv/bin/activate
 pip install -r requirements.txt
-pytest -q                        # 1255 passed as of 2026-09-27
+pytest -q                        # 1256 passed as of 2026-10-14
 python3 -m wren.run              # needs .env; see .env.example
 ```
 

@@ -252,8 +252,8 @@ inline confirm (no native dialog).
 **Web sign-in tokens stay on the host.** They are credentials, so by rule 7
 they are never runtime-mutable and never returned by an endpoint. The tab
 shows the command (`./manage.sh token add <id>`) and explains the invite
-link: the page accepts `/?token=<token>`, stores it as if pasted, and strips
-it from the URL with `history.replaceState` before any request. The operator
+link: the page accepts `/#token=<token>`, stores it as if pasted, and strips
+it from the URL with `history.replaceState` before any request. It is a fragment rather than a query string because a fragment is never sent to the server, so the bearer token stays out of the aiohttp access log. The operator
 sends a family member one link instead of a token and instructions.
 
 ## Out of scope
@@ -279,7 +279,7 @@ Tests stay in the `CollectingChannel` + `Ctx` shape; no Discord mocked.
   passive http only when nothing active delivered; dry run records nothing.
 - `test_http_surface.py` / `test_webchat.py`: timeline paging, poll cap,
   cross-user isolation (404 shape unchanged), `messages` in the `/message`
-  payload, `?token=` is not a server concern (page only). The conversation
+  payload, `#token=` is not a server concern (page only). The conversation
   route tests are deleted.
 - `test_briefing_skill.py`: `gather` shape; `compose(gather(...))` equals
   today's prose for the same inputs; the card's `text` is that prose.

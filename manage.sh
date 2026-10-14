@@ -152,7 +152,7 @@ cmd_token_list() {
 }
 
 cmd_token_add() {
-    local id=$1 tok raw
+    local id=$1 tok raw host port
     [[ $id =~ ^[0-9]+$ ]] || { echo "USER_ID must be numeric." >&2; exit 1; }
     tok=$(openssl rand -hex 24 2>/dev/null \
           || head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')
@@ -161,6 +161,14 @@ cmd_token_add() {
     echo "Token for user $id — shown this once; paste it into the web chat sign-in:"
     echo
     echo "  $tok"
+    echo
+    host=$(env_get WREN_HTTP_HOST); port=$(env_get WREN_HTTP_PORT)
+    echo "or send them this link, which signs their browser in on its own"
+    echo "(the part after # never reaches the server, so it stays out of its access log):"
+    echo
+    echo "  http://${host:-127.0.0.1}:${port:-8787}/#token=$tok"
+    echo
+    echo "(use the https address of your reverse proxy if you have one)"
     echo
     echo "Restart wren to apply: $0 restart"
 }

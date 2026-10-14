@@ -50,6 +50,10 @@ def test_token_add_list_revoke_roundtrip(tmp_path):
     assert r.returncode == 0
     tok = re.search(r"^  ([0-9a-f]{48})$", r.stdout, re.M).group(1)
     assert f"WREN_TOKENS=existing:1,{tok}:42" in env.read_text()
+    # the invite link is a fragment, never a query string: the fragment is
+    # not sent to the server, so the token stays out of its access log
+    assert f"/#token={tok}" in r.stdout
+    assert "?token=" not in r.stdout
 
     r = run(env, "token", "list")
     assert tok not in r.stdout             # masked

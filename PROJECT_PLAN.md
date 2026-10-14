@@ -209,9 +209,10 @@ items, text surfaces get a tag breakdown and an invitation to narrow, while the
 card keeps showing everything (it is scrollable and already filters by tag).
 Chunking made a 40-note dump deliverable; this makes it readable.
 
-**Slice 3: spaces.** The sidebar SPACES section from the design — open a skill's
+**Slice 3: spaces.** ~~The sidebar SPACES section from the design — open a skill's
 card full-pane without a conversation. All the machinery exists; this is a
-second mount point for renderers that already work.
+second mount point for renderers that already work.~~ Landed 2026-10-13, see
+"One timeline" at the end of this file.
 
 **First-run path.** Now that this is meant to be self-hostable by other people,
 bugs that only bite fresh installs matter most, and they are invisible from a
@@ -290,7 +291,9 @@ Household Gaps") holds the state; this is the order and the why.
    optional `list` field on `Ctx` and `/api/dispatch`) so a reload re-reads
    the same list. Not yet: "what lists do I have", rename, delete.
 4. **Web chat as an installable app with push.** Also the answer to where
-   device replies land.
+   device replies land. Still parked after "One timeline" (2026-10-13): the
+   web chat is now a passive door, so a notice waits on the timeline until the
+   page polls, and real push still needs HTTPS and a service worker.
 5. **Calendar write (CalDAV).**
 6. ~~**Vision on inbound images.**~~ Landed 2026-09-26: pictures go to
    Gemma on the native Ollama transport (`brain.describe`, `brain.items_in`).
@@ -358,3 +361,21 @@ still valid and now sits behind these.
 Merged to `main` and live since 2026-09-21 (fast-forward, 973 tests green; the
 worktrees are gone). Memory needs no configuration; weather, calendar and the
 briefing each stay off until their `.env` keys are set.
+
+## One timeline (2026-10-13)
+
+Spec: `docs/superpowers/specs/2026-10-13-one-timeline-design.md`; plan:
+`docs/superpowers/plans/2026-10-13-one-timeline.md`. Landed on branch
+`one-timeline`. Each person now has one thread, not a list of conversations:
+`core.handle_message` writes the user turn and every reply, the router writes
+notices marked with the door they went to, and so Discord, Telegram, voice and
+the browser all share one history (`wren/conversations.py`). The `http` plugin
+is a passive door: `NOTIFY_VIA=http` is legal and means web-only, and `any`
+falls back to it when nothing can push. The web page gained the Today panel
+(the briefing as data via `briefing_skill.gather`), spaces in the sidebar
+(`SPACES`, which closes "Slice 3: spaces"), a People tab for the owner's
+contacts, and invite links of the form `/#token=...` printed by
+`./manage.sh token add` (a fragment, so the token stays out of the access log).
+`/message` returns `{replies, files, cards, messages}`. Rollout is a database
+backup and one restart. "Web chat as an installable app with push" stays
+parked.

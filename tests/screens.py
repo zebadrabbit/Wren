@@ -62,6 +62,9 @@ def stop(proc: subprocess.Popen):
 def seed(tmp: pathlib.Path):
     for item in ("milk", "eggs", "olive oil"):
         _api("/api/dispatch", {"intent": "add_shopping_item", "content": item})
+    # the Telegram sentence below is only a transcript row; this is what makes
+    # the Packing space exist
+    _api("/api/dispatch", {"intent": "add_shopping_item", "content": "tent", "list": "packing"})
     _api("/api/dispatch", {"intent": "save_note", "content": "call the plumber", "tags": ["house"]})
     # a notice and a Telegram turn, straight into the scratch DB
     env = {**os.environ, "WREN_DB": str(tmp / "scratch.db")}

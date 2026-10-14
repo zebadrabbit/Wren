@@ -77,9 +77,9 @@ Each Communication plugin declares a `ROLE`:
 
 ### `discord` — role: chat
 
-DM the bot. Requires `DISCORD_TOKEN`. Discord and the web chat are the two
-channels with conversation history, so multi-turn follow-ups ("what did I just
-say") resolve here.
+DM the bot. Requires `DISCORD_TOKEN`. Everything you say here, and everything
+Wren answers, is also written to your timeline (see [Web chat](#web-chat)), so
+it shows up in the browser too.
 
 ### `telegram` — role: chat
 
@@ -105,15 +105,17 @@ their surfaces are tried at all).
 
 Long-polls `getUpdates` over `aiohttp`; there is no Telegram client library in
 the dependency list. Private chats only — group messages are ignored. The Bot
-API gives a bot no way to read a chat's backlog, so `history` is `None` and
-follow-ups that depend on the previous turn won't resolve here.
+API gives a bot no way to read a chat's backlog, but that no longer matters:
+history is the timeline on every door, so "what did I just say" resolves here
+the same as anywhere else.
 
-### `http` — role: chat (send-only for proactive notifications)
+### `http` — role: chat (passive for proactive notifications)
 
 A local HTTP API plus the browser chat UI. Set
-`WREN_TOKENS=<token>:<user_id>` (generate with `openssl rand -hex 24`), then
-open `http://<wren-host>:8787/` and paste that token once — it is kept in
-`localStorage` after that. See [Web chat](#web-chat).
+`WREN_TOKENS=<token>:<user_id>` (generate with `./manage.sh token add <id>`, or
+`openssl rand -hex 24` by hand), then open `http://<wren-host>:8787/` and paste
+that token once — it is kept in `localStorage` after that. See
+[Web chat](#web-chat).
 
 ### `gmail` — role: input only
 
@@ -131,7 +133,7 @@ The machine API, used by the desktop voice client:
 | Route | Body | Returns |
 |---|---|---|
 | `GET /health` | — | `{"ok": true}` |
-| `POST /message` | `{"text": "..."}` or multipart `text` + `file` parts | `{"replies": [...], "files": [{filename, mime, data}]}` |
+| `POST /message` | `{"text": "..."}` or multipart `text` + `file` parts | `{"replies": [...], "files": [{filename, mime, data}], "cards": [...], "messages": [...]}` |
 | `POST /voice` | raw WAV bytes | `{"transcript": "...", "replies": [...]}` |
 
 All routes but `/health` need `Authorization: Bearer <token>`. Files come
@@ -195,53 +197,97 @@ route over the internet rather than the LAN anyway.
 Note the page uses absolute paths (`/api/conversations`), so it must be proxied
 at a server root — a subpath like `/wren/` needs URL rewriting.
 
-**The http plugin is send-only.** It has no way to push, so
-`NOTIFY_VIA=http` cannot deliver reminders — it logs and drops them. The
-default, `any`, skips it; or point `NOTIFY_VIA` at `discord` or `telegram`.
+**The http plugin is passive.** It cannot push to a phone, but it does not
+drop things either: a reminder that fires for the web chat is written to your
+timeline, and the page shows it the next time it polls. So `NOTIFY_VIA=http`
+is allowed, and means the notice appears only in the web chat — you will see
+it when the page is open and not otherwise. The default, `any`, still prefers
+a surface that can push (Discord, Telegram) and falls back to the web chat only
+when none can. If you set `NOTIFY_VIA=http`, Wren says at boot that notices
+"will only appear in the web chat".
 
 ## Web chat
 
-`COMMUNICATION_PLUGINS=http` also serves a chat page at `/` — a sidebar of conversations,
-markdown replies, the whole assistant behind it. Say "add potatoes to
-shopping" there and it goes on the same list Discord sees.
+`COMMUNICATION_PLUGINS=http` also serves a chat page at `/`. It is one thread
+per person, not a list of conversations. Whatever you say to Wren on any door —
+the page, Discord, Telegram, the voice client — is written to that one thread,
+and so is every answer. Say "add potatoes to shopping" on your phone and the
+line is there on the laptop, with the reply under it.
 
-Open `http://<wren-host>:8787/`, paste a `WREN_TOKENS` value once, and it is
-remembered per browser. The page itself is served without auth because it is a
-static shell holding no user data; every request it makes carries the token.
+What you see when you open it:
 
-**This is the only channel besides Discord with conversation history.** Voice,
-Telegram and the machine API are one-shot by design. Chat history lives in
-Wren's own `conversations`/`messages` tables, so it follows you between machines.
+- **The day's briefing on top**, in a Today panel: weather, the calendar,
+  reminders, the shopping list, new mail — whatever you have switched on. It
+  refreshes when you open the page, and you can fold it away.
+- **The thread below it**, newest at the bottom, with markdown replies and
+  the cards (lists, notes, reminders) drawn in place. A message that did not
+  start on this page carries a small mark saying which door it came from
+  ("from Telegram", "by voice").
+- **Spaces in the sidebar**: Shopping (and one entry per named list, such as
+  Packing), Notes, Reminders. A space opens that skill's card full-pane, with
+  no conversation involved. You still get the same card by asking for it.
+- **Reminders appear in place.** When one fires it lands in the thread at the
+  moment it fired, marked with where it went ("sent to Telegram", "sent
+  here"), so you can tell later whether your phone was told. The page checks
+  for new rows every 30 seconds.
 
-Conversations are per-user: a token maps to a user id, and one user cannot see
-or touch another's conversations.
+On a Reminders card, a one-off reminder has a tick, "done"; a repeating one has
+a cross, "stop this reminder", because ticking a repeating reminder would only
+schedule the next one.
+
+Replies are **not** streamed — `brain` returns a finished string and intent
+detection has to happen first, so you get a thinking indicator rather than
+tokens appearing. That is the main thing that will feel different from
+claude.ai.
+
+### Signing in
+
+Open `http://<wren-host>:8787/` and do either of these once per browser:
+
+- **Paste a token.** Make one on the host with `./manage.sh token add <user_id>`
+  (it is shown once), paste it into the sign-in box, and it is remembered in
+  that browser.
+- **Open the invite link.** `token add` also prints a link of the form
+  `http://<wren-host>:8787/#token=<token>`. Send that to a family member and
+  opening it signs their browser in on its own; the page then removes the token
+  from the address bar. The token sits after a `#` on purpose: the browser
+  never sends a fragment to the server, so the token stays out of the access
+  log. Use the https address of your reverse proxy if you have one, and treat
+  the link like the password it is.
+
+The page itself is served without auth because it is a static shell holding
+no user data; every request it makes carries the token. A token maps to a
+user id, and one user cannot see another's timeline.
+
+History lives in Wren's own `conversations`/`messages` tables, so it follows
+you between machines.
 
 | Route | Body | Returns |
 |---|---|---|
 | `GET /` | — | the chat page |
-| `GET /api/conversations` | — | `[{id, title, updated_at}]` |
-| `POST /api/conversations` | — | `{id, title}` |
-| `GET /api/conversations/{id}` | — | `{id, title, messages}` |
-| `PATCH /api/conversations/{id}` | `{title}` | rename |
-| `DELETE /api/conversations/{id}` | — | delete it and its messages |
-| `POST /api/conversations/{id}/message` | `{text}` | `{replies, files}` |
+| `GET /api/timeline` | — | the newest 50 rows of your thread, oldest first |
+| `GET /api/timeline?before=<id>` | — | the 50 rows older than that row (paging back) |
+| `GET /api/timeline?after=<id>` | — | rows newer than that row (the 30-second poll) |
+| `POST /api/dispatch` | `{intent, content?, tags?, person?, list?}` | run one intent directly (card buttons, refresh, spaces); writes nothing to the thread |
 | `GET /api/me` | — | `{name, skills, model}` — any whitelisted user |
+| `GET /api/spaces` | — | `[{key, label, intent, params}]` — the sidebar entries |
 | `GET /api/plugins` | — | `{skills, channels, settings}` — owner only |
 | `PATCH /api/plugins/{module}` | `{enabled}` | toggle a skill — owner only |
 | `PATCH /api/settings` | `{KEY: value}` | change a non-secret setting — owner only |
+| `GET /api/contacts` | — | the household's contacts — owner only |
+| `POST /api/contacts` | `{alias, id, ...}` | add a contact — owner only |
+| `DELETE /api/contacts/{alias}` | — | remove a contact — owner only |
 
-Titles come from the first message and can be renamed. Replies are **not**
-streamed — `brain` returns a finished string and intent detection has to
-happen first, so you get a thinking indicator rather than tokens appearing.
-That is the main thing that will feel different from claude.ai.
+`before` and `after` are not combined (400), and `limit` is clamped to 200.
 
 ### The landing screen
 
-Opening the chat greets you by name, shows a pill per enabled skill that drops
-a starter phrase into the composer, and — if you are the owner — lets you pick
-which model answers. Not every skill gets a pill: Contacts is owner-only
-administration, not something to invite a household member into, so it has no
-starter phrase and renders nothing here.
+On a timeline with nothing in it the page greets you by name and shows a row
+of chips above the composer, one per skill that can answer a question; click
+one and a starter phrase drops into the composer. A "Catch me up" chip draws
+the same day-at-a-glance as the Today panel. Not every skill gets a chip:
+Contacts is owner-only administration, not something to invite a household
+member into, so it has none.
 
 Set your name with `OWNER_NAME` in the plugins panel (below). Until it is set
 the greeting is just the time of day: the whitelist alias for the owner is the
@@ -255,7 +301,7 @@ that used to sit there went on 2026-09-26.
 
 ### The plugins panel
 
-The gear beside "New" opens an owner-only panel: every skill and channel with
+The Plugins button in the sidebar opens an owner-only panel: every skill and channel with
 the reason any of them is inactive, switches for the skills, and the settings
 that are not credentials.
 
@@ -294,10 +340,20 @@ left out of `.env`. Before this, a value set in the panel in June silently
 beat a `.env` edit in December. Keep a key commented out in `.env` if you
 want to manage it from the panel.
 
-The panel itself is owner-only: the gear stays hidden for every other
+The panel itself is owner-only: the button stays hidden for every other
 whitelisted user, because the page probes `GET /api/plugins` on load and
-only reveals the gear if that call succeeds — everyone else gets a 403 from
+only reveals the button if that call succeeds — everyone else gets a 403 from
 all three routes.
+
+### The People tab
+
+Also owner-only, and in the same panel: the household's contacts, with a form
+to add one and a button to remove one (the same thing as "add 123 as hubby" in
+chat, through `/api/contacts`). The tab also explains the sign-in command and
+the invite link. It does not make tokens: they are credentials, so they are
+never returned by an endpoint and never editable from the page. Run
+`./manage.sh token add <user_id>` on the host, restart, and send the person
+the link it prints.
 
 ### Where notifications go
 
@@ -308,8 +364,13 @@ briefing — go where `NOTIFY_VIA` says:
 - **`any`** (the default): the first running plugin that can push and reaches
   you, in `COMMUNICATION_PLUGINS` order. If it is down, the next one gets it
   straight away. Delivered once, not on every channel, so two chat apps on one
-  phone do not buzz twice.
+  phone do not buzz twice. If nothing can push, it lands in the web chat.
 - **a plugin name** (`telegram`, `discord`): always that one.
+- **`http`**: the web chat only. Nothing is pushed; the notice waits on your
+  timeline until the page next polls.
+
+Every notice is also written to your timeline, marked with the door it went
+to, whichever of these carried it.
 
 A reminder can name its own channel, and that beats either: "set a timer for
 10 minutes and notify me on discord", "remind me on telegram to call mum at
@@ -343,8 +404,9 @@ Tune `WREN_STT_MODEL` (`tiny.en` → `large-v3`) and `WREN_STT_DEVICE` /
 `WREN_STT_COMPUTE` to your hardware — the defaults (`base.en`, `auto`,
 `int8`) are chosen to stay usable on a CPU-only host.
 
-Voice requests are one-shot: channels without conversation history can't
-resolve follow-ups that depend on the previous turn.
+Voice requests are one-shot for the client, but they are written to your
+timeline like everything else, so the next thing you type can refer back to
+them.
 
 Anything that arrived by voice and would delete or cancel something — remove
 an item, clear the list, discard an idea, cancel a reminder, unpin, remove a
@@ -622,13 +684,14 @@ external event ──▶ communication plugin (input-only) ──▶ router.noti
 - `wren/communication/discord_plugin.py` — Discord client, `DiscordChannel`
   (reactions implement `ack`, channel history implements `history`). `ROLE = "chat"`.
 - `wren/communication/telegram_plugin.py` — Telegram bot, `TelegramChannel`
-  (typing indicator implements `ack`; `history` is `None` — the Bot API gives
-  a bot no way to read a chat's backlog). Long-polls `getUpdates` over aiohttp,
+  (typing indicator implements `ack`; the Bot API gives a bot no way to read
+  a chat's backlog, so history comes from the timeline). Long-polls `getUpdates` over aiohttp,
   no Telegram library, and translates the owner's Telegram id to their Wren id
   in both directions (`TELEGRAM_OWNER_ID`). `ROLE = "chat"`. Not enabled unless
   `TELEGRAM_TOKEN` is set and "telegram" is in `COMMUNICATION_PLUGINS`.
 - `wren/communication/http_plugin.py` + `webchat.py` — aiohttp app, bearer-token
-  auth, and the browser chat UI (conversations with real history). `ROLE = "chat"`.
+  auth, and the browser chat UI (one timeline per person). `ROLE = "chat"`,
+  `PASSIVE = True`.
 - `wren/communication/gmail_plugin.py` — IMAP inbox watcher. `ROLE = "input"`.
 - `wren/communication/github_plugin.py` (+ `github_state.py`) — repo activity
   watcher. `ROLE = "input"`.
