@@ -257,6 +257,19 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .landmark { width: 56px; height: 56px; display: block; margin: 0 auto 18px; }
 /* clamp so the greeting still fits a phone without a second media query */
 #greet { font-size: clamp(24px, 3.4vw, 32px); font-weight: 500; margin: 0 0 4px; }
+/* ── the Today panel: the briefing, pinned above the timeline ───────────── */
+#today { max-width: 760px; margin: 18px auto 0; padding: 0 20px; width: 100%; }
+#today[hidden] { display: none; }
+#today .thead { display: flex; align-items: center; gap: 8px; font-size: 12px; letter-spacing: .08em;
+                text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+#today .thead button { margin-left: auto; border: 0; color: var(--muted); font-size: 12px; }
+#today.closed .brief { display: none; }
+/* the open panel is the landing: an empty timeline under it would otherwise
+   greet twice (seen 2026-10-14); folded, the landing's greeting comes back */
+#today:not([hidden]):not(.closed) ~ #log #landing { display: none; }
+.bgreet { margin: 0 0 10px; font-size: 17px; font-weight: 500; }
+.bgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.bsec li { padding: 6px 12px; }
 
 .dots span {
   display: inline-block; width: 6px; height: 6px; margin-right: 3px;
@@ -624,6 +637,23 @@ function takeToken(href) {
   if (token !== null) url.hash = "";
   return { token, clean: url.toString() };
 }
+// The briefing's sections, in the order the panel draws them. null means
+// the skill is off or unconfigured and the section is simply absent; an
+// empty list is a configured section with nothing in it, which still shows.
+const BRIEF_MAIL = 5;   // briefing_skill._DIGEST_CAP: the prose shows five, then "…and N more."
+function briefingSections(d) {
+  const out = [];
+  if (d.weather !== null && d.weather !== undefined) out.push({ key: "weather", title: "Weather", lines: [d.weather] });
+  if (d.calendar !== null && d.calendar !== undefined)
+    out.push({ key: "calendar", title: "Calendar", lines: typeof d.calendar === "string" ? [d.calendar] : d.calendar });
+  if (d.reminders !== null && d.reminders !== undefined)
+    out.push({ key: "reminders", title: "Reminders", lines: d.reminders.map(r => r.local + "  " + r.content), count: d.reminders.length });
+  const mail = d.email || [];
+  if (mail.length) out.push({ key: "email", title: "Email", lines: mail.slice(0, BRIEF_MAIL).map(m => m.sender + " — " + m.subject)
+    .concat(mail.length > BRIEF_MAIL ? ["…and " + (mail.length - BRIEF_MAIL) + " more."] : []) });
+  if (d.shopping !== null && d.shopping !== undefined) out.push({ key: "shopping", title: "Shopping", lines: [], count: d.shopping });
+  return out;
+}
 
 async function api(path, opts = {}) {
   const res = await fetch(path, {
@@ -646,6 +676,7 @@ function signOut(message = "") {
   // A shared screen: whoever signs in next must not see this thread, these
   // chips or this name while their own are still loading.
   $("#inner").innerHTML = ""; $("#reads").innerHTML = ""; $("#whoname").textContent = "";
+  $("#today").innerHTML = ""; $("#today").hidden = true;
   rows = []; lastId = 0; oldestId = null; exhausted = false;
 }
 
@@ -925,8 +956,31 @@ function locateCard(_data, mount) {
   }, err => status(err.code === 1 ? "Location permission was denied." : "Couldn't get a location fix."));
 }
 
-const CARDS = { shopping: shoppingCard, notes: notesCard,
-                ideas: ideasCard, reminders: remindersCard, locate: locateCard };
+// The day at a glance: the Today panel and the "Catch me up" chip both draw
+// it. Read-only; the shopping section's button opens the live shopping card.
+function briefingCard(data, mount) {
+  const secs = briefingSections(data);
+  const empty = { weather: "", calendar: "Nothing on the calendar.", reminders: "No reminders today.", shopping: "The list is empty." };
+  mount.innerHTML =
+    '<div class="brief">' +
+      '<p class="bgreet">' + esc(data.greeting || "") + "</p>" +
+      '<div class="bgrid">' +
+      secs.map(s =>
+        '<div class="card bsec"><header>' + esc(s.title) +
+          (s.count !== undefined ? " · " + esc(String(s.count)) : "") + "</header>" +
+          (s.key === "shopping"
+            ? '<p class="csugg">' + (s.count ? esc(String(s.count)) + " item" + (s.count === 1 ? "" : "s") + " on the list." : empty.shopping) +
+              ' <button class="cundo bopen" data-intent="recall_shopping">open</button></p>'
+            : s.lines.length
+              ? "<ul>" + s.lines.map(l => '<li><span class="citem">' + esc(l) + "</span></li>").join("") + "</ul>"
+              : '<p class="cempty">' + esc(empty[s.key] || "") + "</p>") +
+        "</div>").join("") +
+      "</div></div>";
+  for (const b of mount.querySelectorAll(".bopen")) b.onclick = () => showRead(b.dataset.intent);
+}
+
+const CARDS = { shopping: shoppingCard, notes: notesCard, ideas: ideasCard,
+                reminders: remindersCard, locate: locateCard, briefing: briefingCard };
 
 function renderCard(card, mount, files) {
   const draw = CARDS[card.kind];
@@ -1014,11 +1068,14 @@ function rowNode(r, prev, live) {
     const card = live && live.cards.length ? live.cards.shift() : null;
     if (card) renderCard(card, b.querySelector(".body"), live.files);
     // A card with no refresh intent (locate) is one-shot: re-mounting it would
-    // re-ask the browser for a position on every reload, or 400 trying.
+    // re-ask the browser for a position on every reload, or 400 trying. A
+    // briefing is a snapshot of its day: re-read tomorrow it would put
+    // tomorrow's date under yesterday's separator, so its stored prose stands
+    // and the Today panel is the live one.
     // ponytail: every stored card row re-dispatches each time it is drawn
     // (load, Today, page-back), and ten shopping cards mean ten identical
     // reads; one shared read per intent+params when timelines carry many.
-    else if (r.card.intent) mountStoredCard(r.card, b.querySelector(".body"));
+    else if (r.card.intent && r.card.kind !== "briefing") mountStoredCard(r.card, b.querySelector(".body"));
   }
   frag.append(b);
   return frag;
@@ -1109,6 +1166,7 @@ async function poll() {
   // own response draws its turn, and the next tick reads anything else
   if (busy || !token) return;
   append(page);
+  loadToday();
 }
 $("#log").addEventListener("scroll", () => { if ($("#log").scrollTop < 40) loadOlder(); });
 // ponytail: a 30-second poll, not push (SSE or a websocket), so a reminder
@@ -1147,6 +1205,39 @@ async function showRead(intent) {
   } catch (e) {
     bubble("assistant", "<em>" + esc(e.message || "Something went wrong.") + "</em>");
   }
+}
+
+/* ── the Today panel ───────────────────────────────────────────────────── */
+// The briefing, above the timeline: drawn on start and on each visible poll
+// tick. Never written to the timeline -- /api/dispatch stores nothing -- and
+// gone entirely when the briefing is off (a 404) or the read fails.
+// ponytail: the whole day is re-read and redrawn every 30 seconds while the
+// page is visible; cheap because the briefing makes no model call and the
+// weather and calendar reads are cached server-side. A changed-data check
+// would earn its keep only if a section ever got expensive.
+async function loadToday() {
+  const box = $("#today"), mine = token;
+  try {
+    const r = await dispatch("briefing", {});
+    if (token !== mine) return;   // signed out (or in as someone else) mid-read
+    const card = (r.cards || [])[0];
+    if (!card || card.kind !== "briefing") { box.hidden = true; return; }
+    box.innerHTML = '<div class="thead">Today<button type="button" id="tfold"></button></div><div class="tmount"></div>';
+    briefingCard(card.data || {}, box.querySelector(".tmount"));
+    let closed = false; try { closed = localStorage.getItem("wren_today") === "closed"; } catch (e) {}
+    const fold = box.querySelector("#tfold");
+    const show = () => {
+      box.classList.toggle("closed", closed);
+      fold.textContent = closed ? "show" : "hide";
+      fold.setAttribute("aria-expanded", closed ? "false" : "true");
+    };
+    show();
+    fold.onclick = () => {
+      closed = !closed; show();
+      try { localStorage.setItem("wren_today", closed ? "closed" : ""); } catch (e) {}
+    };
+    box.hidden = false;
+  } catch (e) { box.hidden = true; }   // briefing off (404) or a blip: no panel
 }
 
 /* ── attachments ───────────────────────────────────────────────────────── */
@@ -1576,6 +1667,7 @@ async function start() {
   const me = api("/api/me");
   me.then(m => { $("#whoname").textContent = m.name || "Signed in"; drawReads(m.skills || []); showModel(m.model); }).catch(() => {});
   await loadTimeline(me);
+  loadToday();
   $("#text").focus();
 }
 

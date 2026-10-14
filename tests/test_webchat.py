@@ -468,3 +468,9 @@ def test_sign_in_copy_names_no_env_var_or_command():
     _, _, html = asyncio.run(_page_request())
     login = html[html.index('id="login"'):html.index('id="app"')]
     assert "WREN_TOKENS" not in login and "manage.sh" not in login
+
+
+def test_page_mounts_the_today_panel_from_the_briefing():
+    _, _, html = asyncio.run(_page_request())
+    assert "briefing: briefingCard" in html
+    assert 'dispatch("briefing"' in html

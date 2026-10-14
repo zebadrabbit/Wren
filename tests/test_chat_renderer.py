@@ -703,3 +703,48 @@ def test_the_review_fixes_to_the_timeline_page_stay_in():
     assert "r.repeat" in rc and 'title="stop this reminder"' in rc and 'title="done"' in rc
     assert ".card li.cgone .ctick" not in src     # dead: the undo arrow replaces the tick
     assert src.count(".pslabel .plock {") == 1
+
+
+# ── the Today panel (Task 7) ───────────────────────────────────────────────
+
+def test_briefing_sections_skip_unconfigured_and_keep_empty(tmp_path):
+    data = ('{"greeting":"Good morning. Tue Oct 13.","weather":null,'
+            '"calendar":[],"reminders":[{"local":"18:00","content":"bins"}],"email":[],"shopping":0}')
+    out = run_js(f"JSON.stringify(briefingSections({data}).map(s => [s.key, s.lines.length]))", tmp_path)
+    assert out == '[["calendar",0],["reminders",1],["shopping",0]]'
+
+
+def test_briefing_sections_render_a_calendar_error_as_its_line(tmp_path):
+    data = '{"greeting":"g","weather":"x","calendar":"couldn\'t reach the feed.","reminders":null,"email":[],"shopping":null}'
+    out = run_js(f"JSON.stringify(briefingSections({data}))", tmp_path)
+    assert '"key":"calendar"' in out and "reach the feed" in out
+    assert '"key":"reminders"' not in out and '"key":"shopping"' not in out
+
+
+def test_briefing_sections_cap_email_like_the_prose(tmp_path):
+    # gather() sends every watched mail; render() shows five and "…and N more."
+    # The panel says the same thing the prose does.
+    mail = ",".join(f'{{"sender":"s{i}","subject":"t{i}"}}' for i in range(8))
+    data = f'{{"greeting":"g","weather":null,"calendar":null,"reminders":null,"email":[{mail}],"shopping":null}}'
+    out = run_js(f"JSON.stringify(briefingSections({data})[0].lines)", tmp_path)
+    assert out == '["s0 — t0","s1 — t1","s2 — t2","s3 — t3","s4 — t4","…and 3 more."]'
+
+
+def test_the_today_panel_wiring_stays_in():
+    # Substring guards, as for the timeline above.
+    src = PAGE.read_text(encoding="utf-8")
+    today = _js_function(src, "async function loadToday(")
+    # off (404) or a blip: no panel, and nothing is drawn into the timeline
+    assert "catch (e) { box.hidden = true; }" in today
+    assert "bubble(" not in today and "append(" not in today
+    # the fold survives a browser that refuses storage
+    assert 'try { localStorage.setItem("wren_today"' in today
+    # refreshed on a visible tick: poll() has already returned when hidden
+    poll = _js_function(src, "async function poll(")
+    assert poll.index("document.hidden") < poll.index("loadToday()")
+    # a shared screen never shows the last person's day
+    assert '$("#today").hidden = true' in _js_function(src, "function signOut(")
+    # the open panel is the landing; two greetings stacked was seen 2026-10-14
+    assert "#today:not([hidden]):not(.closed) ~ #log #landing { display: none; }" in src
+    # yesterday's stored briefing keeps its prose: re-read, it would say today
+    assert 'r.card.kind !== "briefing"' in _js_function(src, "function rowNode(")
