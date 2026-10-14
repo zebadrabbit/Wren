@@ -8,6 +8,7 @@ os.environ.setdefault("LMSTUDIO_MODEL", "test-model")
 from aiohttp.test_utils import TestClient, TestServer
 
 from wren import config
+from wren import contacts
 from wren import registry
 from wren import settings
 from wren.communication import http_plugin as http_surface
@@ -23,6 +24,7 @@ def tokens(monkeypatch, isolated_db):
     monkeypatch.setattr(config, "WREN_TOKENS", {TOKEN_OWNER: USER_OWNER, TOKEN_OTHER: USER_OTHER})
     monkeypatch.setattr(config, "id_to_name", lambda: {USER_OWNER: "ann", USER_OTHER: "bob"})
     settings.init_db()
+    contacts.init_db()
 
 
 async def _request(method, path, *, token=None, **kw):
@@ -369,3 +371,53 @@ def test_patching_a_setting_env_defines_is_refused(monkeypatch):
     assert status == 400
     assert ".env" in body["error"]
     assert settings.get("TIMEZONE") is None
+
+
+# ── people ─────────────────────────────────────────────────────────────────
+
+def test_contacts_list_is_owner_only():
+    assert call("get", "/api/contacts", token=TOKEN_OTHER)[0] == 403
+    status, rows = call("get", "/api/contacts", token=TOKEN_OWNER)
+    assert (status, rows) == (200, [])
+
+
+def test_add_a_contact_then_a_second_surface_then_remove():
+    status, row = call("post", "/api/contacts", token=TOKEN_OWNER,
+                       json={"alias": "Hubby", "surface": "discord", "id": "123"})
+    assert (status, row) == (201, {"alias": "hubby", "discord": 123, "telegram": None})
+    status, row = call("post", "/api/contacts", token=TOKEN_OWNER,
+                       json={"alias": "hubby", "surface": "telegram", "id": 456})
+    assert (status, row) == (200, {"alias": "hubby", "discord": 123, "telegram": 456})
+    assert call("get", "/api/contacts", token=TOKEN_OWNER)[1] == [row]
+    assert call("delete", "/api/contacts/hubby", token=TOKEN_OWNER) == (200, {"ok": True})
+    assert call("delete", "/api/contacts/hubby", token=TOKEN_OWNER)[0] == 404
+
+
+@pytest.mark.parametrize("body", [
+    {"alias": "", "surface": "discord", "id": "1"},
+    {"alias": "owner", "surface": "discord", "id": "1"},
+    {"alias": "x", "surface": "sms", "id": "1"},
+    {"alias": "x", "surface": "discord", "id": "abc"},
+    {"alias": "x", "surface": "discord"},
+    {"alias": 5, "surface": "discord", "id": "1"},
+])
+def test_add_contact_rejects_bad_bodies(body):
+    status, out = call("post", "/api/contacts", token=TOKEN_OWNER, json=body)
+    assert status == 400 and "error" in out
+
+
+def test_add_contact_refuses_a_surface_the_person_already_has():
+    call("post", "/api/contacts", token=TOKEN_OWNER, json={"alias": "kim", "surface": "discord", "id": "1"})
+    status, out = call("post", "/api/contacts", token=TOKEN_OWNER, json={"alias": "kim", "surface": "discord", "id": "2"})
+    assert status == 409
+
+
+def test_add_contact_refuses_an_id_registered_under_another_name():
+    call("post", "/api/contacts", token=TOKEN_OWNER, json={"alias": "kim", "surface": "discord", "id": "1"})
+    status, out = call("post", "/api/contacts", token=TOKEN_OWNER, json={"alias": "sam", "surface": "discord", "id": "1"})
+    assert status == 409
+
+
+def test_contact_routes_are_not_for_non_owners():
+    assert call("post", "/api/contacts", token=TOKEN_OTHER, json={"alias": "x", "surface": "discord", "id": "1"})[0] == 403
+    assert call("delete", "/api/contacts/x", token=TOKEN_OTHER)[0] == 403

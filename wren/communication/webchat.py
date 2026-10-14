@@ -2,10 +2,12 @@ import importlib
 import logging
 import pathlib
 import pkgutil
+import sqlite3
 
 from aiohttp import web
 
 from .. import config
+from .. import contacts
 from .. import conversations
 from ..channel import CollectingChannel, Ctx
 from .http_plugin import file_entries
@@ -288,6 +290,53 @@ def register_routes(app: web.Application, authenticate) -> None:
         return web.json_response(dict(_plugin_row(target),
                                       enabled=registry.is_enabled(target)))
 
+    def _contact_row(alias: str) -> dict:
+        return contacts.get(alias) or {"alias": alias, **{s: None for s in contacts.SURFACES}}
+
+    async def list_contacts(request):
+        _owner(request)
+        return web.json_response([_contact_row(a) for a in sorted(contacts.all())])
+
+    async def add_contact(request):
+        """The same rules as contacts_skill.add_contact, over HTTP: the owner's
+        name and the placeholder "owner" are taken, a surface a person already
+        has an id on is taken, and an id already registered under another
+        name is a conflict. Kept in step by hand; a shared helper would be
+        the right move the third time a rule is added."""
+        _owner(request)
+        body = await _json_object(request)
+        alias, surface, raw_id = body.get("alias"), body.get("surface"), body.get("id")
+        if not isinstance(alias, str) or not alias.strip():
+            return web.json_response({"error": "alias must be a name"}, status=400)
+        alias = alias.strip().lower()
+        if alias == "owner":
+            return web.json_response({"error": '"owner" is the placeholder for you, not a contact'}, status=400)
+        if surface not in contacts.SURFACES:
+            return web.json_response({"error": f"surface must be one of {', '.join(contacts.SURFACES)}"}, status=400)
+        if not isinstance(raw_id, (str, int)) or isinstance(raw_id, bool) or not str(raw_id).strip().isdigit():
+            return web.json_response({"error": "id must be the number that app calls them"}, status=400)
+        surface_id = int(str(raw_id).strip())
+        existing = alias in contacts.all()
+        if alias in config.whitelist() and not existing:
+            return web.json_response({"error": "that name is taken"}, status=409)
+        if existing and surface in contacts.surfaces_of(contacts.all()[alias]):
+            return web.json_response({"error": f"{alias} already has a {surface} id"}, status=409)
+        try:
+            if existing:
+                contacts.set_id(alias, surface, surface_id)
+            else:
+                contacts.add(alias, surface_id, surface=surface)
+        except sqlite3.IntegrityError:
+            return web.json_response({"error": "that id is already registered under another name"}, status=409)
+        return web.json_response(_contact_row(alias), status=200 if existing else 201)
+
+    async def remove_contact(request):
+        _owner(request)
+        alias = request.match_info["alias"].strip().lower()
+        if not contacts.remove(alias):
+            return web.json_response({"error": "no such contact"}, status=404)
+        return web.json_response({"ok": True})
+
     async def patch_settings(request):
         _owner(request)
         body = await _json_object(request)
@@ -308,3 +357,6 @@ def register_routes(app: web.Application, authenticate) -> None:
     app.router.add_get("/api/plugins", get_plugins)
     app.router.add_patch("/api/plugins/{module}", patch_plugin)
     app.router.add_patch("/api/settings", patch_settings)
+    app.router.add_get("/api/contacts", list_contacts)
+    app.router.add_post("/api/contacts", add_contact)
+    app.router.add_delete("/api/contacts/{alias}", remove_contact)
