@@ -9,6 +9,7 @@ import base64
 from aiohttp.test_utils import TestClient, TestServer
 
 from wren import config
+from wren import conversations
 from wren import core
 from wren.communication import http_plugin as http_surface
 
@@ -16,9 +17,10 @@ TOKENS = {"good-token": 1}
 
 
 @pytest.fixture(autouse=True)
-def tokens(monkeypatch):
+def tokens(monkeypatch, isolated_db):
     monkeypatch.setattr(config, "WREN_TOKENS", dict(TOKENS))
     monkeypatch.setattr(config, "id_to_name", lambda: {1: "owner"})
+    conversations.init_db()
 
 
 async def _request(method, path, *, token=None, expect_json=True, **kw):
@@ -43,6 +45,7 @@ def _replies(*texts, files=()):
             await channel.send(t)
         for data, name in outbound:
             await channel.send_file(data, name)
+        return []
     return fake
 
 
@@ -184,8 +187,6 @@ def test_voice_destructive_intent_asks_for_confirmation_end_to_end(monkeypatch):
     from wren import stt, brain, settings
     from wren.skills import shopping_store, memory_store
 
-    from wren import conversations
-    conversations.init_db()
     settings.init_db()
     shopping_store.init_db()
     memory_store.init_db()          # harmless here -- the chat branch is never reached
@@ -315,7 +316,6 @@ def test_dry_run_message_leaves_no_rows_end_to_end(monkeypatch):
     # The real core and a real store: the only fake is the classifier.
     from wren import brain, contacts, settings
     from wren.skills import shopping_store
-    from wren import conversations; conversations.init_db()
     contacts.init_db(); settings.init_db(); shopping_store.init_db()
     monkeypatch.setattr(brain, "detect_intent", lambda *a, **k: {
         "intent": "add_shopping_item", "content": "potatoes", "tags": [], "person": None})
@@ -441,7 +441,6 @@ def test_multipart_photo_end_to_end_saves_a_note_with_the_image(monkeypatch):
     # Real core, real notes skill, real store; only the classifier is faked.
     from wren import brain, contacts, settings
     from wren.skills import notes_store
-    from wren import conversations; conversations.init_db()
     contacts.init_db(); settings.init_db(); notes_store.init_db()
     monkeypatch.setattr(brain, "detect_intent", lambda *a, **k: {
         "intent": "chat", "content": "", "tags": ["receipt"], "person": None})
@@ -455,10 +454,40 @@ def test_multipart_photo_end_to_end_saves_a_note_with_the_image(monkeypatch):
 def test_multipart_photo_in_a_dry_run_leaves_no_note(monkeypatch):
     from wren import brain, contacts, settings
     from wren.skills import notes_store
-    from wren import conversations; conversations.init_db()
     contacts.init_db(); settings.init_db(); notes_store.init_db()
     monkeypatch.setattr(brain, "detect_intent", lambda *a, **k: {
         "intent": "chat", "content": "", "tags": [], "person": None})
     status, body = call("post", "/message?dry_run=1", token="good-token", data=_multipart("tyre place", ("r.jpg", JPEG)))
     assert status == 200 and body["replies"] == ["Saved, 1 image."] and body["dry_run"] is True
     assert notes_store.list_recent(1) == []
+
+
+def test_message_payload_carries_the_rows_written(monkeypatch):
+    from wren import brain
+    monkeypatch.setattr(brain, "detect_intent", lambda *a, **k: {"intent": "help", "content": "", "tags": []})
+    status, body = call("post", "/message", token="good-token", json={"text": "help"})
+    assert status == 200
+    assert [m["role"] for m in body["messages"]] == ["user", "assistant"]
+    assert body["messages"][0]["content"] == "help"
+    assert body["messages"][0]["channel"] == "web"
+    assert body["messages"][1]["content"] == body["replies"][0]
+    assert body["cards"] == []
+    assert [r["id"] for r in conversations.timeline(1)] == [m["id"] for m in body["messages"]]
+
+
+def test_voice_rows_are_recorded_as_voice(monkeypatch):
+    from wren import brain, stt
+    monkeypatch.setattr(stt, "transcribe", lambda audio: "help")
+    monkeypatch.setattr(brain, "detect_intent", lambda *a, **k: {"intent": "help", "content": "", "tags": []})
+    status, body = call("post", "/voice", token="good-token", data=b"RIFF")
+    assert status == 200
+    assert body["messages"][0]["channel"] == "voice"
+
+
+def test_dry_run_returns_the_rows_but_persists_none(monkeypatch):
+    from wren import brain
+    monkeypatch.setattr(brain, "detect_intent", lambda *a, **k: {"intent": "help", "content": "", "tags": []})
+    status, body = call("post", "/message?dry_run=1", token="good-token", json={"text": "help"})
+    assert status == 200 and body["dry_run"] is True
+    assert [m["role"] for m in body["messages"]] == ["user", "assistant"]
+    assert conversations.timeline(1) == []

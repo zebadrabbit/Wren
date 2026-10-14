@@ -226,8 +226,7 @@ class _Recording:
         self.written.append(conversations.add_message(self._home, "assistant", text, channel=self.NAME))
 
     async def send_file(self, data: bytes, filename: str) -> None:
-        # files are not persisted (see WebChannel's old send_file): the reply
-        # text that accompanies them is the row
+        # files are not persisted: the reply text that accompanies them is the row
         await self.inner.send_file(data, filename)
 
     async def send_card(self, kind: str, data: dict, text: str,

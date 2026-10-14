@@ -7,40 +7,17 @@ from aiohttp import web
 
 from .. import config
 from .. import conversations
-from .. import core
 from ..channel import CollectingChannel, Ctx
-from .http_plugin import file_entries, read_message
+from .http_plugin import file_entries
 
 _PAGE = pathlib.Path(__file__).with_name("chat.html")
 
-
-
-def _conversation_or_404(conversation_id, user_id) -> dict:
-    convo = conversations.get(conversation_id, user_id)
-    if convo is None:
-        # 404 rather than 403 on purpose: a 403 would confirm that someone
-        # else's conversation exists at this id
-        raise web.HTTPNotFound(text='{"error": "no such conversation"}',
-                               content_type="application/json")
-    return convo
 
 
 # sqlite binds 64-bit signed integers; Python ints are unbounded, so
 # int("9223372036854775808") parses fine and then blows up at bind time as a
 # 500 instead of an honest 404
 _SQLITE_INT_MAX = 2 ** 63 - 1
-
-
-def _id_from(request: web.Request) -> int:
-    try:
-        value = int(request.match_info["id"])
-    except (KeyError, ValueError):
-        raise web.HTTPNotFound(text='{"error": "no such conversation"}',
-                               content_type="application/json")
-    if not (-_SQLITE_INT_MAX - 1 <= value <= _SQLITE_INT_MAX):
-        raise web.HTTPNotFound(text='{"error": "no such conversation"}',
-                               content_type="application/json")
-    return value
 
 
 async def _json_object(request: web.Request) -> dict:
@@ -126,57 +103,35 @@ def register_routes(app: web.Application, authenticate) -> None:
                                     content_type="application/json")
         return user_id
 
-    async def list_conversations(request):
-        return web.json_response(conversations.list_for(_auth(request)))
+    def _query_int(request, key, default=None):
+        raw = request.query.get(key)
+        if raw is None:
+            return default
+        try:
+            value = int(raw)
+        except ValueError:
+            raise web.HTTPBadRequest(text=f'{{"error": "{key} must be an integer"}}',
+                                     content_type="application/json")
+        if not (0 <= value <= _SQLITE_INT_MAX):
+            # sqlite binds 64-bit signed ints; an unbounded Python int would
+            # blow up at bind time as a 500 instead of an honest 400
+            raise web.HTTPBadRequest(text=f'{{"error": "{key} is out of range"}}',
+                                     content_type="application/json")
+        return value
 
-    async def create_conversation(request):
+    async def timeline(request):
+        """The person's whole thread, paged. No conversation ids anywhere:
+        a token maps to a person and a person has one timeline."""
         user_id = _auth(request)
-        convo_id = conversations.create(user_id)
-        return web.json_response({"id": convo_id, "title": "New chat"})
-
-    async def get_conversation(request):
-        user_id = _auth(request)
-        convo = _conversation_or_404(_id_from(request), user_id)
-        convo["messages"] = [
-            {"role": m["role"], "content": m["content"], "created_at": m["created_at"],
-             "card": m["card"]}
-            for m in conversations.messages(convo["id"])
-        ]
-        return web.json_response(convo)
-
-    async def rename_conversation(request):
-        user_id = _auth(request)
-        convo_id = _id_from(request)
-        _conversation_or_404(convo_id, user_id)
-        body = await _json_object(request)
-        title = body.get("title", "")
-        if not isinstance(title, str) or not conversations.rename(convo_id, user_id, title):
-            return web.json_response({"error": "title must not be empty"}, status=400)
-        return web.json_response({"ok": True})
-
-    async def delete_conversation(request):
-        user_id = _auth(request)
-        convo_id = _id_from(request)
-        _conversation_or_404(convo_id, user_id)
-        conversations.delete(convo_id, user_id)
-        return web.json_response({"ok": True})
-
-    async def post_message(request):
-        user_id = _auth(request)
-        convo_id = _id_from(request)
-        convo = _conversation_or_404(convo_id, user_id)
-
-        text, files = await read_message(request)
-        if not text.strip() and not files:
-            return web.json_response({"error": "missing 'text'"}, status=400)
-        channel = CollectingChannel()
-        await core.handle_message(user_id, text, channel, files=files)
-
-        return web.json_response({
-            "replies": channel.sent,
-            "files": file_entries(channel.files),
-            "cards": channel.cards,
-        })
+        before = _query_int(request, "before")
+        after = _query_int(request, "after")
+        if before is not None and after is not None:
+            return web.json_response({"error": "use before or after, not both"}, status=400)
+        # clamped, not refused: a page asking for 999 wants "a lot", and 200
+        # is the most one response should carry
+        limit = max(1, min(_query_int(request, "limit", 50), 200))
+        return web.json_response(
+            conversations.timeline(user_id, before=before, after=after, limit=limit))
 
     async def dispatch(request):
         """Run one intent directly, skipping the classifier.
@@ -339,12 +294,7 @@ def register_routes(app: web.Application, authenticate) -> None:
         return web.json_response({key: config.serialize_setting(key) for key in config.SETTABLE})
 
     app.router.add_get("/", page)
-    app.router.add_get("/api/conversations", list_conversations)
-    app.router.add_post("/api/conversations", create_conversation)
-    app.router.add_get("/api/conversations/{id}", get_conversation)
-    app.router.add_patch("/api/conversations/{id}", rename_conversation)
-    app.router.add_delete("/api/conversations/{id}", delete_conversation)
-    app.router.add_post("/api/conversations/{id}/message", post_message)
+    app.router.add_get("/api/timeline", timeline)
     app.router.add_post("/api/dispatch", dispatch)
     app.router.add_get("/api/me", get_me)
     app.router.add_get("/api/plugins", get_plugins)

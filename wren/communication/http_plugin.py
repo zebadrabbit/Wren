@@ -8,6 +8,7 @@ import sys
 from aiohttp import web
 
 from .. import config
+from .. import conversations
 from .. import core
 from .. import db
 from .. import filetypes
@@ -90,10 +91,14 @@ def file_entries(files: list[tuple[bytes, str]]) -> list[dict]:
     ]
 
 
-def _payload(channel: CollectingChannel, **extra) -> dict:
+def _payload(channel: CollectingChannel, written: list[int], **extra) -> dict:
     return {
         "replies": channel.sent,
         "files": file_entries(channel.files),
+        "cards": channel.cards,
+        # exactly the rows this turn stored, so the page draws what the
+        # timeline will show on its next poll and nothing twice
+        "messages": conversations.by_ids(written),
         **extra,
     }
 
@@ -107,14 +112,17 @@ async def _dispatch(user_id: int, text: str, *, source: str = "text",
                     name: str = "web", **extra) -> web.Response:
     """dry: run against a discarded snapshot of the database (see db.dry_run)
     and echo `dry_run: true` so a caller can never mistake which one it got.
-    For testing a live install without touching its data."""
+    For testing a live install without touching its data. The payload is
+    built inside the snapshot: the rows it reports exist only there."""
     channel = CollectingChannel(name=name)
     if dry:
         extra["dry_run"] = True
         with db.dry_run():
-            await core.handle_message(user_id, text, channel, source=source, files=files)
+            written = await core.handle_message(user_id, text, channel, source=source, files=files)
+            payload = _payload(channel, written, **extra)
     else:
-        await core.handle_message(user_id, text, channel, source=source, files=files)
+        written = await core.handle_message(user_id, text, channel, source=source, files=files)
+        payload = _payload(channel, written, **extra)
     if not channel.sent and not channel.files:
         # core's authorization gate returned silently — the token is valid but
         # maps to a user who is not whitelisted. Say so rather than returning
@@ -123,7 +131,7 @@ async def _dispatch(user_id: int, text: str, *, source: str = "text",
             return web.json_response(
                 {"error": "user not whitelisted"}, status=403
             )
-    return web.json_response(_payload(channel, **extra))
+    return web.json_response(payload)
 
 
 async def health(request: web.Request) -> web.Response:

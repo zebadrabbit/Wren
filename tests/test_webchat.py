@@ -49,23 +49,6 @@ async def _page_request(**kw):
         return resp.status, resp.content_type, await resp.text()
 
 
-def _replies(*texts, files=()):
-    outbound = files
-
-    async def fake(user_id, text, channel, *, files=None):
-        for t in texts:
-            await channel.send(t)
-        for data, name in outbound:
-            await channel.send_file(data, name)
-    return fake
-
-
-def new_convo(token=TOKEN_A):
-    status, body = call("post", "/api/conversations", token=token)
-    assert status == 200
-    return body["id"]
-
-
 # ── the page shell ─────────────────────────────────────────────────────────
 
 def test_page_is_served_without_a_token():
@@ -88,12 +71,10 @@ def test_page_ignores_a_bad_token():
 # ── auth on every api route ────────────────────────────────────────────────
 
 API_ROUTES = [
-    ("get", "/api/conversations"),
-    ("post", "/api/conversations"),
-    ("get", "/api/conversations/1"),
-    ("patch", "/api/conversations/1"),
-    ("delete", "/api/conversations/1"),
-    ("post", "/api/conversations/1/message"),
+    ("get", "/api/timeline"),
+    ("post", "/api/dispatch"),
+    ("get", "/api/me"),
+    ("get", "/api/plugins"),
 ]
 
 
@@ -110,290 +91,6 @@ def test_api_route_with_wrong_token_is_401(method, path):
                         json={"text": "hi", "title": "t"})
     assert status == 401
     assert body["error"] == "unauthorized"
-
-
-def test_message_route_never_reaches_core_without_a_token(monkeypatch):
-    called = []
-    monkeypatch.setattr(core, "handle_message", lambda *a: called.append(a))
-    status, _ = call("post", "/api/conversations/1/message", json={"text": "hi"})
-    assert status == 401
-    assert called == []
-
-
-# ── conversation crud ──────────────────────────────────────────────────────
-
-def test_create_then_list():
-    status, body = call("post", "/api/conversations", token=TOKEN_A)
-    assert status == 200
-    assert body["title"] == "New chat"
-    assert isinstance(body["id"], int)
-
-    status, listed = call("get", "/api/conversations", token=TOKEN_A)
-    assert status == 200
-    assert [c["id"] for c in listed] == [body["id"]]
-    assert listed[0]["title"] == "New chat"
-    assert listed[0]["created_at"] and listed[0]["updated_at"]
-
-
-def test_list_is_empty_for_a_fresh_user():
-    status, listed = call("get", "/api/conversations", token=TOKEN_B)
-    assert status == 200
-    assert listed == []
-
-
-def test_get_on_a_brand_new_conversation_has_no_messages():
-    cid = new_convo()
-    status, body = call("get", f"/api/conversations/{cid}", token=TOKEN_A)
-    assert status == 200
-    assert body["messages"] == []
-
-
-def test_patch_renames():
-    cid = new_convo()
-    status, body = call("patch", f"/api/conversations/{cid}", token=TOKEN_A,
-                        json={"title": "  Plumber  saga "})
-    assert status == 200
-    assert body == {"ok": True}
-
-    _, listed = call("get", "/api/conversations", token=TOKEN_A)
-    assert listed[0]["title"] == "Plumber saga"
-
-
-def test_patch_with_blank_title_is_400():
-    cid = new_convo()
-    status, body = call("patch", f"/api/conversations/{cid}", token=TOKEN_A,
-                        json={"title": "   "})
-    assert status == 400
-    assert "title" in body["error"]
-
-
-def test_patch_with_non_json_body_is_400():
-    cid = new_convo()
-    status, body = call("patch", f"/api/conversations/{cid}", token=TOKEN_A,
-                        data="not json")
-    assert status == 400
-    assert "JSON" in body["error"]
-
-
-@pytest.mark.parametrize("bad", ["abc", "1.5", "%20", "12x", "-", "1;drop"])
-def test_non_integer_id_is_404_not_500(bad):
-    status, body = call("get", f"/api/conversations/{bad}", token=TOKEN_A)
-    assert status == 404
-    assert body["error"] == "no such conversation"
-
-
-def test_trailing_slash_id_is_404_not_500():
-    # no route matches, so aiohttp's own plain-text 404 answers — still not a 500
-    status, text = call("get", "/api/conversations/", token=TOKEN_A, expect_json=False)
-    assert status == 404
-    assert "Traceback" not in text
-
-
-def test_unknown_id_is_404():
-    for method, path in (("get", "/api/conversations/99999"),
-                         ("patch", "/api/conversations/99999"),
-                         ("delete", "/api/conversations/99999"),
-                         ("post", "/api/conversations/99999/message")):
-        status, body = call(method, path, token=TOKEN_A,
-                            json={"text": "hi", "title": "t"})
-        assert status == 404, (method, path, status)
-        assert body["error"] == "no such conversation"
-
-
-def test_non_integer_id_on_message_route_is_404_not_500(monkeypatch):
-    called = []
-    monkeypatch.setattr(core, "handle_message", lambda *a: called.append(a))
-    status, _ = call("post", "/api/conversations/abc/message", token=TOKEN_A,
-                     json={"text": "hi"})
-    assert status == 404
-    assert called == []
-
-
-# ── cross-user isolation ───────────────────────────────────────────────────
-
-def test_other_users_conversation_is_404_on_get(monkeypatch):
-    monkeypatch.setattr(core, "handle_message", _replies("ok"))
-    cid = new_convo(TOKEN_A)
-    call("post", f"/api/conversations/{cid}/message", token=TOKEN_A,
-         json={"text": "private"})
-
-    status, body = call("get", f"/api/conversations/{cid}", token=TOKEN_B)
-    # exactly 404: a 403 would confirm the conversation exists
-    assert status == 404
-    assert body["error"] == "no such conversation"
-    assert "private" not in str(body)
-
-
-def test_other_users_conversation_is_404_on_patch():
-    cid = new_convo(TOKEN_A)
-    status, _ = call("patch", f"/api/conversations/{cid}", token=TOKEN_B,
-                     json={"title": "hijacked"})
-    assert status == 404
-    _, listed = call("get", "/api/conversations", token=TOKEN_A)
-    assert listed[0]["title"] == "New chat"
-
-
-def test_other_users_conversation_is_404_on_delete():
-    cid = new_convo(TOKEN_A)
-    status, _ = call("delete", f"/api/conversations/{cid}", token=TOKEN_B)
-    assert status == 404
-    assert [c["id"] for c in call("get", "/api/conversations", token=TOKEN_A)[1]] == [cid]
-
-
-def test_other_users_conversation_is_404_on_post_message(monkeypatch):
-    called = []
-
-    async def fake(user_id, text, channel, *, files=None):
-        called.append((user_id, text))
-        await channel.send("leaked")
-
-    monkeypatch.setattr(core, "handle_message", fake)
-    cid = new_convo(TOKEN_A)
-    status, body = call("post", f"/api/conversations/{cid}/message", token=TOKEN_B,
-                        json={"text": "whose chat is this"})
-    assert status == 404
-    assert body["error"] == "no such conversation"
-    assert called == []                     # core never dispatched
-    assert conversations.messages(cid) == []  # nothing written to A's convo
-
-
-def test_list_does_not_leak_other_users_conversations():
-    a1, a2 = new_convo(TOKEN_A), new_convo(TOKEN_A)
-    b1 = new_convo(TOKEN_B)
-    assert sorted(c["id"] for c in call("get", "/api/conversations", token=TOKEN_A)[1]) == [a1, a2]
-    assert [c["id"] for c in call("get", "/api/conversations", token=TOKEN_B)[1]] == [b1]
-
-
-# ── posting a message ──────────────────────────────────────────────────────
-
-def test_message_dispatches_and_returns_replies(monkeypatch):
-    seen = {}
-
-    async def fake(user_id, text, channel, *, files=None):
-        seen["user_id"], seen["text"] = user_id, text
-        await channel.send("Saved.")
-
-    monkeypatch.setattr(core, "handle_message", fake)
-    cid = new_convo()
-    status, body = call("post", f"/api/conversations/{cid}/message", token=TOKEN_A,
-                        json={"text": "note this"})
-    assert status == 200
-    assert body["replies"] == ["Saved."]
-    assert body["files"] == []
-    assert seen == {"user_id": USER_A, "text": "note this"}
-
-
-def test_message_returns_files_base64(monkeypatch):
-    monkeypatch.setattr(core, "handle_message",
-                        _replies("here", files=[(b"# notes", "notes.md")]))
-    cid = new_convo()
-    status, body = call("post", f"/api/conversations/{cid}/message", token=TOKEN_A,
-                        json={"text": "export"})
-    assert status == 200
-    assert body["files"] == [
-        {"filename": "notes.md", "mime": "application/octet-stream",
-         "data": base64.b64encode(b"# notes").decode()}
-    ]
-
-
-def test_missing_text_is_400(monkeypatch):
-    called = []
-    monkeypatch.setattr(core, "handle_message", lambda *a: called.append(a))
-    cid = new_convo()
-    status, body = call("post", f"/api/conversations/{cid}/message", token=TOKEN_A,
-                        json={})
-    assert status == 400
-    assert "text" in body["error"]
-    assert called == []
-    assert conversations.messages(cid) == []
-
-
-def test_blank_text_is_400():
-    cid = new_convo()
-    status, _ = call("post", f"/api/conversations/{cid}/message", token=TOKEN_A,
-                     json={"text": "   "})
-    assert status == 400
-    assert conversations.messages(cid) == []
-
-
-def test_non_string_text_is_400():
-    cid = new_convo()
-    status, _ = call("post", f"/api/conversations/{cid}/message", token=TOKEN_A,
-                     json={"text": 42})
-    assert status == 400
-
-
-def test_non_json_body_is_400():
-    cid = new_convo()
-    status, body = call("post", f"/api/conversations/{cid}/message", token=TOKEN_A,
-                        data="not json")
-    assert status == 400
-    assert "JSON" in body["error"]
-    assert conversations.messages(cid) == []
-
-
-# ── history correctness ────────────────────────────────────────────────────
-
-def test_non_whitelisted_user_is_refused_and_writes_nothing(monkeypatch):
-    """authn is not authz. A valid token whose user was de-whitelisted (owner
-    ran "remove hubby") must not be able to create conversations or persist
-    message content. core's gate returns silently, so without a check in the
-    surface this was a cheerful 200 that had already written rows."""
-    monkeypatch.setattr(config, "id_to_name", lambda: {})
-    status, body = call("post", "/api/conversations", token=TOKEN_A)
-    assert status == 403
-    assert body["error"] == "user not whitelisted"
-    for method, path in [("get", "/api/conversations"),
-                         ("get", "/api/conversations/1"),
-                         ("delete", "/api/conversations/1")]:
-        assert call(method, path, token=TOKEN_A)[0] == 403
-
-
-def test_oversized_conversation_id_is_404_not_500():
-    # int() parses unbounded Python ints, but sqlite binds int64 — this used to
-    # blow up at bind time as a 500
-    status, _ = call("get", "/api/conversations/9223372036854775808", token=TOKEN_A)
-    assert status == 404
-
-
-@pytest.mark.parametrize("body", ['"just a string"', "123", "[1,2]", "true"])
-def test_non_object_json_body_is_400_not_500(body, monkeypatch):
-    monkeypatch.setattr(core, "handle_message", _replies("ok"))
-    cid = new_convo()
-    for method, path in [("post", f"/api/conversations/{cid}/message"),
-                         ("patch", f"/api/conversations/{cid}")]:
-        status, _ = call(method, path, token=TOKEN_A, data=body,
-                         headers={"Content-Type": "application/json"})
-        assert status == 400, f"{method} {path} with body {body}"
-
-
-def test_non_string_title_is_400_not_500(monkeypatch):
-    monkeypatch.setattr(core, "handle_message", _replies("ok"))
-    cid = new_convo()
-    status, _ = call("patch", f"/api/conversations/{cid}", token=TOKEN_A,
-                     json={"title": {"nested": "object"}})
-    assert status == 400
-
-
-def test_a_card_comes_back_in_the_message_response():
-    async def fake_handle(user_id, text, channel, *, files=None):
-        await channel.send_card(
-            "shopping", {"items": [{"text": "milk", "added_by": "ann"}]},
-            "milk", intent="recall_shopping", params={"content": ""})
-
-    _, convo = call("post", "/api/conversations", token=TOKEN_A)
-    with patch.object(core, "handle_message", new=fake_handle):
-        status, body = call("post", f"/api/conversations/{convo['id']}/message",
-                            token=TOKEN_A, json={"text": "what's on shopping"})
-    assert status == 200
-    assert body["replies"] == ["milk"]
-    assert body["cards"] == [{
-        "kind": "shopping",
-        "data": {"items": [{"text": "milk", "added_by": "ann"}]},
-        "intent": "recall_shopping",
-        "params": {"content": ""},
-        "text": "milk",
-    }]
 
 
 def test_dispatch_runs_an_intent_without_the_llm():
@@ -448,25 +145,6 @@ def test_dispatch_404s_an_intent_whose_skill_is_disabled():
                          json={"intent": "recall_shopping"})
     assert status == 404
     plugin.handle.assert_not_awaited()
-
-
-def test_dispatch_writes_nothing_to_any_conversation():
-    # clicking a button must not manufacture a fake user message
-    async def fake_handle(intent, ctx):
-        await ctx.channel.send("Removed milk.")
-
-    _, convo = call("post", "/api/conversations", token=TOKEN_A)
-    plugin = MagicMock()
-    # same __name__ requirement as above -- is_enabled() is on the path even
-    # though this test is not exercising it directly.
-    plugin.__name__ = "wren.fake_shopping_skill"
-    plugin.handle = fake_handle
-    with patch.dict(registry.INTENT_HANDLERS, {"remove_shopping_item": plugin}):
-        call("post", "/api/dispatch", token=TOKEN_A,
-             json={"intent": "remove_shopping_item", "content": "milk"})
-
-    _, reloaded = call("get", f"/api/conversations/{convo['id']}", token=TOKEN_A)
-    assert reloaded["messages"] == []
 
 
 # ── dispatch fix round 1 ────────────────────────────────────────────────────
@@ -550,7 +228,7 @@ def test_dispatch_card_carries_intent_and_params_for_a_refresh():
         status, body = call("post", "/api/dispatch", token=TOKEN_A,
                             json={"intent": "recall_shopping"})
     assert status == 200
-    # /api/dispatch reuses CollectingChannel, same as /message's WebChannel
+    # /api/dispatch reuses CollectingChannel, same as /message
     # path -- so the two endpoints' cards are the same shape, "text" included.
     assert body["cards"] == [{
         "kind": "shopping",
@@ -581,7 +259,7 @@ def test_dispatch_returns_files_from_a_send_file_intent():
 
 def test_dispatch_reply_files_carry_mime():
     # dispatch's response used to build {"filename", "data"} with no "mime",
-    # unlike /message and /api/conversations/{id}/message -- the page decides
+    # unlike /message -- the page decides
     # inline image vs download link from mime, so a card-driven reply that
     # happens to carry a file must get the same treatment.
     async def fake_handle(intent, ctx):
@@ -608,14 +286,6 @@ def test_log_is_the_containing_block_for_the_speaker_labels():
     assert "position: relative" in rule
 
 
-def test_reopen_does_not_remount_cards_without_a_refresh_intent():
-    # The locate card has intent "" (one-shot). Re-mounting it on reopen would
-    # re-prompt for geolocation, or 400 on /api/dispatch, every time.
-    from pathlib import Path
-    page = (Path(__file__).parent.parent / "wren" / "communication" / "chat.html").read_text()
-    assert "if (m.card && m.card.intent) mountStoredCard(" in page
-
-
 # ── multipart ─────────────────────────────────────────────────────────────
 
 JPEG = b"\xff\xd8\xff\xe0" + b"\0" * 32
@@ -629,18 +299,6 @@ def _multipart(text, *files):
     for name, data in files:
         form.add_field("file", data, filename=name, content_type="image/jpeg")
     return form
-
-
-def _convo(token=TOKEN_A):
-    _, body = call("post", "/api/conversations", token=token, json={})
-    return body["id"]
-
-
-def test_post_message_reply_files_carry_mime(monkeypatch):
-    monkeypatch.setattr(core, "handle_message", _replies("here", files=[(JPEG, "a.jpg")]))
-    cid = _convo()
-    _, body = call("post", f"/api/conversations/{cid}/message", token=TOKEN_A, json={"text": "show"})
-    assert body["files"][0]["mime"] == "image/jpeg"
 
 
 def _page():
@@ -716,3 +374,68 @@ def test_dispatch_rejects_a_non_string_list_name():
     status, _ = call("post", "/api/dispatch", token=TOKEN_A,
                      json={"intent": "recall_shopping", "list": ["packing"]})
     assert status == 400
+
+
+# ── the timeline ───────────────────────────────────────────────────────────
+
+def _seed(user, *rows):
+    h = conversations.home(user)
+    return [conversations.add_message(h, role, text, channel=ch) for role, text, ch in rows]
+
+
+def test_timeline_is_per_user_oldest_first_with_the_row_shape():
+    _seed(USER_A, ("user", "hi", "web"), ("assistant", "hello", "web"))
+    _seed(USER_B, ("user", "bob's", "telegram"))
+    status, rows = call("get", "/api/timeline", token=TOKEN_A)
+    assert status == 200
+    assert [r["content"] for r in rows] == ["hi", "hello"]
+    assert set(rows[0]) == {"id", "role", "content", "created_at", "channel", "kind", "card"}
+    assert rows[0]["channel"] == "web" and rows[0]["kind"] is None and rows[0]["card"] is None
+
+
+def test_timeline_after_returns_only_newer_rows():
+    ids = _seed(USER_A, ("user", "a", "web"), ("assistant", "b", "web"), ("user", "c", "web"))
+    status, rows = call("get", f"/api/timeline?after={ids[0]}", token=TOKEN_A)
+    assert [r["content"] for r in rows] == ["b", "c"]
+
+
+def test_timeline_before_pages_backwards():
+    ids = _seed(USER_A, *[("user", f"m{n}", "web") for n in range(5)])
+    status, rows = call("get", f"/api/timeline?before={ids[3]}&limit=2", token=TOKEN_A)
+    assert [r["content"] for r in rows] == ["m1", "m2"]
+
+
+def test_timeline_cursor_naming_another_users_row_pages_nothing():
+    (bob,) = _seed(USER_B, ("user", "secret", "web"))
+    _seed(USER_A, ("user", "mine", "web"))
+    for q in (f"before={bob}", f"after={bob}"):
+        status, rows = call("get", f"/api/timeline?{q}", token=TOKEN_A)
+        assert (status, rows) == (200, [])
+
+
+@pytest.mark.parametrize("query", ["before=abc", "after=1.5", "limit=x", "before=1&after=2",
+                                   "before=-1", "before=99999999999999999999"])
+def test_timeline_rejects_bad_parameters(query):
+    status, body = call("get", f"/api/timeline?{query}", token=TOKEN_A)
+    assert status == 400 and "error" in body
+
+
+def test_timeline_limit_is_clamped_not_refused():
+    _seed(USER_A, *[("user", f"m{n}", "web") for n in range(3)])
+    status, rows = call("get", "/api/timeline?limit=999", token=TOKEN_A)
+    assert status == 200 and len(rows) == 3
+    status, rows = call("get", "/api/timeline?limit=0", token=TOKEN_A)
+    assert status == 200 and len(rows) == 1
+
+
+def test_timeline_requires_a_whitelisted_user(monkeypatch):
+    monkeypatch.setattr(config, "id_to_name", lambda: {USER_A: "ann"})
+    status, body = call("get", "/api/timeline", token=TOKEN_B)
+    assert status == 403
+
+
+def test_conversation_routes_are_gone():
+    for method, path in (("get", "/api/conversations"), ("post", "/api/conversations"),
+                         ("get", "/api/conversations/1"), ("post", "/api/conversations/1/message")):
+        status, _ = call(method, path, token=TOKEN_A, expect_json=False)
+        assert status in (404, 405), (method, path)
