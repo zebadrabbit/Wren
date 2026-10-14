@@ -503,3 +503,5 @@ def test_page_lists_spaces_and_can_return_to_today():
     assert "/api/spaces" in html
     assert 'id="space"' in html
     assert "function openSpace" in html
+    assert "openKey" in html
+    assert 'toggle("on", s.key === openKey)' in html

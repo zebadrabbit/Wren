@@ -1682,6 +1682,9 @@ $("#menu").onclick = () => openDrawer(!$("#app").classList.contains("open"));
 $("#scrim").onclick = () => openDrawer(false);
 $("#sidenav").addEventListener("click", e => { if (e.target.closest(".nav")) openDrawer(false); });
 let spaces = [];
+// Which space is open ("" = Today). Kept here, not read back from the DOM: the
+// buttons are rebuilt every poll tick, so the DOM forgets.
+let openKey = "";
 // ponytail: spaces are re-fetched every poll tick rather than on change; one
 // small GET, and the sidebar is rebuilt each time, so ceiling is a few dozen spaces.
 async function loadSpaces() {
@@ -1690,18 +1693,20 @@ async function loadSpaces() {
   if (!token) return;
   spaces = list;
   const box = $("#spaces"); box.innerHTML = "";
-  const open = document.querySelector("#sidenav .nav.on")?.dataset.key;
+  if (openKey && !spaces.some(s => s.key === openKey)) { showToday(); }
   for (const s of spaces) {
     const b = document.createElement("button"); b.className = "nav"; b.dataset.key = s.key;
-    b.classList.toggle("on", s.key === open && $("#app").classList.contains("in-space"));
+    b.classList.toggle("on", s.key === openKey);
     b.textContent = s.label; b.onclick = () => openSpace(s);
     box.append(b);
   }
   box.hidden = $("#spaces-label").hidden = spaces.length === 0;
+  $("#nav-today").classList.toggle("on", !openKey);
 }
 // A space is a card drawn full-pane instead of in a bubble. Same renderer,
 // same dispatch; nothing is written to the timeline.
 async function openSpace(s) {
+  const key = s.key; openKey = key;
   $("#app").classList.add("in-space");
   $("#space").hidden = false;
   $("#ctitle").textContent = s.label;
@@ -1710,12 +1715,14 @@ async function openSpace(s) {
   mount.innerHTML = '<p class="phint">Loading…</p>';
   try {
     const r = await dispatch(s.intent, s.params || {});
+    if (openKey !== key) return; // a slower answer must not overwrite a newer pane
     const card = (r.cards || [])[0];
     mount.innerHTML = "";
     if (!card || !renderCard(card, mount, r.files)) mount.innerHTML = md((r.replies || []).join("\n"));
-  } catch (e) { mount.innerHTML = "<em>" + esc(e.message || "Something went wrong.") + "</em>"; }
+  } catch (e) { if (openKey === key) mount.innerHTML = "<em>" + esc(e.message || "Something went wrong.") + "</em>"; }
 }
 function showToday() {
+  openKey = "";
   $("#app").classList.remove("in-space");
   $("#space").hidden = true;
   $("#space .smount").innerHTML = "";
