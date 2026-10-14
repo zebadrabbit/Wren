@@ -602,6 +602,21 @@ def test_recall_shows_the_rule_in_prose_and_in_the_card():
     assert "every" not in rows[1]["local"]
 
 
+def test_recall_card_rows_carry_the_rule_so_the_card_can_tell_a_series_from_a_one_off():
+    # the web card ticks a one-off "done" but must not offer that same tick on
+    # a series, where cancel_reminder ends every future occurrence
+    when = _future_iso()
+    asyncio.run(reminder_plugin.handle("set_reminder", Ctx(
+        user_id=1, channel=CollectingChannel(), content="check the chickens every morning",
+        text="remind me to check the chickens every morning at 7", when=when)))
+    reminders.save(1, "call mum", _future_iso(240))
+    ch = CollectingChannel()
+    asyncio.run(reminder_plugin.handle("recall_reminders", Ctx(user_id=1, channel=ch, content="")))
+    rows = {r["content"]: r for r in ch.cards[0]["data"]["reminders"]}
+    assert rows["check the chickens"]["repeat"] == "1d"
+    assert rows["call mum"]["repeat"] is None
+
+
 # --- timers ---------------------------------------------------------------
 # "timer 20 minutes" is a reminder with nothing to say; "how long is left" is
 # recall, which now reads "in N min" for anything due within the hour.

@@ -633,11 +633,16 @@ def test_turn_label(row, label, tmp_path):
     assert run_js(f"turnLabel({row})", tmp_path) == label
 
 
-def test_take_token_strips_only_the_token(tmp_path):
-    out = run_js('JSON.stringify(takeToken("https://w/?token=abc&x=1#top"))', tmp_path)
-    assert out == '{"token":"abc","clean":"https://w/?x=1#top"}'
-    out = run_js('JSON.stringify(takeToken("https://w/"))', tmp_path)
-    assert out == '{"token":null,"clean":"https://w/"}'
+def test_take_token_reads_the_fragment_and_strips_it(tmp_path):
+    # the invite rides in #token=, never ?token=: a fragment is not sent to the
+    # server, so the bearer token never lands in its access log
+    out = run_js('JSON.stringify(takeToken("https://w/#token=abc"))', tmp_path)
+    assert out == '{"token":"abc","clean":"https://w/"}'
+    out = run_js('JSON.stringify(takeToken("https://w/?x=1"))', tmp_path)
+    assert out == '{"token":null,"clean":"https://w/?x=1"}'
+    # a query-string token is not an invite any more
+    out = run_js('JSON.stringify(takeToken("https://w/?token=abc"))', tmp_path)
+    assert out == '{"token":null,"clean":"https://w/?token=abc"}'
 
 
 def _js_function(src: str, head: str) -> str:
@@ -666,3 +671,35 @@ def test_the_timeline_draws_each_row_once_and_keeps_its_poll_honest():
     assert "busy" in poll, "a poll mid-send draws the stored copy of the words being sent"
     # sign out and back in, same tab: the last thread must not stay on the page
     assert '$("#inner").innerHTML = ""' in _js_function(src, "async function loadTimeline(")
+
+
+def test_the_review_fixes_to_the_timeline_page_stay_in():
+    # Substring guards for the Task 5 review round (2026-10-14).
+    src = PAGE.read_text(encoding="utf-8")
+    # paging back prepends the older rows: a redraw lost the reader's place
+    # and re-dispatched every card on the page
+    older = _js_function(src, "async function loadOlder(")
+    assert "redraw()" not in older and "inner.prepend(" in older
+    # restored from the oldest drawn row's own movement: Chrome's scroll
+    # anchoring already holds the place, so adding the scrollHeight delta on
+    # top of it threw the reader 2391px up the page (seen 2026-10-14)
+    assert "anchor.getBoundingClientRect().top - top" in older
+    assert "scrollHeight - before" not in older
+    # the user's own picture stays in their bubble once the reply lands
+    assert "prepend(...pics)" in _js_function(src, "async function send(")
+    # where a turn came from is said of the person's turns and of notices only
+    assert 'r.role === "user" || r.kind === "notice" ? turnLabel(r) : ""' in _js_function(src, "function rowNode(")
+    # a shared screen never shows the last person's thread during the next sign-in
+    out = _js_function(src, "function signOut(")
+    for wipe in ('$("#inner").innerHTML = ""', '$("#reads").innerHTML = ""',
+                 '$("#whoname").textContent = ""', "rows = []", "lastId = 0",
+                 "oldestId = null", "exhausted = false"):
+        assert wipe in out, wipe
+    # a poll already in flight when Enter is pressed must not draw mid-send
+    poll = _js_function(src, "async function poll(")
+    assert poll.index("await") < poll.rindex("busy")
+    # ticking a repeating reminder "done" would end the whole series
+    rc = _js_function(src, "function remindersCard(")
+    assert "r.repeat" in rc and 'title="stop this reminder"' in rc and 'title="done"' in rc
+    assert ".card li.cgone .ctick" not in src     # dead: the undo arrow replaces the tick
+    assert src.count(".pslabel .plock {") == 1

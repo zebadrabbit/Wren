@@ -241,7 +241,10 @@ async def handle(intent: str, ctx: Ctx) -> None:
         def _local(r):
             return _when_phrase(r["fire_at"]) + (
                 f", {_format_repeat(r['repeat'])}" if r.get("repeat") else "")
-        rows = [{"content": r["content"], "fire_at": r["fire_at"], "local": _local(r)}
+        # repeat rides along so the card can tell a one-off ("done") from a
+        # series, where the same cancel would end every future occurrence
+        rows = [{"content": r["content"], "fire_at": r["fire_at"], "local": _local(r),
+                 "repeat": r.get("repeat")}
                 for r in items]
         text = "\n".join(f"[{_local(r)}] {r['content']}"
                          for r in items) if items else "No reminders set."

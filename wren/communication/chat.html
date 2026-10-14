@@ -219,7 +219,6 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .card .ctick { width: 16px; height: 16px; border: 1.5px solid var(--line-2); border-radius: 4px;
                background: transparent; padding: 0; flex: none; cursor: pointer; }
 .card .ctick:hover { border-color: var(--ok); }
-.card li.cgone .ctick { background: var(--ok); border-color: var(--ok); }
 /* A row waiting out its undo window: still in place, visibly on its way out. */
 .card li.cgone { opacity: .55; }
 .card li.cgone .citem { text-decoration: line-through; }
@@ -391,9 +390,8 @@ main footer { padding: 10px 20px 18px; }
 .pset input:focus, .pset select:focus { outline: none; border-color: var(--clay); }
 /* .env defines it: shown so the owner can see the live value, not editable */
 .pset input:disabled, .pset select:disabled { background: var(--well); color: var(--muted); cursor: not-allowed; }
-.pslabel .plock { display: block; font-size: 12.5px; line-height: 1.45; margin-top: 2px; }
 /* .env-locked settings read as information, not as a warning */
-.pslabel .plock { color: var(--muted); }
+.pslabel .plock { display: block; font-size: 12.5px; line-height: 1.45; margin-top: 2px; color: var(--muted); }
 .savestat { flex-basis: 100%; font-size: 12.5px; text-align: right; }
 .savestat:empty { display: none; }
 .savestat.ok { color: var(--ok); }
@@ -546,7 +544,7 @@ main footer { padding: 10px 20px 18px; }
 <script>
 const $ = s => document.querySelector(s);
 let token = localStorage.getItem("wren_token") || "";
-// A link with ?token= signs this browser in and then forgets it was ever in
+// A link ending #token=… signs this browser in and then forgets it was ever in
 // the address bar, so it is not left in history or pasted on by accident.
 {
   const t = takeToken(location.href);
@@ -618,9 +616,12 @@ function turnLabel(row) {
   return DOOR[row.channel] ? "from " + DOOR[row.channel] : "";
 }
 function takeToken(href) {
+  // The fragment, never the query: a browser does not send #… to the server,
+  // so an invite's bearer token stays out of every access log on the way.
+  // The whole fragment goes with it; an invite link carries nothing else.
   const url = new URL(href);
-  const token = url.searchParams.get("token");
-  url.searchParams.delete("token");
+  const token = new URLSearchParams(url.hash.slice(1)).get("token");
+  if (token !== null) url.hash = "";
   return { token, clean: url.toString() };
 }
 
@@ -642,6 +643,10 @@ function signOut(message = "") {
   localStorage.removeItem("wren_token"); token = "";
   $("#app").classList.remove("on"); $("#login").style.display = "";
   $("#loginerr").textContent = message;
+  // A shared screen: whoever signs in next must not see this thread, these
+  // chips or this name while their own are still loading.
+  $("#inner").innerHTML = ""; $("#reads").innerHTML = ""; $("#whoname").textContent = "";
+  rows = []; lastId = 0; oldestId = null; exhausted = false;
 }
 
 /* ── rendering ─────────────────────────────────────────────────────────── */
@@ -883,10 +888,15 @@ function ideasCard(data, mount) {
 function remindersCard(data, mount) {
   const items = data.reminders || [];
   const { action } = cardShell(mount, "recall_reminders", {});
-  const rows = items.map(r =>
-    '<li><button class="ctick" data-item="' + esc(r.content) + '" title="done" aria-label="done"></button>' +
-    '<span class="cwhen">' + esc(r.local) + "</span>" +
-    '<span class="citem">' + esc(r.content) + "</span></li>"
+  // A one-off is ticked "done". A series keeps the cross: cancel_reminder
+  // ends every future occurrence, and a tick would read as "just this one".
+  const rows = items.map(r => r.repeat
+    ? '<li><span class="cwhen">' + esc(r.local) + "</span>" +
+      '<span class="citem">' + esc(r.content) + "</span>" +
+      '<button class="cx" data-item="' + esc(r.content) + '" title="stop this reminder" aria-label="stop this reminder">✕</button></li>'
+    : '<li><button class="ctick" data-item="' + esc(r.content) + '" title="done" aria-label="done"></button>' +
+      '<span class="cwhen">' + esc(r.local) + "</span>" +
+      '<span class="citem">' + esc(r.content) + "</span></li>"
   ).join("");
   mount.innerHTML =
     '<div class="card reminders">' +
@@ -895,7 +905,7 @@ function remindersCard(data, mount) {
                     : '<p class="cempty">Nothing scheduled.</p>') +
       '<p class="cstatus" hidden></p>' +
     "</div>";
-  for (const b of mount.querySelectorAll(".ctick")) {
+  for (const b of mount.querySelectorAll(".ctick, .cx")) {
     b.onclick = () => action("cancel_reminder", b.dataset.item);
   }
 }
@@ -996,13 +1006,18 @@ function rowNode(r, prev, live) {
   const role = r.kind === "notice" ? "notice" : r.role;
   const html = r.role === "user" ? esc(r.content) : md(r.content);
   const b = bubble(role, html, { detach: true });
-  const label = turnLabel(r);
+  // which door a turn came in by is said of the person's own turns and of
+  // notices; a reply under a telegram turn went back the same way
+  const label = r.role === "user" || r.kind === "notice" ? turnLabel(r) : "";
   if (label) { const v = document.createElement("div"); v.className = "via"; v.textContent = label; b.querySelector(".body").after(v); }
   if (r.card) {
     const card = live && live.cards.length ? live.cards.shift() : null;
     if (card) renderCard(card, b.querySelector(".body"), live.files);
     // A card with no refresh intent (locate) is one-shot: re-mounting it would
     // re-ask the browser for a position on every reload, or 400 trying.
+    // ponytail: every stored card row re-dispatches each time it is drawn
+    // (load, Today, page-back), and ten shopping cards mean ten identical
+    // reads; one shared read per intent+params when timelines carry many.
     else if (r.card.intent) mountStoredCard(r.card, b.querySelector(".body"));
   }
   frag.append(b);
@@ -1020,9 +1035,11 @@ function append(newRows, live) {
   const atBottom = $("#log").scrollTop + $("#log").clientHeight >= $("#log").scrollHeight - 40;
   let prev = rows[rows.length - 1] || null;
   for (const r of newRows) {
-    // A poll that lands while a send is in flight draws that turn's stored
-    // rows before the send's own response does. Each id is drawn once, and a
+    // The poll after a send re-reads that turn's rows (a send never moves the
+    // cursor, below), and they are already drawn. Each id is drawn once, and a
     // skipped card row still takes its live card so later ones stay matched.
+    // ponytail: a linear scan of every row on screen per incoming row; a Set
+    // of drawn ids when timelines get long.
     if (rows.some(x => x.id === r.id)) { if (r.card && live && live.cards.length) live.cards.shift(); continue; }
     // the landing goes only when a row arrives: an empty poll keeps it
     const gone = $("#landing"); if (gone) gone.remove();
@@ -1048,14 +1065,32 @@ async function loadTimeline(me) {
 async function loadOlder() {
   if (exhausted || oldestId === null || loadOlder.busy) return;
   loadOlder.busy = true;
+  const cursor = oldestId;
   try {
-    const page = await api("/api/timeline?before=" + oldestId + "&limit=" + PAGE);
+    const page = await api("/api/timeline?before=" + cursor + "&limit=" + PAGE);
+    // signed out, or reloaded, while this was in flight: not this thread's page
+    if (oldestId !== cursor) return;
     exhausted = page.length < PAGE;
     if (!page.length) return;
-    const log = $("#log"), before = log.scrollHeight;
+    // Prepended, not redrawn: a redraw lost the reader's place and
+    // re-dispatched every card already on the page. Only the new rows' cards
+    // mount.
+    const inner = $("#inner"), log = $("#log");
+    // Keep what was on screen where it was, measured on the oldest row drawn
+    // rather than by scrollHeight: Chrome's scroll anchoring already holds
+    // the place when scrollTop is above 0 (seen: adding the height delta on
+    // top of that threw the reader 2391px up the page), Safari does not, and
+    // the row's own movement is right for both.
+    const anchor = inner.querySelector(".msg"), top = anchor.getBoundingClientRect().top;
+    const frag = document.createDocumentFragment();
+    let prev = null;
+    for (const r of page) { frag.append(rowNode(r, prev)); prev = r; }
+    // the page's last day may run on into the first one drawn: one separator
+    const first = inner.firstElementChild;
+    if (first && first.classList.contains("day") && sameDay(prev.created_at, rows[0].created_at)) first.remove();
+    inner.prepend(frag);
     rows = page.concat(rows); oldestId = rows[0].id;
-    redraw();
-    log.scrollTop = log.scrollHeight - before;     // keep what was on screen where it was
+    log.scrollTop += anchor.getBoundingClientRect().top - top;
   } finally { loadOlder.busy = false; }
 }
 async function poll() {
@@ -1063,12 +1098,21 @@ async function poll() {
   // a poll now would draw the stored copy beside it until the reply lands
   if (!token || document.hidden || busy) return;
   // after=0 names no row, and the server reads nothing after a row it cannot
-  // find: until something is drawn, ask for the newest page instead
+  // find: until something is drawn, ask for the newest page instead.
+  // ponytail: on an empty timeline that is the newest page re-read every tick
+  // until a first row arrives; one small GET, so not worth a server cursor.
   const q = lastId ? "after=" + lastId : "limit=" + PAGE;
-  try { append(await api("/api/timeline?" + q)); }
-  catch (e) { /* a blip; the next tick tries again, and a 401 has already signed out */ }
+  let page;
+  try { page = await api("/api/timeline?" + q); }
+  catch (e) { return; /* a blip; the next tick tries again, and a 401 has already signed out */ }
+  // Enter pressed, or signed out, while this read was in flight: the send's
+  // own response draws its turn, and the next tick reads anything else
+  if (busy || !token) return;
+  append(page);
 }
 $("#log").addEventListener("scroll", () => { if ($("#log").scrollTop < 40) loadOlder(); });
+// ponytail: a 30-second poll, not push (SSE or a websocket), so a reminder
+// sent while the page is open can take that long to appear on it.
 setInterval(poll, POLL_MS);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
 
@@ -1191,10 +1235,20 @@ async function send() {
     }
     const data = await api("/message", opts);
     thinking.remove(); thinking = null;
+    // The pictures move from the unstored bubble into the stored row, which
+    // only says "(sent photo.jpg)" or the caption.
+    // ponytail: files are not stored, so they last until the next reload or
+    // Today redraw; the timeline row is all that comes back after that.
+    const pics = [...ub.querySelectorAll(".rimg")];
     ub.remove();
     // exactly the rows this turn stored, the user's own first; each card
     // row takes the next live card, so it draws without a second fetch
     append(data.messages || [], { cards: (data.cards || []).slice(), files: data.files || [] });
+    const mine = [...$("#inner").querySelectorAll(".msg.user .body")].pop();
+    if (pics.length && mine && (data.messages || []).length) {
+      mine.prepend(...pics);
+      $("#log").scrollTop = $("#log").scrollHeight;   // append scrolled before the pictures grew the row
+    }
     // A note's first picture is already its card row's thumbnail (notesCard
     // matches by name); every other file the reply carried gets its own bubble.
     const shown = new Set();
