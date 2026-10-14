@@ -10,7 +10,7 @@ import logging
 
 import pytest
 
-from wren import config, contacts, router
+from wren import config, contacts, conversations, router
 
 
 class FakeSurface:
@@ -37,6 +37,7 @@ def clean_registry():
     # notify() consults contacts to route a person to their surface, and
     # run.py creates that table at startup; here nothing else does.
     contacts.init_db()
+    conversations.init_db()
     yield
     router.reset()
 
@@ -363,3 +364,94 @@ def test_an_explicit_via_beats_any(monkeypatch):
     router.register("telegram", telegram)
     asyncio.run(router.notify(1, "bins", via="discord"))
     assert discord.calls == [(1, "bins")] and telegram.calls == []
+
+
+# --- notices on the timeline (2026-10-13) --------------------------------
+
+def _notices(user_id):
+    return [(r["content"], r["channel"], r["kind"]) for r in conversations.timeline(user_id)]
+
+
+def test_a_delivered_notice_is_recorded_with_its_surface(monkeypatch):
+    monkeypatch.setattr(config, "NOTIFY_VIA", "telegram")
+    router.register("telegram", FakeSurface(True))
+    assert asyncio.run(router.notify(1, "⏰ Reminder: bins")) is True
+    assert _notices(1) == [("⏰ Reminder: bins", "telegram", "notice")]
+
+
+def test_a_permanent_failure_records_nothing(monkeypatch):
+    monkeypatch.setattr(config, "NOTIFY_VIA", "telegram")
+    router.register("telegram", FakeSurface(False))
+    assert asyncio.run(router.notify(1, "x")) is False
+    assert _notices(1) == []
+
+
+def test_a_transient_failure_raises_and_records_nothing(monkeypatch):
+    monkeypatch.setattr(config, "NOTIFY_VIA", "telegram")
+    router.register("telegram", FakeSurface(raises=RuntimeError("503")))
+    with pytest.raises(RuntimeError):
+        asyncio.run(router.notify(1, "x"))
+    assert _notices(1) == []
+
+
+def test_any_records_under_the_surface_that_delivered(monkeypatch):
+    monkeypatch.setattr(config, "NOTIFY_VIA", "any")
+    monkeypatch.setattr(config, "COMMUNICATION_PLUGINS", ["discord", "telegram"])
+    router.register("discord", FakeSurface(False))
+    router.register("telegram", FakeSurface(True))
+    assert asyncio.run(router.notify(1, "x")) is True
+    assert _notices(1) == [("x", "telegram", "notice")]
+
+
+class PassiveSurface(FakeSurface):
+    PASSIVE = True
+    CAN_NOTIFY = False
+    CHANNEL = "web"
+
+
+def test_any_falls_back_to_a_passive_surface_when_nothing_active_delivered(monkeypatch):
+    monkeypatch.setattr(config, "NOTIFY_VIA", "any")
+    monkeypatch.setattr(config, "COMMUNICATION_PLUGINS", ["http", "telegram"])
+    router.register("http", PassiveSurface(True))
+    router.register("telegram", FakeSurface(False))
+    assert asyncio.run(router.notify(1, "x")) is True
+    assert _notices(1) == [("x", "web", "notice")]
+
+
+def test_any_prefers_an_active_surface_over_the_passive_one(monkeypatch):
+    monkeypatch.setattr(config, "NOTIFY_VIA", "any")
+    monkeypatch.setattr(config, "COMMUNICATION_PLUGINS", ["http", "telegram"])
+    passive = PassiveSurface(True)
+    router.register("http", passive)
+    router.register("telegram", FakeSurface(True))
+    asyncio.run(router.notify(1, "x"))
+    assert passive.calls == []
+    assert _notices(1) == [("x", "telegram", "notice")]
+
+
+def test_any_does_not_fall_back_to_passive_after_a_transient_failure(monkeypatch):
+    """A raise means retry next poll; landing it on the timeline now AND
+    delivering it to the phone later would say it twice."""
+    monkeypatch.setattr(config, "NOTIFY_VIA", "any")
+    monkeypatch.setattr(config, "COMMUNICATION_PLUGINS", ["http", "telegram"])
+    router.register("http", PassiveSurface(True))
+    router.register("telegram", FakeSurface(raises=RuntimeError("503")))
+    with pytest.raises(RuntimeError):
+        asyncio.run(router.notify(1, "x"))
+    assert _notices(1) == []
+
+
+def test_explicit_http_records_as_web(monkeypatch):
+    monkeypatch.setattr(config, "NOTIFY_VIA", "any")
+    router.register("http", PassiveSurface(True))
+    assert asyncio.run(router.notify(1, "x", via="http")) is True
+    assert _notices(1) == [("x", "web", "notice")]
+
+
+def test_dry_run_records_nothing(monkeypatch):
+    from wren import db
+    monkeypatch.setattr(config, "NOTIFY_VIA", "telegram")
+    router.register("telegram", FakeSurface(True))
+    with db.dry_run():
+        assert asyncio.run(router.notify(1, "x")) is True
+    assert _notices(1) == []

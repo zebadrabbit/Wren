@@ -45,4 +45,20 @@ def test_notify_any_warns_when_nothing_loaded_can_push(monkeypatch, caplog):
     monkeypatch.setattr(config, "NOTIFY_VIA", "any")
     with caplog.at_level(logging.WARNING):
         run._warn_if_notifications_go_nowhere({"http": http_plugin})
+    assert "only appear in the web chat" in caplog.text
+
+
+def test_notify_via_http_warns_it_is_web_only(monkeypatch, caplog):
+    from wren.communication import http_plugin
+    monkeypatch.setattr(config, "NOTIFY_VIA", "http")
+    with caplog.at_level(logging.WARNING):
+        run._warn_if_notifications_go_nowhere({"http": http_plugin})
+    assert "only appear in the web chat" in caplog.text
+
+
+def test_notify_any_warns_discarded_when_nothing_at_all_can_deliver(monkeypatch, caplog):
+    from wren.communication import gmail_plugin
+    monkeypatch.setattr(config, "NOTIFY_VIA", "any")
+    with caplog.at_level(logging.WARNING):
+        run._warn_if_notifications_go_nowhere({"gmail": gmail_plugin})
     assert "DISCARDED" in caplog.text

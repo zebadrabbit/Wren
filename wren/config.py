@@ -281,8 +281,8 @@ def _coerce_notify_via(raw: str) -> str:
     if surface is None:
         known = ", ".join(router.registered()) or "none running"
         raise ValueError(f"'{name}' is not a running communication plugin ({known})")
-    if not getattr(surface, "CAN_NOTIFY", True):
-        raise ValueError(f"'{name}' is send-only and cannot deliver unprompted messages")
+    if not getattr(surface, "CAN_NOTIFY", True) and not getattr(surface, "PASSIVE", False):
+        raise ValueError(f"'{name}' cannot deliver unprompted messages")
     return name
 
 

@@ -3,10 +3,17 @@ import logging
 
 from . import config
 from . import contacts
+from . import conversations
 from . import db
 
 # name -> surface module/object exposing `async notify(user_id, text) -> bool`
 _surfaces: dict = {}
+
+
+def _channel_of(name: str, surface) -> str:
+    """What the timeline calls a delivery on this surface. http records as
+    "web" because that is the door the person reads it through."""
+    return getattr(surface, "CHANNEL", name)
 
 
 def register(name: str, surface) -> None:
@@ -68,7 +75,14 @@ async def notify(user_id: int, text: str, via: str | None = None) -> bool:
             f"is not registered (have: {registered() or 'none'})"
         )
         return False
-    return await surface.notify(user_id, text)
+    ok = await surface.notify(user_id, text)
+    if ok:
+        # Recorded only on True: False is "unreachable, consumed" and a raise
+        # is "retry next poll" -- neither happened yet as far as the person
+        # is concerned, and the timeline must never say Wren told them
+        # something it did not.
+        conversations.notice(user_id, text, _channel_of(name, surface))
+    return ok
 
 
 async def _notify_any(user_id: int, text: str) -> bool:
@@ -94,6 +108,7 @@ async def _notify_any(user_id: int, text: str) -> bool:
     for name in candidates:
         try:
             if await _surfaces[name].notify(user_id, text):
+                conversations.notice(user_id, text, _channel_of(name, _surfaces[name]))
                 return True
         except Exception as e:
             # Not swallowed: re-raised below unless a later surface delivers.
@@ -101,6 +116,18 @@ async def _notify_any(user_id: int, text: str) -> bool:
             transient = e
     if transient is not None:
         raise transient
+    # Nothing that can push reached them and nothing is worth retrying. A
+    # passive surface (the web chat) can still "deliver" by letting the
+    # router put it on the timeline, where the page shows it on its next
+    # poll. Last, never first: a phone buzz beats a row the person has to
+    # open a browser to see. Not after a transient failure either -- that
+    # message is coming back next poll, and would then be said twice.
+    for name in config.COMMUNICATION_PLUGINS:
+        surface = _surfaces.get(name)
+        if surface is not None and getattr(surface, "PASSIVE", False):
+            if await surface.notify(user_id, text):
+                conversations.notice(user_id, text, _channel_of(name, surface))
+                return True
     if not candidates:
         logging.warning(f"Cannot notify {user_id}: no running surface can push "
                         f"(have: {registered() or 'none'})")

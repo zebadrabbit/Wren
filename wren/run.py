@@ -47,26 +47,30 @@ def _warn_if_env_readable(path: str) -> None:
 def _warn_if_notifications_go_nowhere(loaded: dict) -> None:
     """Say so loudly at boot rather than silently eating reminders at 3am."""
     target = config.NOTIFY_VIA
+    web_only = ("Reminders and watcher alerts will only appear in the web chat, "
+                "not on a phone. Add discord or telegram to COMMUNICATION_PLUGINS for a push.")
     if target == config.NOTIFY_ANY:
         if not any(getattr(p, "CAN_NOTIFY", True) for p in loaded.values()):
-            logging.warning(
-                f"No running communication plugin can deliver unprompted messages "
-                f"({', '.join(loaded) or 'none'}). Reminders and watcher alerts will be DISCARDED. "
-                f"Add one that can push, e.g. discord or telegram, to COMMUNICATION_PLUGINS."
-            )
+            if any(getattr(p, "PASSIVE", False) for p in loaded.values()):
+                logging.warning(f"No running communication plugin can push ({', '.join(loaded)}). {web_only}")
+            else:
+                logging.warning(
+                    f"No running communication plugin can deliver unprompted messages "
+                    f"({', '.join(loaded) or 'none'}). Reminders and watcher alerts will be DISCARDED. "
+                    f"Add one that can push, e.g. discord or telegram, to COMMUNICATION_PLUGINS."
+                )
         return
     surface = loaded.get(target)
     if surface is None:
         logging.warning(
             f"NOTIFY_VIA='{target}' is not in COMMUNICATION_PLUGINS ({', '.join(config.COMMUNICATION_PLUGINS)}). "
-            f"Reminders and watcher alerts will NOT be delivered."
-        )
+            f"Reminders and watcher alerts will NOT be delivered.")
+    elif getattr(surface, "PASSIVE", False):
+        logging.warning(f"NOTIFY_VIA='{target}'. {web_only}")
     elif not getattr(surface, "CAN_NOTIFY", True):
         logging.warning(
-            f"NOTIFY_VIA='{target}' cannot deliver unprompted "
-            f"messages. Reminders and watcher alerts will be DISCARDED. "
-            f"Set NOTIFY_VIA to a communication plugin that can push."
-        )
+            f"NOTIFY_VIA='{target}' cannot deliver unprompted messages. Reminders and watcher "
+            f"alerts will be DISCARDED. Set NOTIFY_VIA to a communication plugin that can push.")
 
 
 async def main() -> None:

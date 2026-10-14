@@ -187,23 +187,21 @@ def build_app() -> web.Application:
     return app
 
 
-ROLE = "chat"   # chat: input + output, but send-only (see notify() below)
+ROLE = "chat"
 PLUGIN_NAME = "HTTP / Web Chat"
-CAN_NOTIFY = False
+CAN_NOTIFY = False   # cannot push to a phone; see PASSIVE
+PASSIVE = True       # a notice is "delivered" by landing on the timeline the page polls
+CHANNEL = "web"      # what the timeline calls this door
 
 
 async def notify(user_id: int, text: str) -> bool:
-    # ponytail: send-only by design — no WebSocket, no subscriber registry.
-    # If desktop push is ever wanted, this is where polling or SSE would land.
-    #
-    # The message body is deliberately NOT logged: reminders and person-to-
-    # person messages are private, and this would put all of them in the
-    # system journal on an http-first install.
-    logging.warning(
-        f"NOTIFY_SURFACE=http cannot deliver unprompted messages (send-only); "
-        f"dropped a {len(text)}-char message for user {user_id}"
-    )
-    return False
+    # Passive: nothing is sent. The router records every notice it delivers
+    # on the person's timeline, and the web page polls that, so answering
+    # True means "it will be there when they open the page". The router only
+    # lands here when no surface that can push did, or when NOTIFY_VIA names
+    # http on purpose. The body is deliberately not logged: reminders and
+    # person-to-person messages are private.
+    return True
 
 
 async def start() -> None:

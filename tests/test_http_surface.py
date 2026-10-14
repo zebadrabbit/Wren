@@ -240,9 +240,12 @@ def test_voice_transcription_error_is_500(monkeypatch):
     assert body["error"] == "transcription failed"
 
 
-def test_http_notify_is_send_only():
-    # NOTIFY_SURFACE=http must not silently pretend to deliver
-    assert asyncio.run(http_surface.notify(1, "reminder")) is False
+def test_http_notify_is_passive_and_answers_true():
+    # nothing is sent: the router records the notice and the page polls it
+    assert http_surface.PASSIVE is True
+    assert http_surface.CAN_NOTIFY is False
+    assert http_surface.CHANNEL == "web"
+    assert asyncio.run(http_surface.notify(1, "reminder")) is True
 
 
 def test_start_refuses_to_run_without_tokens(monkeypatch):

@@ -361,3 +361,20 @@ def test_email_digest_is_an_on_off_setting(raw, expected):
 def test_email_digest_rejects_other_words():
     with pytest.raises(ValueError):
         config.SETTABLE["EMAIL_DIGEST"].coerce("maybe")
+
+
+def test_notify_via_accepts_a_passive_channel():
+    settings.init_db()
+    router.reset()
+
+    class Passive:
+        CAN_NOTIFY = False
+        PASSIVE = True
+
+    router.register("http", Passive())
+    try:
+        config.set_override("NOTIFY_VIA", "http")
+        assert config.NOTIFY_VIA == "http"
+    finally:
+        config.clear_override("NOTIFY_VIA")
+        router.reset()
