@@ -1300,6 +1300,7 @@ async function showRead(intent) {
 // page is visible; cheap because the briefing makes no model call and the
 // weather and calendar reads are cached server-side. A changed-data check
 // would earn its keep only if a section ever got expensive.
+let tline = 0, tlineTimer = 0;   // which fact the folded head shows, and its rotation
 async function loadToday() {
   const box = $("#today"), mine = token;
   try {
@@ -1307,8 +1308,15 @@ async function loadToday() {
     if (token !== mine) return;   // signed out (or in as someone else) mid-read
     const card = (r.cards || [])[0];
     if (!card || card.kind !== "briefing") { box.hidden = true; return; }
-    box.innerHTML = '<div class="thead">Today<button type="button" id="tfold"></button></div><div class="tmount"></div>';
+    clearInterval(tlineTimer);    // the head it was driving is about to be replaced
+    box.innerHTML = '<div class="thead"><span id="tline">Today</span><button type="button" id="tfold"></button></div><div class="tmount"></div>';
     briefingCard(card.data || {}, box.querySelector(".tmount"));
+    // Folded, the head line rotates through what the panel would have said:
+    // the date, then the weather's first clause ("69°F and clear").
+    const facts = ["Today: " + new Date().toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })];
+    const w = (card.data || {}).weather;
+    if (w && !/^couldn/.test(w)) facts.push("Today: " + w.split(/[,.]/)[0]);
+    const line = box.querySelector("#tline");
     // A choice the reader made wins ("" is "keep it open"). Nothing stored:
     // folded on a phone, where even capped the open panel is most of the
     // screen; open on a desktop. Same breakpoint as the 700px media block.
@@ -1319,6 +1327,10 @@ async function loadToday() {
       box.classList.toggle("closed", closed);
       fold.textContent = closed ? "show" : "hide";
       fold.setAttribute("aria-expanded", closed ? "false" : "true");
+      clearInterval(tlineTimer);
+      line.textContent = closed ? facts[tline % facts.length] : "Today";
+      if (closed && facts.length > 1)
+        tlineTimer = setInterval(() => { line.textContent = facts[++tline % facts.length]; }, 6000);
     };
     show();
     fold.onclick = () => {
