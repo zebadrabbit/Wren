@@ -73,6 +73,18 @@ def _warn_if_notifications_go_nowhere(loaded: dict) -> None:
             f"alerts will be DISCARDED. Set NOTIFY_VIA to a communication plugin that can push.")
 
 
+# Doors whose ids are not Wren ids know the owner only by an env id. Unset,
+# the owner is a stranger there, and a stranger is dropped without a reply,
+# which from the outside looks like a door that does not work.
+_OWNER_IDS = {"slack": ("SLACK_OWNER_ID", "Slack"), "matrix": ("MATRIX_OWNER_ID", "Matrix")}
+
+
+def _warn_if_owner_unset() -> None:
+    for name, (key, label) in _OWNER_IDS.items():
+        if name in config.COMMUNICATION_PLUGINS and not getattr(config, key):
+            logging.warning(f"{key} is not set: your own messages on {label} will be ignored.")
+
+
 async def main() -> None:
     init_dbs()
     # After init_dbs (the settings table must exist) and before any plugin
@@ -96,6 +108,7 @@ async def main() -> None:
         tasks.append(asyncio.create_task(surface.start(), name=f"communication:{name}"))
 
     _warn_if_notifications_go_nowhere(loaded)
+    _warn_if_owner_unset()
 
     await registry.start_all()
     await asyncio.gather(*tasks)

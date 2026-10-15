@@ -296,7 +296,7 @@ def register_routes(app: web.Application, authenticate) -> None:
         """Ids as strings, never numbers: a Discord id is 18 digits, past the
         2**53 a JSON number survives in a browser, and JSON.parse rounds
         123456789012345678 to ...680 without a word. `wren_id` is the one they
-        sign in as (contacts' COALESCE rule), which is what a token is minted for."""
+        sign in as (the contact's stored wren_id), which is what a token is minted for."""
         row = contacts.get(alias) or {"alias": alias, **{s: None for s in contacts.SURFACES}}
         wren_id = contacts.all().get(alias)
         return {"alias": row["alias"],

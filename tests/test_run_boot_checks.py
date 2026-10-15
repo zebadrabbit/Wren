@@ -62,3 +62,24 @@ def test_notify_any_warns_discarded_when_nothing_at_all_can_deliver(monkeypatch,
     with caplog.at_level(logging.WARNING):
         run._warn_if_notifications_go_nowhere({"gmail": gmail_plugin})
     assert "DISCARDED" in caplog.text
+
+
+def test_a_door_without_its_owner_id_is_warned_about(monkeypatch, caplog):
+    # Without SLACK_OWNER_ID the owner is a stranger on Slack, and strangers
+    # are dropped without a reply.
+    monkeypatch.setattr(config, "COMMUNICATION_PLUGINS", ["slack", "matrix"])
+    monkeypatch.setattr(config, "SLACK_OWNER_ID", "")
+    monkeypatch.setattr(config, "MATRIX_OWNER_ID", "")
+    with caplog.at_level(logging.WARNING):
+        run._warn_if_owner_unset()
+    assert "SLACK_OWNER_ID is not set: your own messages on Slack will be ignored." in caplog.text
+    assert "MATRIX_OWNER_ID is not set: your own messages on Matrix will be ignored." in caplog.text
+
+
+def test_owner_ids_are_quiet_when_set_or_the_door_is_off(monkeypatch, caplog):
+    monkeypatch.setattr(config, "COMMUNICATION_PLUGINS", ["slack"])
+    monkeypatch.setattr(config, "SLACK_OWNER_ID", "U0123ABCDEF")
+    monkeypatch.setattr(config, "MATRIX_OWNER_ID", "")        # matrix is not running
+    with caplog.at_level(logging.WARNING):
+        run._warn_if_owner_unset()
+    assert caplog.text == ""

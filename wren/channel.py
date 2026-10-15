@@ -6,7 +6,8 @@ class Channel(Protocol):
     """How a surface talks back. Implemented by each surface; capability
     plugins only ever see this, never a discord.Message.
 
-    NAME is which door this is -- "web", "voice", "discord" or "telegram".
+    NAME is which door this is -- "web", "voice", "discord", "telegram",
+    "slack" or "matrix".
     core records it with every turn so the timeline can say where a message
     came from; it is the only thing a skill could learn about the transport,
     and none reads it."""
