@@ -96,3 +96,11 @@ def test_token_add_with_no_host_set_links_to_loopback(tmp_path):
     env.write_text("WREN_TOKENS=existing:1\n")
     r = run(env, "token", "add", "42")
     assert "http://127.0.0.1:8787/#token=" in r.stdout
+
+
+def test_manage_sh_secret_keys_match_config():
+    import re
+    from wren import config
+    text = Path(SCRIPT).read_text()
+    block = re.search(r"SECRET_KEYS=\((.*?)\)", text, re.S).group(1)
+    assert set(block.split()) == set(config.SECRET_KEYS)

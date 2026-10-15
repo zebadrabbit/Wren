@@ -197,3 +197,18 @@ def test_discord_token_is_optional(tmp_path):
     )
     assert result.returncode == 0, f"importing Wren without DISCORD_TOKEN failed:\n{result.stderr}"
     assert result.stdout.strip() == "'' ['http'] any"
+
+def test_new_door_settings_exist_and_default_empty():
+    for key in ("SLACK_APP_TOKEN", "SLACK_BOT_TOKEN", "SLACK_OWNER_ID",
+                "MATRIX_HOMESERVER", "MATRIX_TOKEN", "MATRIX_OWNER_ID"):
+        assert isinstance(getattr(config, key), str)
+
+def test_door_tokens_are_secrets_not_settings():
+    for key in ("SLACK_APP_TOKEN", "SLACK_BOT_TOKEN", "MATRIX_TOKEN"):
+        assert key in config.SECRET_KEYS and key not in config.SETTABLE
+    for key in ("SLACK_OWNER_ID", "MATRIX_OWNER_ID", "MATRIX_HOMESERVER"):
+        assert key not in config.SECRET_KEYS
+
+def test_matrix_homeserver_loses_its_trailing_slash(monkeypatch):
+    assert config._homeserver("https://matrix.example.org/") == "https://matrix.example.org"
+    assert config._homeserver("") == ""

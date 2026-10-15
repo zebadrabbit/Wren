@@ -48,7 +48,7 @@ def _warn_if_notifications_go_nowhere(loaded: dict) -> None:
     """Say so loudly at boot rather than silently eating reminders at 3am."""
     target = config.NOTIFY_VIA
     web_only = ("Reminders and watcher alerts will only appear in the web chat, "
-                "not on a phone. Add discord or telegram to COMMUNICATION_PLUGINS for a push.")
+                "not on a phone. Add a chat plugin that can push (discord, telegram, slack, matrix) to COMMUNICATION_PLUGINS.")
     if target == config.NOTIFY_ANY:
         if not any(getattr(p, "CAN_NOTIFY", True) for p in loaded.values()):
             if any(getattr(p, "PASSIVE", False) for p in loaded.values()):
@@ -57,7 +57,7 @@ def _warn_if_notifications_go_nowhere(loaded: dict) -> None:
                 logging.warning(
                     f"No running communication plugin can deliver unprompted messages "
                     f"({', '.join(loaded) or 'none'}). Reminders and watcher alerts will be DISCARDED. "
-                    f"Add one that can push, e.g. discord or telegram, to COMMUNICATION_PLUGINS."
+                    f"Add one that can push (discord, telegram, slack, matrix) to COMMUNICATION_PLUGINS."
                 )
         return
     surface = loaded.get(target)

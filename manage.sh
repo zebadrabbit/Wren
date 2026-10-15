@@ -16,7 +16,8 @@ fi
 # Keep in sync with SECRET_KEYS in wren/config.py: the web UI shows these only
 # as set / not set. The values live in .env and are managed here, on the host,
 # where they never cross the network.
-SECRET_KEYS=(DISCORD_TOKEN TELEGRAM_TOKEN WREN_TOKENS IMAP_PASSWORD
+SECRET_KEYS=(DISCORD_TOKEN TELEGRAM_TOKEN SLACK_APP_TOKEN SLACK_BOT_TOKEN
+             MATRIX_TOKEN WREN_TOKENS IMAP_PASSWORD
              GITHUB_TOKEN OPENAI_API_KEY ANTHROPIC_API_KEY
              OPENROUTER_API_KEY FIRECRAWL_API_KEY CALENDAR_URLS)
 

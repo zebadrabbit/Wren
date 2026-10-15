@@ -39,6 +39,30 @@ TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 # Telegram-only install, where WREN_OWNER_ID is already the Telegram id.
 TELEGRAM_OWNER_ID = int(os.environ.get("TELEGRAM_OWNER_ID") or 0)
 
+# Slack, Socket Mode: two tokens from the app's settings page. The app-level
+# token (xapp-, scope connections:write) opens the websocket; the bot token
+# (xoxb-) does everything else. slack_plugin.start() refuses to run without
+# both. SLACK_OWNER_ID is your Slack member id (U...), mapped onto
+# WREN_OWNER_ID both ways like TELEGRAM_OWNER_ID -- always needed when you
+# use Slack, because a Wren id is a number and a Slack id is not.
+SLACK_APP_TOKEN = os.environ.get("SLACK_APP_TOKEN", "")
+SLACK_BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN", "")
+SLACK_OWNER_ID = os.environ.get("SLACK_OWNER_ID", "").strip()
+
+
+def _homeserver(raw: str) -> str:
+    """https://matrix.example.org, without a trailing slash: every path the
+    plugin builds starts with one."""
+    return raw.strip().rstrip("/")
+
+
+# Matrix: the bot account's access token (from a login, or Element's
+# Settings > Help & About), the homeserver it lives on, and your own id
+# (@you:home.net) mapped onto WREN_OWNER_ID like the others.
+MATRIX_HOMESERVER = _homeserver(os.environ.get("MATRIX_HOMESERVER", ""))
+MATRIX_TOKEN = os.environ.get("MATRIX_TOKEN", "")
+MATRIX_OWNER_ID = os.environ.get("MATRIX_OWNER_ID", "").strip()
+
 COMMUNICATION_PLUGINS = [s.strip() for s in os.environ.get("COMMUNICATION_PLUGINS", "discord").split(",") if s.strip()]
 
 # Where unprompted messages (reminders, watcher alerts, the briefing) go when
@@ -342,7 +366,8 @@ SETTABLE = {
 # keep the two in sync) and never cross the HTTP surface. Deliberately
 # disjoint from SETTABLE: nothing here may ever gain a SETTABLE entry.
 SECRET_KEYS = (
-    "WREN_TOKENS", "DISCORD_TOKEN", "TELEGRAM_TOKEN", "IMAP_PASSWORD",
+    "WREN_TOKENS", "DISCORD_TOKEN", "TELEGRAM_TOKEN", "SLACK_APP_TOKEN",
+    "SLACK_BOT_TOKEN", "MATRIX_TOKEN", "IMAP_PASSWORD",
     "GITHUB_TOKEN", "OPENAI_API_KEY", "ANTHROPIC_API_KEY",
     "OPENROUTER_API_KEY", "FIRECRAWL_API_KEY", "CALENDAR_URLS",
 )
