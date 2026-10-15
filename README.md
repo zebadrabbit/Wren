@@ -126,9 +126,13 @@ Setting up the app, once, at [api.slack.com/apps](https://api.slack.com/apps):
    `im:read`, `im:write`, `reactions:write`, `files:read`, `files:write`.
 4. **Event Subscriptions → Enable**, and under *Subscribe to bot events* add
    `message.im`.
-5. **Install to Workspace**. The *Bot User OAuth Token* (`xoxb-…`) is
+5. **App Home → Show Tabs → Messages Tab**: turn it on and tick *Allow users
+   to send Slash commands and messages from the messages tab*. It is off by
+   default, and without it the DM only says that sending messages to this
+   app has been turned off.
+6. **Install to Workspace**. The *Bot User OAuth Token* (`xoxb-…`) is
    `SLACK_BOT_TOKEN`.
-6. Your member id: open your profile, the **⋯** menu, **Copy member ID**
+7. Your member id: open your profile, the **⋯** menu, **Copy member ID**
    (`U…`). That is `SLACK_OWNER_ID`.
 
 Add `slack` to `COMMUNICATION_PLUGINS`, restart, and open a DM with the app

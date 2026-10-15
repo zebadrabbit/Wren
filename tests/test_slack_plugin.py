@@ -1,4 +1,4 @@
-import os, asyncio, logging, time
+import os, asyncio, json, logging, time
 os.environ.setdefault("DISCORD_TOKEN", "test")
 os.environ.setdefault("WREN_OWNER_ID", "1")
 os.environ.setdefault("LLM_PROVIDERS", "lmstudio")
@@ -24,8 +24,10 @@ def clean(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "SLACK_APP_TOKEN", "xapp-app-token")
     monkeypatch.setattr(config, "SLACK_BOT_TOKEN", "xoxb-bot-token")
     monkeypatch.setattr(config, "SLACK_OWNER_ID", OWNER_SLACK)
+    slack_plugin._seen.clear()
     yield
     router.reset()
+    slack_plugin._seen.clear()
 
 
 def _event(**over) -> dict:
@@ -79,6 +81,19 @@ def test_incoming_file_share_wants_accepted_files_only():
 
 def test_incoming_with_nothing_to_say_is_none():
     assert slack_plugin._incoming(_event(text="")) is None
+
+@pytest.mark.parametrize("sent, typed", [
+    ("add salt &amp; pepper", "add salt & pepper"),
+    ("is 3 &lt; 4 &gt; 2", "is 3 < 4 > 2"),
+    ("save <https://example.com|this>", "save https://example.com"),
+    ("save <https://example.com>", "save https://example.com"),
+    ("save <https://example.com/?a=1&amp;b=2>", "save https://example.com/?a=1&b=2"),
+    ("mail <mailto:kim@example.com|kim@example.com>", "mail kim@example.com"),
+    ("ask <@U0KIM000001> and <#C0123|general>", "ask @U0KIM000001 and #general"),
+    ("tell <!here>", "tell @here"),
+])
+def test_incoming_text_is_what_the_person_typed(sent, typed):
+    assert slack_plugin._incoming(_event(text=sent))[1] == typed
 
 
 # ── id translation ─────────────────────────────────────────────────────────────
@@ -171,6 +186,12 @@ def test_channel_ack_adds_a_reaction_and_swallows_failure(monkeypatch, caplog):
         asyncio.run(ch.ack("done"))          # the error one
     assert "reactions.add" in caplog.text
 
+def test_outgoing_text_is_escaped_for_mrkdwn(monkeypatch):
+    api = AsyncMock(return_value={"ok": True})
+    monkeypatch.setattr(slack_plugin, "_api", api)
+    asyncio.run(slack_plugin.SlackChannel("D0123CHAN", "1").send("a < b & c"))
+    assert api.await_args.kwargs["json"]["text"] == "a &lt; b &amp; c"
+
 def test_channel_send_card_falls_back_to_the_prose(monkeypatch):
     api = AsyncMock(return_value={"ok": True})
     monkeypatch.setattr(slack_plugin, "_api", api)
@@ -192,8 +213,12 @@ def test_channel_send_file_uses_the_three_call_upload(monkeypatch):
     asyncio.run(ch.send_file(b"\x89PNG....", "cat.png"))
     assert calls[0] == ("files.getUploadURLExternal", {"filename": "cat.png", "length": 8})
     put.assert_awaited_once_with("https://files.slack.com/upload/abc", b"\x89PNG....")
-    assert calls[1] == ("files.completeUploadExternal",
-                        {"files": [{"id": "F9", "title": "cat.png"}], "channel_id": "D0123CHAN"})
+    method, body = calls[1]
+    assert method == "files.completeUploadExternal" and method in slack_plugin._FORM_ONLY
+    # form-encoded, so the file list travels as a JSON string, as Slack's SDKs send it
+    assert isinstance(body["files"], str)
+    assert json.loads(body["files"]) == [{"id": "F9", "title": "cat.png"}]
+    assert body["channel_id"] == "D0123CHAN"
 
 
 # ── notify ─────────────────────────────────────────────────────────────────────
@@ -211,13 +236,15 @@ def test_notify_to_someone_not_on_slack_is_permanent(monkeypatch):
     api.assert_not_awaited()
 
 @pytest.mark.parametrize("error", ["channel_not_found", "user_not_found", "cannot_dm_bot",
-                                   "user_disabled", "account_inactive"])
+                                   "user_disabled"])
 def test_notify_returns_false_on_permanent_failure(monkeypatch, error):
     monkeypatch.setattr(slack_plugin, "_api", AsyncMock(side_effect=slack_plugin.SlackError("chat.postMessage", error)))
     assert asyncio.run(slack_plugin.notify(1, "dinner")) is False
 
 @pytest.mark.parametrize("exc", [slack_plugin.SlackError("chat.postMessage", "ratelimited"),
                                  slack_plugin.SlackError("chat.postMessage", "invalid_auth"),
+                                 # the bot's own account or workspace: an admin can bring it back
+                                 slack_plugin.SlackError("chat.postMessage", "account_inactive"),
                                  aiohttp.ClientError("reset")])
 def test_notify_raises_on_transient_failure(monkeypatch, exc):
     monkeypatch.setattr(slack_plugin, "_api", AsyncMock(side_effect=exc))
@@ -235,19 +262,24 @@ def test_notify_splits_too(monkeypatch):
 
 class FakeWs:
     """An async iterator of frames plus a send_json recorder, standing in for
-    aiohttp's ClientWebSocketResponse."""
+    aiohttp's ClientWebSocketResponse. A frame is a dict (sent as TEXT) or a
+    ready-made WSMessage. Each read yields to the loop first, as a real
+    socket does, so the worker gets its turn between frames."""
     def __init__(self, frames):
         self._frames = list(frames)
         self.sent = []
         self.closed = False
     def __aiter__(self): return self
     async def __anext__(self):
+        await asyncio.sleep(0)
         if not self._frames:
             raise StopAsyncIteration
         frame = self._frames.pop(0)
         if frame == "hang":
             await asyncio.sleep(3600)
-        return aiohttp.WSMessage(aiohttp.WSMsgType.TEXT, __import__("json").dumps(frame), None)
+        if isinstance(frame, aiohttp.WSMessage):
+            return frame
+        return aiohttp.WSMessage(aiohttp.WSMsgType.TEXT, json.dumps(frame), None)
     async def send_json(self, data): self.sent.append(data)
     async def close(self): self.closed = True
     async def __aenter__(self): return self
@@ -272,8 +304,11 @@ def _socket(monkeypatch, frames):
     return ws, opened
 
 
-def _envelope(event, envelope_id="env-1"):
-    return {"type": "events_api", "envelope_id": envelope_id, "payload": {"event": event}}
+def _envelope(event, envelope_id="env-1", event_id=None):
+    payload = {"event": event}
+    if event_id:
+        payload["event_id"] = event_id
+    return {"type": "events_api", "envelope_id": envelope_id, "payload": payload}
 
 
 def test_connection_is_opened_with_the_app_token(monkeypatch):
@@ -295,6 +330,81 @@ def test_envelope_is_acked_before_the_message_is_handled(monkeypatch):
     monkeypatch.setattr(core, "handle_message", handle)
     asyncio.run(slack_plugin._run_once())
     assert order == [("ack", "env-1"), ("handle", 1, "hello", "slack")]
+
+
+def test_a_second_envelope_is_acked_while_the_first_is_still_being_handled(monkeypatch):
+    # The brain can take longer than Slack's ~3 s ack window. Were handling
+    # inline, env-2 would wait unacked behind it and Slack would resend it.
+    ws, _ = _socket(monkeypatch, [_envelope(_event(user=OWNER_SLACK, text="first"), "env-1"),
+                                  _envelope(_event(user=OWNER_SLACK, text="second"), "env-2"),
+                                  {"type": "disconnect"}])
+    both_acked = asyncio.Event()
+    original_send = ws.send_json
+    async def send_json(data):
+        await original_send(data)
+        if len(ws.sent) == 2:
+            both_acked.set()
+    ws.send_json = send_json
+    handled = []
+    async def handle(user_id, text, channel, **kw):
+        if text == "first":
+            await asyncio.wait_for(both_acked.wait(), 1)   # times out if the reader waits on us
+        handled.append(text)
+    monkeypatch.setattr(core, "handle_message", handle)
+    asyncio.run(slack_plugin._run_once())
+    assert ws.sent == [{"envelope_id": "env-1"}, {"envelope_id": "env-2"}]
+    assert handled == ["first", "second"]                   # one worker: still in order
+
+
+def test_a_redelivered_event_is_acked_and_handled_once(monkeypatch):
+    # Socket Mode is at-least-once: the same event_id can come back under a
+    # new envelope, on this connection or the next one.
+    handle = AsyncMock()
+    monkeypatch.setattr(core, "handle_message", handle)
+    event = _event(user=OWNER_SLACK)
+    ws, _ = _socket(monkeypatch, [_envelope(event, "env-1", event_id="Ev1"),
+                                  _envelope(event, "env-2", event_id="Ev1"),
+                                  {"type": "disconnect"}])
+    asyncio.run(slack_plugin._run_once())
+    ws2, _ = _socket(monkeypatch, [_envelope(event, "env-3", event_id="Ev1"),
+                                   _envelope(_event(user=OWNER_SLACK, text="new"), "env-4", event_id="Ev2"),
+                                   {"type": "disconnect"}])
+    asyncio.run(slack_plugin._run_once())
+    assert ws.sent == [{"envelope_id": "env-1"}, {"envelope_id": "env-2"}]
+    assert ws2.sent == [{"envelope_id": "env-3"}, {"envelope_id": "env-4"}]
+    assert [c.args[1] for c in handle.await_args_list] == ["hello", "new"]
+
+
+def test_an_error_frame_is_logged_and_ends_the_connection(monkeypatch, caplog):
+    error = aiohttp.WSMessage(aiohttp.WSMsgType.ERROR, RuntimeError("reset xoxb-bot-token"), None)
+    ws, _ = _socket(monkeypatch, [error, _envelope(_event(user=OWNER_SLACK))])
+    handle = AsyncMock()
+    monkeypatch.setattr(core, "handle_message", handle)
+    with caplog.at_level(logging.WARNING):
+        asyncio.run(slack_plugin._run_once())
+    assert "slack websocket error" in caplog.text and "reset" in caplog.text
+    assert "xoxb" not in caplog.text
+    assert ws.sent == [] and ws.closed
+    handle.assert_not_awaited()
+
+
+def test_cancelling_the_connection_cancels_its_worker(monkeypatch):
+    ws, _ = _socket(monkeypatch, [_envelope(_event(user=OWNER_SLACK)), "hang"])
+    started, finished = asyncio.Event(), []
+    async def handle(user_id, text, channel, **kw):
+        started.set()
+        await asyncio.sleep(3600)
+        finished.append(text)
+    monkeypatch.setattr(core, "handle_message", handle)
+    async def _run():
+        task = asyncio.create_task(slack_plugin._run_once())
+        await asyncio.wait_for(started.wait(), 1)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        return [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+    assert asyncio.run(_run()) == []          # no worker left behind
+    assert finished == []
 
 
 def test_a_stranger_is_acked_and_dropped(monkeypatch):

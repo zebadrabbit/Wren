@@ -13,7 +13,11 @@ Enable by adding "slack" to COMMUNICATION_PLUGINS in .env with SLACK_APP_TOKEN
 """
 
 import asyncio
+import collections
+import html
+import json as _json
 import logging
+import re
 import sys
 import time
 
@@ -36,15 +40,20 @@ API_ROOT = "https://slack.com/api"
 _CLIENT_TIMEOUT_SECONDS = 45
 _RETRY_SECONDS = 5
 _MAX_RETRY_SECONDS = 300
-# Slack documents these as form-encoded only; a JSON body is rejected.
-_FORM_ONLY = frozenset({"files.getUploadURLExternal"})
+# Slack documents these as form-encoded only; a JSON body is rejected. For
+# completeUploadExternal its own SDKs send `files` as a JSON string inside
+# the form, so send_file does the same.
+_FORM_ONLY = frozenset({"files.getUploadURLExternal", "files.completeUploadExternal"})
 # Slack shows up to 4000 characters of a message and truncates the rest with
 # a "show more" that many clients never render; past 40000 it is an error.
 _MAX_MESSAGE_CHARS = 4000
 # chat.postMessage errors that will never succeed for this person; everything
 # else (ratelimited, invalid_auth, fatal_error) is retried by the caller.
+# account_inactive is not here: it describes the bot's own account or
+# workspace, which an admin can bring back, and a reminder consumed over it
+# is gone for good.
 _PERMANENT = frozenset({"channel_not_found", "user_not_found", "cannot_dm_bot",
-                        "user_disabled", "account_inactive"})
+                        "user_disabled"})
 
 
 def is_active() -> bool:
@@ -125,11 +134,20 @@ def _chunks(text: str) -> list[str]:
     return chunking.chunks(text, _MAX_MESSAGE_CHARS)
 
 
+def _escape(text: str) -> str:
+    """Slack's mrkdwn reads <...> as a link or mention and & as the start
+    of an entity, so a literal one in a reply must be escaped (& first, or
+    the other two would be escaped twice)."""
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
 async def _send_text(channel: str, text: str) -> None:
     """The single path text takes to Slack -- a reply and an unprompted
-    notify() both come through here, so neither can forget to split."""
+    notify() both come through here, so neither can forget to split or
+    escape. Split first: escaping can lengthen a part, and a cut must not
+    land inside an entity."""
     for part in _chunks(text):
-        await _api("chat.postMessage", json={"channel": channel, "text": part})
+        await _api("chat.postMessage", json={"channel": channel, "text": _escape(part)})
 
 
 def _wren_user_id(slack_id: str) -> int | None:
@@ -168,7 +186,8 @@ class SlackChannel:
         got = await _api("files.getUploadURLExternal", json={"filename": filename, "length": len(data)})
         await _upload_bytes(got["upload_url"], data)
         await _api("files.completeUploadExternal",
-                   json={"files": [{"id": got["file_id"], "title": filename}], "channel_id": self._channel})
+                   json={"files": _json.dumps([{"id": got["file_id"], "title": filename}]),
+                         "channel_id": self._channel})
 
     async def send_card(self, kind: str, data: dict, text: str,
                         *, intent: str = "", params: dict | None = None) -> None:
@@ -186,6 +205,37 @@ class SlackChannel:
             await _api("reactions.add", json={"channel": self._channel, "timestamp": self._ts, "name": name})
         except Exception as e:
             logging.warning(f"slack reactions.add failed: {_scrub(str(e))}")
+
+
+# Slack's markup in incoming text: a link or mention arrives wrapped in angle
+# brackets (<https://x|label>, <@U123>, <#C123|general>, <!here>), and a
+# literal &, < or > the person typed arrives as &amp;, &lt;, &gt;. So any
+# bare < in the text is markup.
+_MARKUP = re.compile(r"<([^<>|]+)(?:\|([^<>]*))?>")
+
+
+def _unwrap(m: re.Match) -> str:
+    target, label = m.group(1), m.group(2)
+    if target.startswith(("http://", "https://")):
+        return target                            # the link itself, not its label
+    if target.startswith("mailto:"):
+        return target.removeprefix("mailto:")    # the address as it was typed
+    if target[0] in "@#":
+        return target[0] + (label or target[1:])
+    if target[0] == "!":
+        # <!here>, <!subteam^S1|@team>, <!date^...|fallback>
+        return label or "@" + target[1:].split("^")[0]
+    return m.group(0)
+
+
+def _plain(text: str) -> str:
+    """What the person typed, from what Slack sent. Translation, the same
+    as turning a member id into a Wren id, so it is the door's job: without
+    it "salt & pepper" reaches the brain as "salt &amp; pepper" and a link
+    to save as "<https://example.com|this>". Markup first, while every
+    remaining < is still escaped; entities after, so a link's own &amp;
+    comes out too."""
+    return html.unescape(_MARKUP.sub(_unwrap, text))
 
 
 def _incoming(event: dict) -> tuple[str, str, list[dict]] | None:
@@ -210,7 +260,7 @@ def _incoming(event: dict) -> tuple[str, str, list[dict]] | None:
         for f in (event.get("files") or [])
         if isinstance(f, dict) and f.get("mimetype") in filetypes.ACCEPTED and f.get("url_private_download")
     ]
-    text = event.get("text") or ""
+    text = _plain(event.get("text") or "")
     if not text and not wanted:
         return None
     return user, text, wanted
@@ -285,23 +335,61 @@ async def _handle_event(event: dict) -> None:
         return
     if wanted and not files:
         return                                   # every file refused; the refusal already replied
-    # Awaited inline so replies stay in order; see telegram_plugin for why
-    # not a task.
     await core.handle_message(user_id, text, SlackChannel(channel_id, event.get("ts", "")), files=files)
 
 
-async def _run_once() -> None:
-    """One websocket connection: open it, serve envelopes until Slack says
-    disconnect (it does so routinely to rotate hosts), then return so
-    start() opens a fresh one."""
-    body = await _api("apps.connections.open", token=config.SLACK_APP_TOKEN)
-    url = body["url"]
+# Event ids already queued. Socket Mode is at-least-once: an envelope acked
+# late, or held across a reconnect, comes again under a new envelope id but
+# the same event id. Module-level so it spans reconnects; bounded because
+# only the last few minutes can repeat.
+_SEEN_MAX = 256
+_seen: collections.OrderedDict[str, None] = collections.OrderedDict()
+
+
+def _first_sighting(event_id) -> bool:
+    if not event_id:
+        return True                              # nothing to tell a repeat by
+    if event_id in _seen:
+        return False
+    _seen[event_id] = None
+    if len(_seen) > _SEEN_MAX:
+        _seen.popitem(last=False)
+    return True
+
+
+async def _work(queue: asyncio.Queue) -> None:
+    """The one consumer of a connection's events. One, so replies go out in
+    the order the messages came in (see telegram_plugin for why not a task
+    per message); None on the queue ends it."""
+    while True:
+        item = await queue.get()
+        if item is None:
+            return
+        envelope_id, event = item
+        try:
+            await _handle_event(event)
+        except Exception as e:
+            # Never the body: DMs are as private as reminders.
+            logging.error(f"slack: handling event {envelope_id} from "
+                          f"{event.get('user')} failed: {_scrub(str(e))}")
+
+
+async def _read(url: str, queue: asyncio.Queue) -> None:
+    """Serve the websocket until Slack says disconnect (it does so routinely
+    to rotate hosts) or the socket drops. Every envelope is acked the moment
+    it arrives and its event queued: Slack retries an envelope it has not
+    seen acked within about 3 s, and the brain can take longer than that on
+    the message before -- acking behind it would answer the same message
+    twice."""
     timeout = aiohttp.ClientTimeout(total=None)   # the socket lives until Slack closes it
     async with aiohttp.ClientSession(timeout=timeout) as session:
         async with session.ws_connect(url, heartbeat=30) as ws:
             async for msg in ws:
+                if msg.type == aiohttp.WSMsgType.ERROR:
+                    logging.warning(f"slack websocket error ({_scrub(str(msg.data))}); reconnecting")
+                    return
                 if msg.type != aiohttp.WSMsgType.TEXT:
-                    if msg.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
+                    if msg.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSED):
                         return
                     continue
                 frame = msg.json()
@@ -310,20 +398,33 @@ async def _run_once() -> None:
                     return
                 envelope_id = frame.get("envelope_id")
                 if envelope_id:
-                    # Acked first, always: Slack retries an envelope it has
-                    # not seen acked within about 3 s, and the brain can
-                    # take longer than that -- an ack after handling would
-                    # answer the same message twice.
                     await ws.send_json({"envelope_id": envelope_id})
                 if kind != "events_api":
                     continue                     # hello, slash_commands, interactive: nothing to do
-                event = (frame.get("payload") or {}).get("event") or {}
-                try:
-                    await _handle_event(event)
-                except Exception as e:
-                    # Never the body: DMs are as private as reminders.
-                    logging.error(f"slack: handling event {envelope_id} from "
-                                  f"{event.get('user')} failed: {_scrub(str(e))}")
+                payload = frame.get("payload") or {}
+                if not _first_sighting(payload.get("event_id")):
+                    continue                     # a redelivery: acked again, handled once
+                queue.put_nowait((envelope_id, payload.get("event") or {}))
+
+
+async def _run_once() -> None:
+    """One websocket connection and the worker behind it; returns when the
+    connection ends so start() opens a fresh one."""
+    body = await _api("apps.connections.open", token=config.SLACK_APP_TOKEN)
+    queue: asyncio.Queue = asyncio.Queue()
+    worker = asyncio.create_task(_work(queue))
+    try:
+        await _read(body["url"], queue)
+    except asyncio.CancelledError:
+        worker.cancel()                          # shutting down: stop mid-message
+        raise
+    finally:
+        # Otherwise the worker finishes the queue first. Everything on it was
+        # acked, so Slack will not send it again; cancelling here would drop
+        # it, and Slack rotates connections every few hours. The socket is
+        # closed by now, so new messages wait for the next connection.
+        queue.put_nowait(None)
+        await asyncio.gather(worker, return_exceptions=True)
 
 
 async def start() -> None:
