@@ -97,12 +97,15 @@ def mint(surface: str, surface_id) -> int:
     return int.from_bytes(digest[:7], "big") or 1
 
 
-def add(alias: str, surface_id, surface: str = "discord") -> None:
+def add(alias: str, surface_id, surface: str = "discord", *, wren: int | None = None) -> None:
+    """`wren` puts back an id the person already had (undoing a removal);
+    without it the id is worked out from this first surface id."""
     col = _col(surface)
     ts = datetime.now(timezone.utc).isoformat()
     # the first id a person is added with is their Wren id for good: the id
     # itself when it is a number, a minted one otherwise
-    wren = int(surface_id) if surface in NUMERIC else mint(surface, surface_id)
+    if wren is None:
+        wren = int(surface_id) if surface in NUMERIC else mint(surface, surface_id)
     with db.conn() as con:
         con.execute(
             f"INSERT INTO contacts (alias, {col}, wren_id, added_at) VALUES (?,?,?,?)",
@@ -139,6 +142,10 @@ def register(alias: str, surface: str, raw_id: str, reserved=()) -> bool:
     raw_id = str(raw_id).strip()
     if not ID_SHAPE[surface].fullmatch(raw_id):
         raise Invalid(f"That doesn't look like a {surface} id.")
+    if surface in NUMERIC:
+        # Stored as text, looked up as str(int): "0055" would be a person
+        # nobody can ever be, and a second row beside the real "55".
+        raw_id = str(int(raw_id))
     alias = alias.strip().lower()
     row = get(alias)
     if row is None:
@@ -166,6 +173,15 @@ def get(alias: str) -> dict | None:
     if not row:
         return None
     return {"alias": row[0], **{s: _native(s, v) for s, v in zip(SURFACES, row[1:])}}
+
+
+def wren_id_of(alias: str) -> int | None:
+    """The Wren id a contact is filed under, by name. Kept out of get(),
+    which is the per-surface view the People tab and the skill render."""
+    with db.conn() as con:
+        row = con.execute(f"SELECT {_WREN_ID} FROM contacts WHERE alias=?",
+                          (alias.strip().lower(),)).fetchone()
+    return int(row[0]) if row else None
 
 
 def remove(alias: str) -> bool:

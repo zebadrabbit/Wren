@@ -182,3 +182,22 @@ def test_undo_remove_contact_brings_them_back_on_every_surface():
     asyncio.run(contacts_plugin.UNDO["remove_contact"](ctx))
     assert contacts.all() == {"hubby": 222} and contacts.surface_id("telegram", 222) == 42
     _assert_flourished(ctx.channel.sent[-1], "Added hubby back.")
+
+
+def test_undo_keeps_a_slack_first_contacts_minted_id():
+    # SURFACES puts discord before slack; re-adding by that order would make
+    # the Discord id their Wren id and orphan everything filed under the
+    # minted one.
+    contacts.register("kim", "slack", "U0123ABCDEF")
+    contacts.register("kim", "discord", "123456789012345678")
+    minted = contacts.mint("slack", "U0123ABCDEF")
+    assert contacts.all() == {"kim": minted}
+    ctx = Ctx(user_id=1, channel=CollectingChannel(), person="kim")
+    asyncio.run(contacts_plugin.handle("remove_contact", ctx))
+    assert contacts.all() == {}
+    asyncio.run(contacts_plugin.UNDO["remove_contact"](ctx))
+    assert contacts.all() == {"kim": minted}
+    assert contacts.wren_id("slack", "U0123ABCDEF") == minted
+    assert contacts.wren_id("discord", 123456789012345678) == minted
+    assert contacts.surface_id("discord", minted) == 123456789012345678
+    assert contacts.surface_id("slack", minted) == "U0123ABCDEF"

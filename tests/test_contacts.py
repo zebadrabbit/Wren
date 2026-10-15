@@ -203,3 +203,19 @@ def test_a_surface_id_is_unique_across_people():
 def test_non_ascii_digits_are_refused():
     with pytest.raises(contacts.Invalid):
         contacts.register("kim", "telegram", "١٢")
+
+
+def test_numeric_ids_are_stored_without_leading_zeros():
+    # stored as text, looked up as str(int): "0055" would never match
+    contacts.register("kim", "telegram", "0055")
+    assert contacts.wren_id("telegram", 55) == 55
+    assert contacts.all() == {"kim": 55}
+    with pytest.raises(contacts.Taken, match="another name"):
+        contacts.register("sam", "telegram", "55")             # one person, not two
+
+def test_wren_id_of_and_add_with_an_explicit_wren_id():
+    contacts.register("kim", "slack", "U0123ABCDEF")
+    assert contacts.wren_id_of("Kim") == contacts.mint("slack", "U0123ABCDEF")
+    assert contacts.wren_id_of("nobody") is None
+    contacts.add("sam", 123456789012345678, surface="discord", wren=77)
+    assert contacts.all()["sam"] == 77 and contacts.wren_id("discord", 123456789012345678) == 77

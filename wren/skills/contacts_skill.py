@@ -21,17 +21,21 @@ def _default_surface() -> str:
                 contacts.SURFACES[0])
 
 
-# remove_contact deletes the row, so "undo that" re-adds it, every surface id included
-_last_removed: dict[int, dict] = {}
+# remove_contact deletes the row, so "undo that" re-adds it, every surface id
+# and the Wren id included: re-deriving the Wren id from whichever surface
+# comes first in SURFACES would move a Slack-first person who also has a
+# Discord id onto that Discord id, away from their notes and reminders.
+_last_removed: dict[int, tuple[dict, int | None]] = {}
 
 
 async def _undo_remove(ctx: Ctx) -> None:
-    row = _last_removed.pop(ctx.user_id, None)
-    if row is None:
+    removed = _last_removed.pop(ctx.user_id, None)
+    if removed is None:
         await ctx.channel.send("Nothing to add back.")
         return
+    row, wren = removed
     ids = [(s, row[s]) for s in contacts.SURFACES if row.get(s) is not None]
-    contacts.add(row["alias"], ids[0][1], surface=ids[0][0])
+    contacts.add(row["alias"], ids[0][1], surface=ids[0][0], wren=wren)
     for surface, sid in ids[1:]:
         contacts.set_id(row["alias"], surface, sid)
     await ctx.channel.send(flourish.flourish(f"Added {row['alias']} back."))
@@ -63,9 +67,9 @@ async def handle(intent: str, ctx: Ctx) -> None:
 
     elif intent == "remove_contact":
         alias = (ctx.person or "").strip().lower()
-        row = contacts.get(alias)
+        row, wren = contacts.get(alias), contacts.wren_id_of(alias)
         if contacts.remove(alias):
-            _last_removed[ctx.user_id] = row
+            _last_removed[ctx.user_id] = (row, wren)
             await ctx.channel.send(flourish.flourish(f"Removed {alias}."))
         else:
             await ctx.channel.send(f"No contact named {alias}.")
