@@ -390,11 +390,11 @@ def test_add_a_contact_then_a_second_surface_then_remove():
     status, row = call("post", "/api/contacts", token=TOKEN_OWNER,
                        json={"alias": "Hubby", "surface": "discord", "id": SNOWFLAKE})
     assert (status, row) == (201, {"alias": "hubby", "discord": SNOWFLAKE, "telegram": None,
-                                   "wren_id": SNOWFLAKE})
+                                   "slack": None, "matrix": None, "wren_id": SNOWFLAKE})
     status, row = call("post", "/api/contacts", token=TOKEN_OWNER,
                        json={"alias": "hubby", "surface": "telegram", "id": 456})
     assert (status, row) == (200, {"alias": "hubby", "discord": SNOWFLAKE, "telegram": "456",
-                                   "wren_id": SNOWFLAKE})
+                                   "slack": None, "matrix": None, "wren_id": SNOWFLAKE})
     assert call("get", "/api/contacts", token=TOKEN_OWNER)[1] == [row]
     assert call("delete", "/api/contacts/hubby", token=TOKEN_OWNER) == (200, {"ok": True})
     assert call("delete", "/api/contacts/hubby", token=TOKEN_OWNER)[0] == 404
@@ -441,7 +441,7 @@ def test_add_contact_refuses_a_name_already_in_the_whitelist(monkeypatch):
 def test_a_telegram_only_contact_signs_in_as_their_telegram_id():
     status, row = call("post", "/api/contacts", token=TOKEN_OWNER,
                        json={"alias": "kim", "surface": "telegram", "id": "55"})
-    assert (status, row) == (201, {"alias": "kim", "discord": None, "telegram": "55", "wren_id": "55"})
+    assert (status, row) == (201, {"alias": "kim", "discord": None, "telegram": "55", "slack": None, "matrix": None, "wren_id": "55"})
 
 
 def test_adding_discord_to_a_telegram_first_contact_keeps_who_they_sign_in_as():
@@ -451,4 +451,4 @@ def test_adding_discord_to_a_telegram_first_contact_keeps_who_they_sign_in_as():
     call("post", "/api/contacts", token=TOKEN_OWNER, json={"alias": "kim", "surface": "telegram", "id": "55"})
     status, out = call("post", "/api/contacts", token=TOKEN_OWNER,
                        json={"alias": "kim", "surface": "discord", "id": SNOWFLAKE})
-    assert (status, out) == (200, {"alias": "kim", "discord": SNOWFLAKE, "telegram": "55", "wren_id": "55"})
+    assert (status, out) == (200, {"alias": "kim", "discord": SNOWFLAKE, "telegram": "55", "slack": None, "matrix": None, "wren_id": "55"})

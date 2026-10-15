@@ -125,3 +125,76 @@ def test_a_pre_2026_09_26_table_is_migrated_with_its_rows(tmp_path, monkeypatch)
     assert contacts.set_id("hubby", "telegram", 42) is True
     contacts.add("kevin", 43, surface="telegram")   # NOT NULL on discord_id is gone
     assert contacts.all() == {"hubby": 222222222222222222, "kevin": 43}
+
+# --- string ids per surface (2026-10-15) ---------------------------------------
+# Slack and Matrix ids are not numbers. The per-surface id is a string in the
+# store's interface; the Wren id stays an int, minted for string-id surfaces.
+
+def test_surfaces_and_shapes():
+    assert contacts.SURFACES == ("discord", "telegram", "slack", "matrix")
+    assert contacts.NUMERIC == frozenset({"discord", "telegram"})
+    assert contacts.ID_SHAPE["slack"].fullmatch("U0123ABCDEF")
+    assert contacts.ID_SHAPE["matrix"].fullmatch("@kim:home.net")
+    assert not contacts.ID_SHAPE["slack"].fullmatch("u0123abcdef")
+    assert not contacts.ID_SHAPE["discord"].fullmatch("U0123ABCDEF")
+
+def test_register_refuses_a_malformed_id():
+    for surface, raw in [("slack", "u0123abcdef"), ("slack", "U01 23ABCDEF"),
+                         ("matrix", "kim:home.net"), ("discord", "12ab"), ("telegram", "")]:
+        with pytest.raises(contacts.Invalid, match=f"look like a {surface} id"):
+            contacts.register("kim", surface, raw)
+    assert contacts.all() == {}
+
+def test_slack_first_contact_gets_a_minted_stable_wren_id():
+    assert contacts.register("kim", "slack", "U0123ABCDEF") is True
+    wid = contacts.all()["kim"]
+    assert isinstance(wid, int) and 0 < wid < 2 ** 56
+    assert wid == contacts.mint("slack", "U0123ABCDEF")
+    assert contacts.wren_id("slack", "U0123ABCDEF") == wid
+    assert contacts.surface_id("slack", wid) == "U0123ABCDEF"
+    assert contacts.get("kim") == {"alias": "kim", "discord": None, "telegram": None,
+                                   "slack": "U0123ABCDEF", "matrix": None}
+    assert contacts.surfaces_of(wid) == ["slack"]
+    # removed and re-added: same id, so their notes are still theirs
+    assert contacts.remove("kim")
+    contacts.register("kim", "slack", "U0123ABCDEF")
+    assert contacts.all()["kim"] == wid
+
+def test_mint_differs_by_surface_and_id():
+    assert contacts.mint("slack", "U0123ABCDEF") != contacts.mint("matrix", "U0123ABCDEF")
+    assert contacts.mint("slack", "U0123ABCDEF") != contacts.mint("slack", "U0123ABCDEG")
+
+def test_numeric_surfaces_keep_native_ints():
+    contacts.register("hubby", "discord", "222222222222222222")
+    contacts.register("hubby", "matrix", "@hubby:home.net")
+    assert contacts.all() == {"hubby": 222222222222222222}
+    assert contacts.get("hubby")["discord"] == 222222222222222222
+    assert contacts.get("hubby")["matrix"] == "@hubby:home.net"
+    assert contacts.surface_id("matrix", 222222222222222222) == "@hubby:home.net"
+    assert contacts.wren_id("matrix", "@hubby:home.net") == 222222222222222222
+    assert contacts.surfaces_of(222222222222222222) == ["discord", "matrix"]
+
+def test_register_strips_the_id_before_checking_it():
+    contacts.register("kim", "telegram", " 55 ")
+    assert contacts.all() == {"kim": 55}
+
+def test_init_db_adds_the_new_columns_to_an_existing_table(tmp_path, monkeypatch):
+    from wren import db
+    monkeypatch.setenv("WREN_DB", str(tmp_path / "old.db"))
+    with db.conn() as con:
+        con.executescript("""
+            CREATE TABLE contacts (alias TEXT PRIMARY KEY, discord_id TEXT UNIQUE,
+                                   telegram_id TEXT UNIQUE, wren_id TEXT, added_at TEXT NOT NULL);
+            INSERT INTO contacts VALUES ('kim', NULL, '55', '55', 'x');
+        """)
+    contacts.init_db()
+    contacts.init_db()                                        # idempotent
+    assert contacts.get("kim") == {"alias": "kim", "discord": None, "telegram": 55,
+                                   "slack": None, "matrix": None}
+    assert contacts.set_id("kim", "slack", "U0123ABCDEF") is True
+    assert contacts.surface_id("slack", 55) == "U0123ABCDEF"
+
+def test_a_surface_id_is_unique_across_people():
+    contacts.register("kim", "slack", "U0123ABCDEF")
+    with pytest.raises(contacts.Taken, match="another name"):
+        contacts.register("sam", "slack", "U0123ABCDEF")
