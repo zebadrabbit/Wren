@@ -206,11 +206,12 @@ async def notify(user_id: int, text: str) -> bool:
         raise
 
 
-# What /sync should carry: timeline and member state, lazily loaded so a
-# room's members arrive without every presence and receipt in the server.
+# What /sync should carry: timeline and member state. Members are NOT lazily
+# loaded: the "exactly two members" DM gate and _dm_room's identity match
+# need the full list, and lazy loading sends only recent speakers plus Wren,
+# so a group room with a silent third member would look like a DM.
 _SYNC_FILTER = _json.dumps({
-    "room": {"timeline": {"limit": 50}, "state": {"lazy_load_members": True},
-             "ephemeral": {"types": []}, "account_data": {"types": []}},
+    "room": {"timeline": {"limit": 50}, "ephemeral": {"types": []}, "account_data": {"types": []}},
     "presence": {"types": []}, "account_data": {"types": []},
 })
 # A restart replays whatever the initial sync carries and anything missed
@@ -257,6 +258,8 @@ def _incoming(event: dict) -> tuple[str, str, list[dict]] | None:
     if not isinstance(sender, str) or sender == _me:
         return None
     content = event.get("content") or {}
+    if (content.get("m.relates_to") or {}).get("rel_type") == "m.replace":
+        return None                              # an edit, not a new command
     kind = content.get("msgtype")
     body = content.get("body") or ""
     if kind == "m.text":
@@ -318,8 +321,8 @@ async def _sync_once(since: str | None) -> str:
     body = await _api("GET", f"{V3}/sync", params=params)
     rooms = body.get("rooms") or {}
     _learn_rooms(rooms)
-    if since is None:
-        return body["next_batch"]
+    # Invites are joined on the initial sync too: the server does not repeat
+    # them, and joining is idempotent.
     for room_id, room in (rooms.get("invite") or {}).items():
         inviter = next((ev.get("sender") for ev in ((room.get("invite_state") or {}).get("events") or [])
                         if ev.get("type") == "m.room.member" and ev.get("state_key") == _me), None)
@@ -328,6 +331,8 @@ async def _sync_once(since: str | None) -> str:
                 await _api("POST", f"{V3}/rooms/{room_id}/join")
             except Exception as e:
                 logging.warning(f"matrix: join {room_id} failed: {_scrub(str(e))}")
+    if since is None:
+        return body["next_batch"]
     for room_id, room in (rooms.get("join") or {}).items():
         events = (room.get("timeline") or {}).get("events") or []
         if any(ev.get("type") == "m.room.encrypted" for ev in events):
@@ -370,7 +375,11 @@ async def start() -> None:
                 # the encryption toggle. Runs once the initial sync has shown
                 # whether such a room already exists (since is None before).
                 if since is not None:
-                    await _dm_room(config.MATRIX_OWNER_ID)
+                    try:
+                        await _dm_room(config.MATRIX_OWNER_ID)
+                    except Exception as e:
+                        # A bad MATRIX_OWNER_ID must not block every contact's DMs.
+                        logging.warning(f"matrix: could not open the owner's room: {_scrub(str(e))}")
             since = await _sync_once(since)
             backoff = _RETRY_SECONDS
         except asyncio.CancelledError:

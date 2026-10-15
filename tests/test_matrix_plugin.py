@@ -258,6 +258,8 @@ def test_incoming_text_and_media():
     _msg(ME, "my own echo"),
     {"type": "m.room.encrypted", "sender": OWNER, "content": {}},
     {"type": "m.reaction", "sender": OWNER, "content": {}},
+    _msg(OWNER, "* add milk", **{"m.relates_to": {"rel_type": "m.replace", "event_id": "$orig"},
+                                 "m.new_content": {"msgtype": "m.text", "body": "add milk"}}),
     _msg(OWNER, "clip", msgtype="m.video", url="mxc://home.net/v", info={"mimetype": "video/mp4"}),
 ])
 def test_incoming_ignores_what_it_cannot_act_on(event):
@@ -450,3 +452,47 @@ def test_a_room_wren_created_stays_the_dm_room_while_the_invite_is_pending(monke
     assert matrix_plugin._rooms["!new:home.net"] == {ME, KIM}
     assert asyncio.run(matrix_plugin._dm_room(KIM)) == "!new:home.net"
     assert not [c for c in api.calls if c[1].endswith("/createRoom")]
+
+
+def test_sync_filter_loads_full_membership():
+    assert "lazy_load_members" not in matrix_plugin._SYNC_FILTER
+
+
+def test_a_failing_owner_room_does_not_block_the_sync(monkeypatch):
+    monkeypatch.setattr(matrix_plugin, "_RETRY_SECONDS", 0.001)
+    monkeypatch.setattr(matrix_plugin, "_api", Recorder({
+        ("GET", f"{matrix_plugin.V3}/account/whoami"): {"user_id": ME},
+        ("POST", f"{matrix_plugin.V3}/createRoom"): matrix_plugin.MatrixError("M_INVALID_PARAM", 400)}))
+    seen = []
+    second = asyncio.Event()
+    async def fake_sync(since):
+        seen.append(since)
+        if len(seen) >= 3:
+            second.set()
+        await asyncio.sleep(0.001)
+        return "s1"
+    monkeypatch.setattr(matrix_plugin, "_sync_once", fake_sync)
+    async def _run():
+        task = asyncio.create_task(matrix_plugin.start())
+        await asyncio.wait_for(second.wait(), 1)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    asyncio.run(_run())
+    assert len(seen) >= 2
+
+
+def test_invites_pending_at_startup_are_joined_but_history_is_not_acted_on(monkeypatch):
+    contacts.register("kim", "matrix", KIM)
+    matrix_plugin._rooms["!a:home.net"] = {ME, OWNER}
+    body = _sync(_joined("!a:home.net", [ME, OWNER], [_msg(OWNER, "old news")]),
+                 invited={"!k:home.net": {"invite_state": {"events": [_member(ME, "invite", sender=KIM)]}}},
+                 next_batch="s1")
+    api = Recorder({("GET", f"{matrix_plugin.V3}/sync"): body})
+    monkeypatch.setattr(matrix_plugin, "_api", api)
+    handle = AsyncMock()
+    monkeypatch.setattr(core, "handle_message", handle)
+    assert asyncio.run(matrix_plugin._sync_once(None)) == "s1"
+    assert [c[1] for c in api.calls if c[0] == "POST" and c[1].endswith("/join")] == \
+        [f"{matrix_plugin.V3}/rooms/!k:home.net/join"]
+    handle.assert_not_awaited()
