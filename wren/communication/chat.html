@@ -112,10 +112,14 @@ aside header b { font-size: 16px; }
 
 /* ── chat column ───────────────────────────────────────────────────────── */
 main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+/* The strip only exists to hold the menu button on a phone and the rail
+   toggle once the sidebar is folded; with the sidebar open, the Today panel
+   already says the day and a space's card says its name (owner, 2026-10-14). */
 #topbar {
-  display: flex; align-items: center; gap: 10px; padding: 10px 20px;
+  display: none; align-items: center; gap: 10px; padding: 10px 20px;
   border-bottom: 1px solid var(--line); min-height: 48px;
 }
+#app.railed #topbar, #app.narrow #topbar { display: flex; }
 /* The toggle follows the sidebar: at the far end of its header while the
    sidebar is on screen, and at the window's top-left -- where the topbar now
    starts -- once it is gone. position:fixed works there because the
@@ -146,7 +150,6 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
   flex: 1; font-weight: 600; font-size: 15px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-#cdate { color: var(--muted); font-size: 13px; margin-left: auto; white-space: nowrap; }
 #menu { border: 0; padding: 4px 8px; border-radius: 6px; font-size: 18px; line-height: 1; }
 /* position:relative is load-bearing: every message carries an absolutely
    positioned .sr speaker label, and an absolute box anchors to the nearest
@@ -551,7 +554,6 @@ main footer { padding: 10px 20px 18px; }
     <header id="topbar">
       <button id="menu" type="button" hidden aria-label="Menu">☰</button>
       <span id="ctitle">Today</span>
-      <span id="cdate"></span>
     </header>
     <div id="today" hidden></div>
     <div id="space" hidden><div class="smount"></div></div>
@@ -1858,7 +1860,6 @@ async function start() {
   $("#login").style.display = "none";
   $("#app").classList.add("on");
   if (localStorage.getItem("wren_rail")) setRail(true);
-  $("#cdate").textContent = new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
   // The endpoint 403s for non-owners -- use that to decide whether the gear
   // is even shown, and fail closed (hidden) on any error rather than risk
   // flashing it at someone it should never appear for.
