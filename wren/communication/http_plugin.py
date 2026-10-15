@@ -175,9 +175,25 @@ async def voice(request: web.Request) -> web.Response:
                            transcript=transcript)
 
 
+class _QuietPolls(logging.Filter):
+    """Every open page asks for new rows, the day's cards and the sidebar
+    each 30 seconds; at INFO that is a few thousand identical access lines a
+    day per tab. A poll that got a 200 is not news. Anything else -- a 401,
+    a 500, a send on /message, the page itself -- still logs."""
+    POLLS = ("GET /api/timeline?", "GET /api/spaces ", "POST /api/dispatch ")
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return not (getattr(record, "response_status", None) == 200
+                    and str(getattr(record, "first_request_line", "")).startswith(self.POLLS))
+
+
+_quiet_polls = _QuietPolls()   # one instance: addFilter skips a filter already present
+
+
 def build_app() -> web.Application:
     from . import webchat
 
+    logging.getLogger("aiohttp.access").addFilter(_quiet_polls)
     app = web.Application(client_max_size=MAX_BODY_BYTES)
     app.router.add_get("/health", health)
     app.router.add_post("/message", message)

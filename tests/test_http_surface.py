@@ -500,3 +500,19 @@ def test_dry_run_returns_the_rows_but_persists_none(monkeypatch):
     assert status == 200 and body["dry_run"] is True
     assert [m["role"] for m in body["messages"]] == ["user", "assistant"]
     assert conversations.timeline(1) == []
+
+
+def test_access_log_skips_successful_polls_only():
+    import logging
+    f = http_surface._QuietPolls()
+    def rec(line, status):
+        r = logging.LogRecord("aiohttp.access", logging.INFO, "", 0, "x", (), None)
+        r.first_request_line, r.response_status = line, status
+        return r
+    assert not f.filter(rec("GET /api/timeline?after=12 HTTP/1.1", 200))
+    assert not f.filter(rec("GET /api/spaces HTTP/1.1", 200))
+    assert not f.filter(rec("POST /api/dispatch HTTP/1.1", 200))
+    assert f.filter(rec("GET /api/timeline?after=12 HTTP/1.1", 401))
+    assert f.filter(rec("POST /message HTTP/1.1", 200))
+    assert f.filter(rec("GET / HTTP/1.1", 200))
+    assert f.filter(logging.LogRecord("aiohttp.access", logging.INFO, "", 0, "no extra", (), None))
