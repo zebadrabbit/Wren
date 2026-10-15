@@ -85,7 +85,12 @@ async def _api(method: str, path: str, *, json: dict | None = None, params: dict
     try:
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.request(method, url, json=json, params=params, data=data, headers=headers) as resp:
-                body = await resp.json()
+                # A reverse proxy's 502 page is HTML: still a MatrixError
+                # with its status, not a bare transport error.
+                try:
+                    body = await resp.json(content_type=None)
+                except Exception:
+                    body = {}
                 if resp.status >= 300:
                     raise MatrixError(str((body or {}).get("errcode", "M_UNKNOWN")), resp.status)
                 return body or {}
@@ -199,3 +204,178 @@ async def notify(user_id: int, text: str) -> bool:
             logging.warning(f"matrix cannot reach user {user_id}: {e}")
             return False
         raise
+
+
+# What /sync should carry: timeline and member state, lazily loaded so a
+# room's members arrive without every presence and receipt in the server.
+_SYNC_FILTER = _json.dumps({
+    "room": {"timeline": {"limit": 50}, "state": {"lazy_load_members": True},
+             "ephemeral": {"types": []}, "account_data": {"types": []}},
+    "presence": {"types": []}, "account_data": {"types": []},
+})
+# A restart replays whatever the initial sync carries and anything missed
+# since the last token (process-local, as telegram_plugin's offset is).
+# Acting on a message hours late is worse than not acting.
+_STALE_SECONDS = 30 * 60
+_encrypted: set[str] = set()          # rooms already warned about
+
+
+def _is_stale(event: dict) -> bool:
+    ts = event.get("origin_server_ts")
+    return isinstance(ts, (int, float)) and time.time() - ts / 1000 > _STALE_SECONDS
+
+
+def _learn_rooms(rooms: dict) -> None:
+    """Fold a sync's membership into _rooms. State events carry the members
+    who were already there; timeline events carry joins and leaves since."""
+    for room_id, room in (rooms.get("join") or {}).items():
+        members = _rooms.setdefault(room_id, set())
+        events = list((room.get("state") or {}).get("events") or []) + \
+                 list((room.get("timeline") or {}).get("events") or [])
+        for ev in events:
+            if ev.get("type") != "m.room.member":
+                continue
+            who = ev.get("state_key")
+            if not who:
+                continue
+            if (ev.get("content") or {}).get("membership") in ("join", "invite"):
+                members.add(who)
+            else:
+                members.discard(who)
+    for room_id in (rooms.get("leave") or {}):
+        _rooms.pop(room_id, None)
+
+
+def _incoming(event: dict) -> tuple[str, str, list[dict]] | None:
+    """(sender, text, wanted_files) for a timeline event Wren should act on,
+    else None: m.room.message only, never our own echo; m.text is text,
+    m.image/m.file of an accepted type is a file whose caption is `body`
+    when the sender gave one (then `filename` holds the name)."""
+    if not isinstance(event, dict) or event.get("type") != "m.room.message":
+        return None
+    sender = event.get("sender")
+    if not isinstance(sender, str) or sender == _me:
+        return None
+    content = event.get("content") or {}
+    kind = content.get("msgtype")
+    body = content.get("body") or ""
+    if kind == "m.text":
+        return (sender, body, []) if body else None
+    if kind in ("m.image", "m.file"):
+        info = content.get("info") or {}
+        if info.get("mimetype") not in filetypes.ACCEPTED or not content.get("url"):
+            return None
+        filename = content.get("filename") or body or "file"
+        text = body if content.get("filename") and body != content.get("filename") else ""
+        return sender, text, [{"url": content["url"], "filename": filename,
+                               "mime": info["mimetype"], "size": info.get("size")}]
+    return None
+
+
+def _known(matrix_id: str) -> bool:
+    return _wren_user_id(matrix_id) is not None
+
+
+async def _handle(room_id: str, event: dict) -> None:
+    parsed = _incoming(event)
+    if parsed is None:
+        return
+    sender, text, wanted = parsed
+    user_id = _wren_user_id(sender)
+    if user_id is None:
+        return
+    if _is_stale(event):
+        await _send_text(room_id, "I was offline when some of your messages arrived, so I "
+                                  "didn't act on them. Send again anything that still matters.")
+        return
+    files: list[Inbound] = []
+    for want in wanted:
+        size = want.get("size")
+        if size is not None and size > filetypes.MAX_BYTES:
+            await _send_text(room_id, "That's too big, 10 MB max.")
+            continue
+        try:
+            data = await _download(want["url"])
+        except Exception as e:
+            logging.warning(f"matrix: media download failed: {_scrub(str(e))}")
+            await _send_text(room_id, "Couldn't fetch that file, try again.")
+            continue
+        files.append(Inbound(filename=want["filename"], mime=want["mime"], data=data))
+    if not text and not files:
+        return
+    if wanted and not files:
+        return
+    await core.handle_message(user_id, text, MatrixChannel(room_id), files=files)
+
+
+async def _sync_once(since: str | None) -> str:
+    """One /sync round trip. Returns the token for the next call. With no
+    token this is the initial sync: it carries history, so it only teaches
+    us the rooms and is otherwise not acted on."""
+    params = {"timeout": _LONG_POLL_MS, "filter": _SYNC_FILTER}
+    if since:
+        params["since"] = since
+    body = await _api("GET", f"{V3}/sync", params=params)
+    rooms = body.get("rooms") or {}
+    _learn_rooms(rooms)
+    if since is None:
+        return body["next_batch"]
+    for room_id, room in (rooms.get("invite") or {}).items():
+        inviter = next((ev.get("sender") for ev in ((room.get("invite_state") or {}).get("events") or [])
+                        if ev.get("type") == "m.room.member" and ev.get("state_key") == _me), None)
+        if inviter and _known(inviter):
+            try:
+                await _api("POST", f"{V3}/rooms/{room_id}/join")
+            except Exception as e:
+                logging.warning(f"matrix: join {room_id} failed: {_scrub(str(e))}")
+    for room_id, room in (rooms.get("join") or {}).items():
+        events = (room.get("timeline") or {}).get("events") or []
+        if any(ev.get("type") == "m.room.encrypted" for ev in events):
+            if room_id not in _encrypted:
+                _encrypted.add(room_id)
+                logging.warning(f"matrix: room {room_id} is encrypted and Wren cannot read it; "
+                                "let Wren open the direct room instead (see README)")
+            continue
+        if len(_rooms.get(room_id, ())) != 2:
+            continue                             # a group room, or membership unknown yet
+        for ev in events:
+            try:
+                await _handle(room_id, ev)
+            except Exception as e:
+                # Never the body: direct messages are as private as reminders.
+                logging.error(f"matrix: handling {ev.get('event_id')} from {ev.get('sender')} "
+                              f"failed: {_scrub(str(e))}")
+    return body["next_batch"]
+
+
+async def start() -> None:
+    """Runs for the lifetime of the process (see telegram_plugin.start)."""
+    global _me
+    missing = [k for k in ("MATRIX_HOMESERVER", "MATRIX_TOKEN") if not getattr(config, k)]
+    if missing:
+        raise RuntimeError(
+            f"COMMUNICATION_PLUGINS includes 'matrix' but {' and '.join(missing)} not set. "
+            "Set them, or drop 'matrix' from COMMUNICATION_PLUGINS.")
+    router.register("matrix", sys.modules[__name__])
+    since: str | None = None
+    backoff = _RETRY_SECONDS
+    while True:
+        try:
+            if not _me:
+                _me = (await _api("GET", f"{V3}/account/whoami"))["user_id"]
+                logging.info(f"Matrix plugin online as {_me}")
+            if config.MATRIX_OWNER_ID and not any(m == {_me, config.MATRIX_OWNER_ID} for m in _rooms.values()):
+                # The owner's door is opened from this side, unencrypted, so
+                # their first step is accepting an invite rather than finding
+                # the encryption toggle. Runs once the initial sync has shown
+                # whether such a room already exists (since is None before).
+                if since is not None:
+                    await _dm_room(config.MATRIX_OWNER_ID)
+            since = await _sync_once(since)
+            backoff = _RETRY_SECONDS
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logging.warning(f"matrix sync failed ({_scrub(str(e))}); retrying in {backoff}s")
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, _MAX_RETRY_SECONDS)
