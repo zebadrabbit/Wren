@@ -203,7 +203,8 @@ timeline, and the page shows it the next time it polls. So `NOTIFY_VIA=http`
 is allowed, and means the notice appears only in the web chat — you will see
 it when the page is open and not otherwise. The default, `any`, still prefers
 a surface that can push (Discord, Telegram) and falls back to the web chat only
-when none can. If you set `NOTIFY_VIA=http`, Wren says at boot that notices
+when none can, and only for someone with a sign-in token; for anyone else the
+notice counts as not delivered. If you set `NOTIFY_VIA=http`, Wren says at boot that notices
 "will only appear in the web chat".
 
 ## Web chat
@@ -224,7 +225,7 @@ What you see when you open it:
   start on this page carries a small mark saying which door it came from
   ("from Telegram", "by voice").
 - **Spaces in the sidebar**: Shopping (and one entry per named list, such as
-  Packing), Notes, Reminders. A space opens that skill's card full-pane, with
+  Packing), Notes, Ideas, Reminders. A space opens that skill's card full-pane, with
   no conversation involved. You still get the same card by asking for it.
 - **Reminders appear in place.** When one fires it lands in the thread at the
   moment it fired, marked with where it went ("sent to Telegram", "sent
@@ -248,7 +249,9 @@ Open `http://<wren-host>:8787/` and do either of these once per browser:
   from the address bar. The token sits after a `#` on purpose: the browser
   never sends a fragment to the server, so the token stays out of the access
   log. Use the https address of your reverse proxy if you have one, and treat
-  the link like the password it is.
+  the link like the password it is. When Wren listens on every interface
+  (`WREN_HTTP_HOST=0.0.0.0`) the printed link says `<this machine's address>`
+  instead: put in the name or IP people use to reach that computer.
 
 The page itself is served without auth because it is a static shell holding
 no user data; every request it makes carries the token. A token maps to a
@@ -269,7 +272,7 @@ you between machines.
 | `GET /api/plugins` | — | `{skills, channels, settings}` — owner only |
 | `PATCH /api/plugins/{module}` | `{enabled}` | toggle a skill — owner only |
 | `PATCH /api/settings` | `{KEY: value}` | change a non-secret setting — owner only |
-| `GET /api/contacts` | — | the household's contacts — owner only |
+| `GET /api/contacts` | — | `[{alias, discord, telegram, wren_id}]`, ids as strings — owner only |
 | `POST /api/contacts` | `{alias, surface, id}` | add a contact — owner only |
 | `DELETE /api/contacts/{alias}` | — | remove a contact — owner only |
 
@@ -277,10 +280,12 @@ you between machines.
 
 ### The landing screen
 
-On a timeline with nothing in it the page greets you by name and shows a row
-of chips above the composer, one per skill that can answer a question; click
-one and a starter phrase drops into the composer. A "Catch me up" chip draws
-the same day-at-a-glance as the Today panel. Not every skill gets a chip:
+On a timeline with nothing in it the page greets you by name. Above the
+composer, always, sits a row of chips, one per read a skill can answer without
+the model: Catch me up, Shopping, Reminders, Notes, Ideas. A chip runs that
+read directly (`/api/dispatch`) and draws its card in the thread, the way a
+card button does; nothing is written to the timeline. "Catch me up" draws the
+same day-at-a-glance as the Today panel. Not every skill gets a chip:
 Contacts is owner-only administration, not something to invite a household
 member into, so it has none.
 
@@ -346,9 +351,14 @@ Also owner-only, and in the same panel: the household's contacts, with a form
 to add one and a button to remove one (the same thing as "add 123 as hubby" in
 chat, through `/api/contacts`). The tab also explains the sign-in command and
 the invite link. It does not make tokens: they are credentials, so they are
-never returned by an endpoint and never editable from the page. Run
-`./manage.sh token add <user_id>` on the host, restart, and send the person
-the link it prints.
+never returned by an endpoint and never editable from the page. Each row shows
+the id the person signs in as (their Discord id if they have one, otherwise
+their Telegram id); run `./manage.sh token add <that id>` on the host,
+restart, and send the person the link it prints.
+
+Someone on both apps is added Discord first, then Telegram. The other order is
+refused: the Discord id would become their sign-in id, and what Wren keeps
+for them under the Telegram one would be left behind.
 
 ### Where notifications go
 
@@ -359,7 +369,8 @@ briefing — go where `NOTIFY_VIA` says:
 - **`any`** (the default): the first running plugin that can push and reaches
   you, in `COMMUNICATION_PLUGINS` order. If it is down, the next one gets it
   straight away. Delivered once, not on every channel, so two chat apps on one
-  phone do not buzz twice. If nothing can push, it lands in the web chat.
+  phone do not buzz twice. If nothing can push, it lands in the web chat,
+  if you have a sign-in token for it; otherwise it was not delivered.
 - **a plugin name** (`telegram`, `discord`): always that one.
 - **`http`**: the web chat only. Nothing is pushed; the notice waits on your
   timeline until the page next polls.
