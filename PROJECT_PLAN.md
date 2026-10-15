@@ -381,3 +381,12 @@ contacts, and invite links of the form `/#token=...` printed by
 `/message` returns `{replies, files, cards, messages}`. Rollout is a database
 backup and one restart. "Web chat as an installable app with push" stays
 parked.
+
+## More doors (2026-10-15)
+
+**Phase 10 — More doors** (2026-10-15). Slack (Socket Mode, no public URL)
+and Matrix (Client-Server API, direct rooms, unencrypted) are chat plugins in
+Telegram's shape, with no new dependency. To get there, a contact's
+per-surface id became a string with a shape per surface (`contacts.ID_SHAPE`)
+while the Wren id stayed an int, minted from the first id when that is not a
+number. Still cards: Mattermost/Rocket.Chat, email as a two-way door, Signal.

@@ -152,7 +152,7 @@ Scrub the token from any error text as the others do.
 
 `start()`: `whoami` → `_me`; ensure the owner's DM room (below); then the
 sync loop. `GET /sync?timeout=30000&since=<next_batch>` with a filter that
-lazy-loads members and drops presence and ephemeral events. The **first**
+syncs full member state (lazy loading made the two-member DM check unreliable) and drops presence and ephemeral events. The **first**
 sync (no `since`) is history: take `next_batch`, learn room membership,
 act on nothing. Each later batch:
 

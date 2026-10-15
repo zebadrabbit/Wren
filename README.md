@@ -15,7 +15,7 @@ list"), capture an idea, set a reminder, search the web,
 message someone else on the whitelist, or just chat.
 
 Wren is transport-agnostic. It is built from two kinds of plugin:
-**Communication** plugins (Discord, Telegram, HTTP/web chat, Gmail, GitHub) are
+**Communication** plugins (Discord, Telegram, Slack, Matrix, HTTP/web chat, Gmail, GitHub) are
 how you reach Wren and how Wren reaches you; **Skills** (Shopping List, Notes,
 Reminders, Pins, Contacts, Web) are what Wren can actually do — usable through
 any Communication plugin you enable. Discord is one Communication plugin, not a
@@ -104,11 +104,69 @@ named reaches them on the default `NOTIFY_VIA` surface if they are on it, and
 otherwise on whichever running surface they are (with `NOTIFY_VIA=any`, only
 their surfaces are tried at all).
 
+Slack ids look like `U0123ABCDEF` and Matrix ids like `@kim:home.net`; a person first added on one of those gets a Wren id minted from it, so removing and re-adding them keeps their notes.
+
 Long-polls `getUpdates` over `aiohttp`; there is no Telegram client library in
 the dependency list. Private chats only — group messages are ignored. The Bot
 API gives a bot no way to read a chat's backlog, but that no longer matters:
 history is the timeline on every door, so "what did I just say" resolves here
 the same as anywhere else.
+
+### `slack` — role: chat
+
+DM the bot in Slack. Wren uses Socket Mode: it asks Slack for a websocket and
+dials out to it, so there is no public URL, no inbound port and no request
+signing, the same posture as Telegram. Needs `SLACK_APP_TOKEN`,
+`SLACK_BOT_TOKEN` and `SLACK_OWNER_ID` in `.env`.
+
+Setting up the app, once, at [api.slack.com/apps](https://api.slack.com/apps):
+
+1. **Create New App → From scratch**, name it Wren, pick your workspace.
+2. **Socket Mode → Enable**. Slack mints an app-level token with
+   `connections:write`; that is `SLACK_APP_TOKEN` (`xapp-…`).
+3. **OAuth & Permissions → Bot Token Scopes**: `chat:write`, `im:history`,
+   `im:read`, `im:write`, `reactions:write`, `files:read`, `files:write`.
+4. **Event Subscriptions → Enable**, and under *Subscribe to bot events* add
+   `message.im`.
+5. **Install to Workspace**. The *Bot User OAuth Token* (`xoxb-…`) is
+   `SLACK_BOT_TOKEN`.
+6. Your member id: open your profile, the **⋯** menu, **Copy member ID**
+   (`U…`). That is `SLACK_OWNER_ID`.
+
+Add `slack` to `COMMUNICATION_PLUGINS`, restart, and open a DM with the app
+under *Apps* in the sidebar. Wren reacts 👀 when it hears you and ✅ when it
+has acted, as on Discord. Photos and PDFs sent in the DM are read the same
+way as everywhere else. Replies longer than 4000 characters are split.
+
+Other people: "add U0123ABCDEF as kim on slack", or the People tab. Their
+member id is under their profile the same way.
+
+### `matrix` — role: chat
+
+DM the bot on Matrix, from Element or any client. Needs `MATRIX_HOMESERVER`,
+`MATRIX_TOKEN` and `MATRIX_OWNER_ID`.
+
+1. Make an account for Wren on your homeserver (a normal user, e.g.
+   `@wren:home.net`).
+2. Get its access token: sign in as that account in Element, then *Settings →
+   Help & About → Access Token*; or
+   `curl -XPOST https://home.net/_matrix/client/v3/login -d '{"type":"m.login.password","identifier":{"type":"m.id.user","user":"wren"},"password":"…"}'`.
+   That is `MATRIX_TOKEN`. `MATRIX_HOMESERVER` is the server's base URL.
+3. `MATRIX_OWNER_ID` is your own id (`@you:home.net`).
+
+Add `matrix` to `COMMUNICATION_PLUGINS` and restart. **Wren opens the room**:
+at startup it creates an unencrypted direct room and invites you; accept it
+and talk there. Wren cannot read encrypted rooms in this version, so do not
+start the chat from your side with encryption on (Element's default); if you
+already did, leave that room and use the one Wren made. The typing indicator
+is Wren's "heard you". Media is read through the homeserver's authenticated
+download endpoint (Matrix 1.11, Synapse 1.111 or newer).
+
+Edits to a message are ignored, so correcting a typo does not run the command twice.
+
+Other people: "add @kim:home.net as kim on matrix", or the People tab. Wren
+invites them to a direct room the first time it has something to tell them,
+and accepts a direct-room invite from anyone it knows.
 
 ### `http` — role: chat (passive for proactive notifications)
 
@@ -203,7 +261,7 @@ drop things either: a reminder that fires for the web chat is written to your
 timeline, and the page shows it the next time it polls. So `NOTIFY_VIA=http`
 is allowed, and means the notice appears only in the web chat — you will see
 it when the page is open and not otherwise. The default, `any`, still prefers
-a surface that can push (Discord, Telegram) and falls back to the web chat only
+a surface that can push (Discord, Telegram, Slack, Matrix) and falls back to the web chat only
 when none can, and only for someone with a sign-in token; for anyone else the
 notice counts as not delivered. If you set `NOTIFY_VIA=http`, Wren says at boot that notices
 "will only appear in the web chat".
@@ -353,13 +411,9 @@ to add one and a button to remove one (the same thing as "add 123 as hubby" in
 chat, through `/api/contacts`). The tab also explains the sign-in command and
 the invite link. It does not make tokens: they are credentials, so they are
 never returned by an endpoint and never editable from the page. Each row shows
-the id the person signs in as (their Discord id if they have one, otherwise
-their Telegram id); run `./manage.sh token add <that id>` on the host,
-restart, and send the person the link it prints.
-
-Someone on both apps is added Discord first, then Telegram. The other order is
-refused: the Discord id would become their sign-in id, and what Wren keeps
-for them under the Telegram one would be left behind.
+the id the person signs in as (their first-added id, shown as the app spells
+it); run `./manage.sh token add <that id>` on the host, restart, and send the
+person the link it prints. The form offers the apps in `COMMUNICATION_PLUGINS`.
 
 ### Where notifications go
 
@@ -700,6 +754,8 @@ external event ──▶ communication plugin (input-only) ──▶ router.noti
   no Telegram library, and translates the owner's Telegram id to their Wren id
   in both directions (`TELEGRAM_OWNER_ID`). `ROLE = "chat"`. Not enabled unless
   `TELEGRAM_TOKEN` is set and "telegram" is in `COMMUNICATION_PLUGINS`.
+- `wren/communication/slack_plugin.py` — Slack over Socket Mode, `SlackChannel` (reactions implement `ack`). `ROLE = "chat"`. Translates ids both ways (`SLACK_OWNER_ID`, contacts).
+- `wren/communication/matrix_plugin.py` — Matrix Client-Server API over aiohttp, `MatrixChannel` (typing implements `ack`), direct rooms only, unencrypted. `ROLE = "chat"`.
 - `wren/communication/http_plugin.py` + `webchat.py` — aiohttp app, bearer-token
   auth, and the browser chat UI (one timeline per person). `ROLE = "chat"`,
   `PASSIVE = True`.

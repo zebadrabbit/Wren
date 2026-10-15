@@ -30,7 +30,7 @@ Run with `python3 -m wren.run`. Full architecture doc: `README.md`
    shopping list" inside `discord_plugin.py`.
 3. **Every communication plugin declares `ROLE`**: `"chat"` (input + output,
    needs `async start()` + a `Channel` impl that declares `NAME`, the door's
-   name on the timeline -- `"web"`, `"voice"`, `"discord"`, `"telegram"` --
+   name on the timeline -- `"web"`, `"voice"`, `"discord"`, `"telegram"`, `"slack"`, `"matrix"` --
    e.g. `discord_plugin.py`) or
    `"input"` (one-way, needs `async start()` that calls
    `router.notify_name(...)`, e.g. `gmail_plugin.py`). Nothing else is
@@ -117,7 +117,7 @@ Module path renames (for grep/context when reading old plans/specs):
 ```bash
 source venv/bin/activate
 pip install -r requirements.txt
-pytest -q                        # 1279 passed as of 2026-10-14
+pytest -q                        # 1378 passed as of 2026-10-15
 python3 -m wren.run              # needs .env; see .env.example
 ```
 
@@ -147,7 +147,7 @@ a module.
   second surface (since 2026-10-14; before that it was computed as
   `COALESCE(discord_id, telegram_id)` and a late Discord id orphaned a
   Telegram-first person's rows). `discord_plugin._wren_user_id` translates the
-  same way. Translation is authn, which is the surface's job — do not push it
+  same way, as do the Slack and Matrix plugins; a per-surface id is a string in `contacts` (`ID_SHAPE` is the one place its shape lives) and the Wren id stays an int, minted (`contacts.mint`) when the first door's id is not a number. Translation is authn, which is the surface's job — do not push it
   into `core`. `router.notify` with no `via` routes a contact to a surface
   they are actually on.
 - `wren.service` runs this working tree **in place**
