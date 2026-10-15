@@ -5,6 +5,7 @@ import sys
 import discord
 
 from .. import config
+from .. import contacts
 from .. import core
 from .. import router
 from . import chunking
@@ -17,6 +18,19 @@ PLUGIN_NAME = "Discord"
 CAN_NOTIFY = True
 
 _client: discord.Client | None = None
+
+
+def _wren_user_id(author_id: int) -> int:
+    """Who is talking. The owner and anyone added on Discord first are their
+    Discord id; a person added on Telegram first keeps that id when Discord
+    becomes their second door, so it is looked up. Translation is authn, the
+    surface's job (telegram_plugin does the same)."""
+    return contacts.wren_id("discord", author_id) or author_id
+
+
+def _discord_user_id(user_id: int) -> int:
+    """The inverse, for notify(): where to DM the person a Wren id names."""
+    return contacts.surface_id("discord", user_id) or user_id
 
 
 class DiscordChannel:
@@ -67,7 +81,7 @@ def build_client() -> discord.Client:
         if not isinstance(message.channel, discord.DMChannel):
             return
         await core.handle_message(
-            message.author.id, message.content, DiscordChannel(message, client)
+            _wren_user_id(message.author.id), message.content, DiscordChannel(message, client)
         )
 
     return client
@@ -81,7 +95,7 @@ async def notify(user_id: int, text: str) -> bool:
     # this the first poll after boot would fail to deliver and still mark the
     # reminder fired.
     await _client.wait_until_ready()
-    return await discord_utils.notify_id(_client, user_id, text)
+    return await discord_utils.notify_id(_client, _discord_user_id(user_id), text)
 
 
 async def start() -> None:

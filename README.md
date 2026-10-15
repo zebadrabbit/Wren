@@ -97,7 +97,8 @@ Telegram-first install, where `WREN_OWNER_ID` is already the Telegram id.
 Everyone else is a contact, and a contact holds one id per surface: "add
 123456789 as hubby" (Discord, or Telegram on a Telegram-first install), then
 "add 987654321 as hubby on telegram" gives the same person their second door.
-Their notes and reminders are theirs on both; the shopping list is the
+Their notes and reminders are theirs on both, filed under the id they were
+first added with, whichever door that was; the shopping list is the
 household's on all of them. A reminder or a "send to hubby" with no surface
 named reaches them on the default `NOTIFY_VIA` surface if they are on it, and
 otherwise on whichever running surface they are (with `NOTIFY_VIA=any`, only

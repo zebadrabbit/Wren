@@ -444,14 +444,11 @@ def test_a_telegram_only_contact_signs_in_as_their_telegram_id():
     assert (status, row) == (201, {"alias": "kim", "discord": None, "telegram": "55", "wren_id": "55"})
 
 
-def test_adding_discord_to_a_telegram_first_contact_is_refused():
-    # Their Wren id is COALESCE(discord, telegram): a Discord id added now
-    # would become their id, and every note, reminder and token filed under
-    # the Telegram one would be left behind.
+def test_adding_discord_to_a_telegram_first_contact_keeps_who_they_sign_in_as():
+    # The Wren id is the id they were first added with and is stored: a
+    # Discord door added later maps onto it, so their token, notes and
+    # reminders stay theirs.
     call("post", "/api/contacts", token=TOKEN_OWNER, json={"alias": "kim", "surface": "telegram", "id": "55"})
     status, out = call("post", "/api/contacts", token=TOKEN_OWNER,
                        json={"alias": "kim", "surface": "discord", "id": SNOWFLAKE})
-    assert status == 409
-    assert "sign in" in out["error"] and "Discord first" in out["error"]
-    assert call("get", "/api/contacts", token=TOKEN_OWNER)[1] == [
-        {"alias": "kim", "discord": None, "telegram": "55", "wren_id": "55"}]
+    assert (status, out) == (200, {"alias": "kim", "discord": SNOWFLAKE, "telegram": "55", "wren_id": "55"})

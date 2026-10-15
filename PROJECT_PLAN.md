@@ -278,8 +278,10 @@ Household Gaps") holds the state; this is the order and the why.
    fires once and skips forward. Cancel stops the series. "Every weekday"
    and "skip next time" are out of scope.
 2. ~~**Second person.**~~ Landed 2026-09-26: `contacts` holds one id column
-   per surface (`SURFACES`), a contact's Wren id is `COALESCE(discord_id,
-   telegram_id)`, "add 555 as hubby on telegram" gives an existing contact a
+   per surface (`SURFACES`), a contact's Wren id is the id they were first
+   added with (stored in `wren_id` since 2026-10-14; it was
+   `COALESCE(discord_id, telegram_id)` before, which moved a Telegram-first
+   person when Discord came second), "add 555 as hubby on telegram" gives an existing contact a
    second door, the Telegram plugin translates everyone in both directions,
    and `router.notify` with no `via` routes a contact to a surface they are
    on. The old table is rebuilt in place with its rows.

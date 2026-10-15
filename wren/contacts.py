@@ -23,6 +23,7 @@ def init_db() -> None:
                 alias       TEXT PRIMARY KEY,
                 discord_id  TEXT UNIQUE,
                 telegram_id TEXT UNIQUE,
+                wren_id     TEXT,
                 added_at    TEXT NOT NULL
             )
         """)
@@ -37,6 +38,7 @@ def init_db() -> None:
                     alias       TEXT PRIMARY KEY,
                     discord_id  TEXT UNIQUE,
                     telegram_id TEXT UNIQUE,
+                    wren_id     TEXT,
                     added_at    TEXT NOT NULL
                 );
                 INSERT INTO contacts_new (alias, discord_id, added_at)
@@ -44,15 +46,24 @@ def init_db() -> None:
                 DROP TABLE contacts;
                 ALTER TABLE contacts_new RENAME TO contacts;
             """)
+        # Before 2026-10-14 a person's Wren id was computed, COALESCE(discord_id,
+        # telegram_id), so a Telegram-first person who later gained a Discord
+        # id changed id and lost their notes. It is stored now: the id they
+        # had under the old rule is written once and never moves.
+        if "wren_id" not in {row[1] for row in con.execute("PRAGMA table_info(contacts)")}:
+            con.execute("ALTER TABLE contacts ADD COLUMN wren_id TEXT")
+        con.execute("UPDATE contacts SET wren_id = COALESCE(discord_id, telegram_id) WHERE wren_id IS NULL")
+        con.execute("CREATE UNIQUE INDEX IF NOT EXISTS contacts_wren_id ON contacts(wren_id)")
 
 
 def add(alias: str, surface_id: int, surface: str = "discord") -> None:
     col = _col(surface)
     ts = datetime.now(timezone.utc).isoformat()
     with db.conn() as con:
+        # the first id a person is added with is their Wren id for good
         con.execute(
-            f"INSERT INTO contacts (alias, {col}, added_at) VALUES (?,?,?)",
-            (alias.strip().lower(), str(surface_id), ts),
+            f"INSERT INTO contacts (alias, {col}, wren_id, added_at) VALUES (?,?,?,?)",
+            (alias.strip().lower(), str(surface_id), str(surface_id), ts),
         )
 
 
@@ -74,10 +85,8 @@ def register(alias: str, surface: str, surface_id: int, reserved=()) -> bool:
     the one rule set behind "add 555 as kim on telegram" and the People tab.
     True when the person is new. Raises Taken, with the reason, when the name
     is reserved (the owner's) and not already a contact, when the person
-    already has an id on that surface, when a Discord id would change who a
-    Telegram-first person signs in as (the COALESCE rule below: their notes,
-    reminders and token stay filed under the Telegram id), or when the id is
-    registered under another name."""
+    already has an id on that surface, or when the id is registered under
+    another name."""
     _col(surface)
     alias = alias.strip().lower()
     row = get(alias)
@@ -86,9 +95,6 @@ def register(alias: str, surface: str, surface_id: int, reserved=()) -> bool:
             raise Taken("That name's already taken.")
     elif row[surface] is not None:
         raise Taken(f"{alias} already has a {surface} id.")
-    elif surface == "discord" and row["telegram"] is not None:
-        raise Taken("That would change how they sign in and leave their saved things "
-                    "behind; add Discord first for new people.")
     try:
         if row is None:
             add(alias, surface_id, surface=surface)
@@ -117,11 +123,10 @@ def remove(alias: str) -> bool:
 
 
 # A contact's Wren id -- what every note, reminder and pin is filed under, and
-# what core's whitelist gate checks -- is their Discord id when they have one,
-# otherwise their Telegram id. That is the rule README states for a
-# Telegram-first install (WREN_OWNER_ID is the Telegram id), applied per
-# person, so a Discord-era install and a Telegram-only one key rows the same way.
-_WREN_ID = "COALESCE(discord_id, telegram_id)"
+# what core's whitelist gate checks -- is the id they were first added with,
+# stored at add() and never changed by a second surface. Every chat surface
+# translates its own id to this one on the way in and back on the way out.
+_WREN_ID = "wren_id"
 
 
 def all() -> dict[str, int]:

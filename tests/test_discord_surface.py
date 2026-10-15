@@ -156,3 +156,18 @@ def test_discord_channel_names_itself_discord():
     # "via discord" label reads; a rename here relabels every stored row
     from wren.communication.discord_plugin import DiscordChannel
     assert DiscordChannel(MagicMock(), MagicMock()).NAME == "discord"
+
+
+# --- Discord translates ids like Telegram does (2026-10-14) -------------------
+from wren.communication import discord_plugin
+
+def test_discord_first_people_and_the_owner_are_their_discord_id():
+    assert discord_plugin._wren_user_id(2) == 2            # husband, added on Discord
+    assert discord_plugin._wren_user_id(1) == 1            # the owner is not a contact
+    assert discord_plugin._discord_user_id(2) == 2
+
+def test_a_telegram_first_person_keeps_their_id_on_discord():
+    contacts.add("kim", 55, surface="telegram")
+    contacts.set_id("kim", "discord", 123456789012345678)
+    assert discord_plugin._wren_user_id(123456789012345678) == 55
+    assert discord_plugin._discord_user_id(55) == 123456789012345678

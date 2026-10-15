@@ -117,7 +117,7 @@ Module path renames (for grep/context when reading old plans/specs):
 ```bash
 source venv/bin/activate
 pip install -r requirements.txt
-pytest -q                        # 1256 passed as of 2026-10-14
+pytest -q                        # 1279 passed as of 2026-10-14
 python3 -m wren.run              # needs .env; see .env.example
 ```
 
@@ -142,10 +142,14 @@ a module.
   id per person, but the number Telegram calls you is not the number Discord
   calls you. `telegram_plugin._wren_user_id` / `_telegram_chat_id` map the
   owner via `TELEGRAM_OWNER_ID` and everyone else via `contacts`, which holds
-  one id column per surface (`contacts.SURFACES`; a contact's Wren id is
-  `COALESCE(discord_id, telegram_id)`). Translation is authn, which is the
-  surface's job — do not push it into `core`. `router.notify` with no `via`
-  routes a contact to a surface they are actually on.
+  one id column per surface (`contacts.SURFACES`) plus `wren_id`, the id the
+  person was first added with, stored at `contacts.add` and never moved by a
+  second surface (since 2026-10-14; before that it was computed as
+  `COALESCE(discord_id, telegram_id)` and a late Discord id orphaned a
+  Telegram-first person's rows). `discord_plugin._wren_user_id` translates the
+  same way. Translation is authn, which is the surface's job — do not push it
+  into `core`. `router.notify` with no `via` routes a contact to a surface
+  they are actually on.
 - `wren.service` runs this working tree **in place**
   (`/home/winter/work/Wren/venv/bin/python3 -m wren.run`), so an edit here is
   a production edit the moment anything restarts it. As of 2026-08-17 the live

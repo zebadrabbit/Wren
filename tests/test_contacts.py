@@ -51,10 +51,34 @@ def test_all_returns_multiple():
     assert contacts.all() == {"hubby": 222222222222222222, "kevin": 333333333333333333}
 
 
-# --- one id per surface (2026-09-26) ------------------------------------------
+# --- one id per surface (2026-09-26), stored for good (2026-10-14) -----------
 # A contact's Wren id — what every note, reminder and pin is filed under — is
-# their Discord id when they have one, otherwise their Telegram id: the rule the
-# README already states for a Telegram-first install, applied per person.
+# the id they were first added with. A second surface maps onto it; it never
+# moves.
+
+def test_adding_discord_later_keeps_the_id_they_were_added_with():
+    contacts.add("kim", 55, surface="telegram")
+    assert contacts.set_id("kim", "discord", 123456789012345678) is True
+    assert contacts.all() == {"kim": 55}
+    assert contacts.wren_id("discord", 123456789012345678) == 55
+    assert contacts.surface_id("discord", 55) == 123456789012345678
+    assert contacts.surfaces_of(55) == ["discord", "telegram"]
+
+def test_init_db_backfills_wren_id_for_a_table_from_before_it_was_stored(tmp_path, monkeypatch):
+    from wren import db
+    monkeypatch.setenv("WREN_DB", str(tmp_path / "old.db"))
+    with db.conn() as con:
+        con.executescript("""
+            CREATE TABLE contacts (alias TEXT PRIMARY KEY, discord_id TEXT UNIQUE,
+                                   telegram_id TEXT UNIQUE, added_at TEXT NOT NULL);
+            INSERT INTO contacts VALUES ('hubby', '222222222222222222', '42', 'x');
+            INSERT INTO contacts VALUES ('kim', NULL, '55', 'x');
+        """)
+    contacts.init_db()
+    # the id each person had under the old COALESCE rule, so nothing moves
+    assert contacts.all() == {"hubby": 222222222222222222, "kim": 55}
+    contacts.init_db()                                        # idempotent
+    assert contacts.all() == {"hubby": 222222222222222222, "kim": 55}
 
 def test_telegram_only_contact_is_keyed_by_their_telegram_id():
     contacts.add("hubby", 42, surface="telegram")

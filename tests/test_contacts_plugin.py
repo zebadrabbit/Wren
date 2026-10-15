@@ -129,14 +129,14 @@ def test_a_surface_the_contact_already_has_is_taken(monkeypatch):
     _add(ch, "43", "hubby", text="add 43 as hubby on telegram")
     assert ch.sent == ["hubby already has a telegram id."]
 
-def test_chat_refuses_discord_for_a_telegram_first_contact(monkeypatch):
-    # same rule as the People tab: a Discord id would become their Wren id
+def test_discord_added_later_does_not_move_a_telegram_first_contact(monkeypatch):
     monkeypatch.setattr(config, "COMMUNICATION_PLUGINS", ["discord", "telegram"])
     contacts.add("kim", 55, surface="telegram")
     ch = CollectingChannel()
     _add(ch, "123456789012345678", "kim", text="add 123456789012345678 as kim on discord")
-    assert "Discord first" in ch.sent[-1]
+    _assert_flourished(ch.sent[-1], "Added kim on discord.")
     assert contacts.all() == {"kim": 55}
+    assert contacts.wren_id("discord", 123456789012345678) == 55
 
 def test_an_unknown_surface_word_is_not_a_surface(monkeypatch):
     # same rule as reminders' "via": a word this install does not run is part
