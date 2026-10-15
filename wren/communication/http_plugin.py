@@ -220,11 +220,13 @@ def reaches(user_id: int) -> bool:
 async def notify(user_id: int, text: str) -> bool:
     # Passive: nothing is sent. The router records every notice it delivers
     # on the person's timeline, and the web page polls that, so answering
-    # True means "it will be there when they open the page". The router only
-    # lands here when no surface that can push did, or when NOTIFY_VIA names
-    # http on purpose. The body is deliberately not logged: reminders and
-    # person-to-person messages are private.
-    return True
+    # True means "it will be there when they open the page", which is only
+    # true of someone who can open it: with no token the notice would sit
+    # unseen while the sender heard "sent". The router lands here when no
+    # surface that can push did, or when NOTIFY_VIA (or a reminder's "on the
+    # web") names http on purpose. The body is deliberately not logged:
+    # reminders and person-to-person messages are private.
+    return reaches(user_id)
 
 
 async def start() -> None:

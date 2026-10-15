@@ -516,3 +516,10 @@ def test_access_log_skips_successful_polls_only():
     assert f.filter(rec("POST /message HTTP/1.1", 200))
     assert f.filter(rec("GET / HTTP/1.1", 200))
     assert f.filter(logging.LogRecord("aiohttp.access", logging.INFO, "", 0, "no extra", (), None))
+
+
+def test_notify_is_only_delivered_to_someone_with_a_token():
+    # explicit via="http" / NOTIFY_VIA=http reaches notify() directly, past
+    # the router's own reaches() check on the passive fallback
+    assert asyncio.run(http_surface.notify(1, "dinner")) is True
+    assert asyncio.run(http_surface.notify(424242, "dinner")) is False
