@@ -36,6 +36,8 @@ API_ROOT = "https://slack.com/api"
 _CLIENT_TIMEOUT_SECONDS = 45
 _RETRY_SECONDS = 5
 _MAX_RETRY_SECONDS = 300
+# Slack documents these as form-encoded only; a JSON body is rejected.
+_FORM_ONLY = frozenset({"files.getUploadURLExternal"})
 # Slack shows up to 4000 characters of a message and truncates the rest with
 # a "show more" that many clients never render; past 40000 it is an error.
 _MAX_MESSAGE_CHARS = 4000
@@ -84,7 +86,8 @@ async def _api(method: str, *, json: dict | None = None, token: str | None = Non
     # handshake per message is nothing and it dodges session lifecycle.
     try:
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(url, json=json or {}, headers=headers) as resp:
+            body_kw = {"data": json or {}} if method in _FORM_ONLY else {"json": json or {}}
+            async with session.post(url, headers=headers, **body_kw) as resp:
                 body = await resp.json()
     except aiohttp.ClientError as e:
         raise aiohttp.ClientError(f"{type(e).__name__}: {_scrub(str(e))}") from None
@@ -233,3 +236,117 @@ async def notify(user_id: int, text: str) -> bool:
             logging.warning(f"slack cannot reach user {user_id}: {e}")
             return False
         raise
+
+
+# Socket Mode redelivers an envelope it did not see acked, and after a
+# reconnect it can hand over what it held while Wren was away. Acting on a
+# message hours late is worse than not acting (see telegram_plugin), so
+# anything older than this gets the offline notice instead.
+_STALE_SECONDS = 30 * 60
+
+
+def _is_stale(event: dict) -> bool:
+    try:
+        ts = float(event.get("ts") or 0)
+    except (TypeError, ValueError):
+        return False
+    return ts > 0 and time.time() - ts > _STALE_SECONDS
+
+
+async def _handle_event(event: dict) -> None:
+    """One acted-on event, start to finish. Raises nothing the loop cannot
+    log; the envelope was acked before this ran."""
+    parsed = _incoming(event)
+    if parsed is None:
+        return
+    slack_user, text, wanted = parsed
+    user_id = _wren_user_id(slack_user)
+    if user_id is None:
+        return                                   # a stranger: no answer, as on Telegram
+    channel_id = event.get("channel") or slack_user
+    if _is_stale(event):
+        await _send_text(channel_id, "I was offline when some of your messages arrived, so I "
+                                     "didn't act on them. Send again anything that still matters.")
+        return
+    files: list[Inbound] = []
+    for want in wanted:
+        size = want.get("size")
+        if size is not None and size > filetypes.MAX_BYTES:
+            await _send_text(channel_id, "That's too big, 10 MB max.")
+            continue
+        try:
+            data = await _download(want["url"])
+        except Exception as e:
+            logging.warning(f"slack: file download failed: {_scrub(str(e))}")
+            await _send_text(channel_id, "Couldn't fetch that file, try again.")
+            continue
+        files.append(Inbound(filename=want["filename"], mime=want["mime"], data=data))
+    if not text and not files:
+        return
+    if wanted and not files:
+        return                                   # every file refused; the refusal already replied
+    # Awaited inline so replies stay in order; see telegram_plugin for why
+    # not a task.
+    await core.handle_message(user_id, text, SlackChannel(channel_id, event.get("ts", "")), files=files)
+
+
+async def _run_once() -> None:
+    """One websocket connection: open it, serve envelopes until Slack says
+    disconnect (it does so routinely to rotate hosts), then return so
+    start() opens a fresh one."""
+    body = await _api("apps.connections.open", token=config.SLACK_APP_TOKEN)
+    url = body["url"]
+    timeout = aiohttp.ClientTimeout(total=None)   # the socket lives until Slack closes it
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with session.ws_connect(url, heartbeat=30) as ws:
+            async for msg in ws:
+                if msg.type != aiohttp.WSMsgType.TEXT:
+                    if msg.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
+                        return
+                    continue
+                frame = msg.json()
+                kind = frame.get("type")
+                if kind == "disconnect":
+                    return
+                envelope_id = frame.get("envelope_id")
+                if envelope_id:
+                    # Acked first, always: Slack retries an envelope it has
+                    # not seen acked within about 3 s, and the brain can
+                    # take longer than that -- an ack after handling would
+                    # answer the same message twice.
+                    await ws.send_json({"envelope_id": envelope_id})
+                if kind != "events_api":
+                    continue                     # hello, slash_commands, interactive: nothing to do
+                event = (frame.get("payload") or {}).get("event") or {}
+                try:
+                    await _handle_event(event)
+                except Exception as e:
+                    # Never the body: DMs are as private as reminders.
+                    logging.error(f"slack: handling event {envelope_id} from "
+                                  f"{event.get('user')} failed: {_scrub(str(e))}")
+
+
+async def start() -> None:
+    """Runs for the lifetime of the process. A communication plugin's start()
+    must not return while the plugin is live -- run.py gathers these, so
+    returning early would shut Wren down."""
+    missing = [k for k in ("SLACK_APP_TOKEN", "SLACK_BOT_TOKEN") if not getattr(config, k)]
+    if missing:
+        raise RuntimeError(
+            f"COMMUNICATION_PLUGINS includes 'slack' but {' and '.join(missing)} not set. "
+            "Set them, or drop 'slack' from COMMUNICATION_PLUGINS.")
+    router.register("slack", sys.modules[__name__])
+    logging.info("Slack plugin connecting (Socket Mode)")
+    backoff = _RETRY_SECONDS
+    while True:
+        try:
+            await _run_once()
+            backoff = _RETRY_SECONDS             # a clean disconnect: reconnect at once
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            # Everything else stops here: run.py gathers start(), and a DNS
+            # blip escaping would take the other doors down with it.
+            logging.warning(f"slack connection failed ({_scrub(str(e))}); retrying in {backoff}s")
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, _MAX_RETRY_SECONDS)

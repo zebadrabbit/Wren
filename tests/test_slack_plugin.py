@@ -1,4 +1,4 @@
-import os, asyncio, logging
+import os, asyncio, logging, time
 os.environ.setdefault("DISCORD_TOKEN", "test")
 os.environ.setdefault("WREN_OWNER_ID", "1")
 os.environ.setdefault("LLM_PROVIDERS", "lmstudio")
@@ -30,7 +30,7 @@ def clean(monkeypatch, tmp_path):
 
 def _event(**over) -> dict:
     e = {"type": "message", "channel_type": "im", "channel": "D0123CHAN",
-         "user": "U0KIM000001", "text": "hello", "ts": "1760000000.000100"}
+         "user": "U0KIM000001", "text": "hello", "ts": f"{time.time():.6f}"}
     e.update(over)
     return e
 
@@ -106,6 +106,7 @@ def test_api_raises_slack_error_with_the_error_code(monkeypatch):
     class Session:
         def __init__(self, *a, **k): pass
         def post(self, url, **k):
+            assert url == f"{slack_plugin.API_ROOT}/chat.postMessage"
             assert "xoxb" not in url
             assert k["headers"]["Authorization"] == "Bearer xoxb-bot-token"
             return Resp()
@@ -116,6 +117,24 @@ def test_api_raises_slack_error_with_the_error_code(monkeypatch):
         asyncio.run(slack_plugin._api("chat.postMessage", json={"channel": "D1", "text": "x"}))
     assert info.value.error == "channel_not_found"
     assert "xoxb" not in str(info.value)
+
+def test_form_only_methods_are_sent_form_encoded(monkeypatch):
+    seen = {}
+    class Resp:
+        async def json(self): return {"ok": True, "upload_url": "https://u", "file_id": "F1"}
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+    class Session:
+        def __init__(self, *a, **k): pass
+        def post(self, url, **k):
+            seen.update(k)
+            return Resp()
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+    monkeypatch.setattr(aiohttp, "ClientSession", Session)
+    asyncio.run(slack_plugin._api("files.getUploadURLExternal", json={"filename": "a.png", "length": 3}))
+    assert seen["data"] == {"filename": "a.png", "length": 3}
+    assert "json" not in seen
 
 def test_transport_error_is_scrubbed_of_both_tokens(monkeypatch):
     class Session:
@@ -210,3 +229,169 @@ def test_notify_splits_too(monkeypatch):
     monkeypatch.setattr(slack_plugin, "_api", api)
     asyncio.run(slack_plugin.notify(1, "x" * 4001))
     assert api.await_count == 2
+
+
+# ── the loop ───────────────────────────────────────────────────────────────────
+
+class FakeWs:
+    """An async iterator of frames plus a send_json recorder, standing in for
+    aiohttp's ClientWebSocketResponse."""
+    def __init__(self, frames):
+        self._frames = list(frames)
+        self.sent = []
+        self.closed = False
+    def __aiter__(self): return self
+    async def __anext__(self):
+        if not self._frames:
+            raise StopAsyncIteration
+        frame = self._frames.pop(0)
+        if frame == "hang":
+            await asyncio.sleep(3600)
+        return aiohttp.WSMessage(aiohttp.WSMsgType.TEXT, __import__("json").dumps(frame), None)
+    async def send_json(self, data): self.sent.append(data)
+    async def close(self): self.closed = True
+    async def __aenter__(self): return self
+    async def __aexit__(self, *a): await self.close(); return False
+
+
+def _socket(monkeypatch, frames):
+    ws = FakeWs(frames)
+    opened = []
+    async def fake_api(method, *, json=None, token=None):
+        opened.append((method, token))
+        return {"ok": True, "url": "wss://wss.slack.com/link/abc"}
+    class Session:
+        def __init__(self, *a, **k): pass
+        def ws_connect(self, url, **k):
+            assert url == "wss://wss.slack.com/link/abc"
+            return ws
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+    monkeypatch.setattr(slack_plugin, "_api", fake_api)
+    monkeypatch.setattr(aiohttp, "ClientSession", Session)
+    return ws, opened
+
+
+def _envelope(event, envelope_id="env-1"):
+    return {"type": "events_api", "envelope_id": envelope_id, "payload": {"event": event}}
+
+
+def test_connection_is_opened_with_the_app_token(monkeypatch):
+    ws, opened = _socket(monkeypatch, [{"type": "hello"}, {"type": "disconnect", "reason": "refresh_requested"}])
+    asyncio.run(slack_plugin._run_once())
+    assert opened == [("apps.connections.open", "xapp-app-token")]
+    assert ws.closed
+
+
+def test_envelope_is_acked_before_the_message_is_handled(monkeypatch):
+    order = []
+    ws, _ = _socket(monkeypatch, [_envelope(_event(user=OWNER_SLACK)), {"type": "disconnect"}])
+    original_send = ws.send_json
+    async def send_json(data):
+        order.append(("ack", data["envelope_id"])); await original_send(data)
+    ws.send_json = send_json
+    async def handle(user_id, text, channel, **kw):
+        order.append(("handle", user_id, text, channel.NAME))
+    monkeypatch.setattr(core, "handle_message", handle)
+    asyncio.run(slack_plugin._run_once())
+    assert order == [("ack", "env-1"), ("handle", 1, "hello", "slack")]
+
+
+def test_a_stranger_is_acked_and_dropped(monkeypatch):
+    ws, _ = _socket(monkeypatch, [_envelope(_event(user="U0STRANGER1")), {"type": "disconnect"}])
+    handle = AsyncMock()
+    monkeypatch.setattr(core, "handle_message", handle)
+    asyncio.run(slack_plugin._run_once())
+    assert ws.sent == [{"envelope_id": "env-1"}]
+    handle.assert_not_awaited()
+
+
+def test_a_failed_message_does_not_end_the_connection(monkeypatch, caplog):
+    ws, _ = _socket(monkeypatch, [_envelope(_event(user=OWNER_SLACK), "env-1"),
+                                  _envelope(_event(user=OWNER_SLACK, text="again"), "env-2"),
+                                  {"type": "disconnect"}])
+    handle = AsyncMock(side_effect=[RuntimeError("brain down"), None])
+    monkeypatch.setattr(core, "handle_message", handle)
+    with caplog.at_level(logging.ERROR):
+        asyncio.run(slack_plugin._run_once())
+    assert handle.await_count == 2
+    assert "brain down" in caplog.text and "hello" not in caplog.text   # never the body
+
+
+def test_stale_event_gets_the_offline_notice(monkeypatch):
+    old = _event(user=OWNER_SLACK, ts=str(time.time() - 3600))
+    ws, _ = _socket(monkeypatch, [_envelope(old), {"type": "disconnect"}])
+    handle = AsyncMock()
+    sent = AsyncMock()
+    monkeypatch.setattr(core, "handle_message", handle)
+    monkeypatch.setattr(slack_plugin, "_send_text", sent)
+    asyncio.run(slack_plugin._run_once())
+    handle.assert_not_awaited()
+    assert sent.await_args.args[0] == "D0123CHAN" and "offline" in sent.await_args.args[1]
+
+
+def test_files_are_downloaded_and_handed_to_core(monkeypatch):
+    e = _event(user=OWNER_SLACK, subtype="file_share", text="keep this", files=[
+        {"id": "F1", "name": "cat.jpg", "mimetype": "image/jpeg", "size": 10,
+         "url_private_download": "https://files.slack.com/cat.jpg"}])
+    ws, _ = _socket(monkeypatch, [_envelope(e), {"type": "disconnect"}])
+    monkeypatch.setattr(slack_plugin, "_download", AsyncMock(return_value=b"jpegbytes"))
+    handle = AsyncMock()
+    monkeypatch.setattr(core, "handle_message", handle)
+    asyncio.run(slack_plugin._run_once())
+    files = handle.await_args.kwargs["files"]
+    assert [(f.filename, f.mime, f.data) for f in files] == [("cat.jpg", "image/jpeg", b"jpegbytes")]
+
+
+def test_an_oversize_file_is_refused_in_the_dm(monkeypatch):
+    e = _event(user=OWNER_SLACK, subtype="file_share", text="", files=[
+        {"id": "F1", "name": "big.pdf", "mimetype": "application/pdf", "size": 11 * 1024 * 1024,
+         "url_private_download": "https://files.slack.com/big.pdf"}])
+    ws, _ = _socket(monkeypatch, [_envelope(e), {"type": "disconnect"}])
+    sent = AsyncMock()
+    handle = AsyncMock()
+    monkeypatch.setattr(slack_plugin, "_send_text", sent)
+    monkeypatch.setattr(core, "handle_message", handle)
+    asyncio.run(slack_plugin._run_once())
+    assert "too big" in sent.await_args.args[1]
+    handle.assert_not_awaited()
+
+
+def test_start_raises_when_a_token_is_unset(monkeypatch):
+    monkeypatch.setattr(config, "SLACK_APP_TOKEN", "")
+    with pytest.raises(RuntimeError, match="SLACK_APP_TOKEN"):
+        asyncio.run(slack_plugin.start())
+
+
+def test_start_registers_itself_and_reconnects(monkeypatch):
+    runs = []
+    async def run_once():
+        runs.append(1)
+        await asyncio.sleep(0.01)
+    monkeypatch.setattr(slack_plugin, "_run_once", run_once)
+    async def _run():
+        task = asyncio.create_task(slack_plugin.start())
+        await asyncio.sleep(0.05)
+        registered = router.registered()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        return registered
+    assert "slack" in asyncio.run(_run())
+    assert len(runs) >= 2                    # a clean disconnect reconnects at once
+
+
+def test_transient_error_does_not_escape_start(monkeypatch):
+    monkeypatch.setattr(slack_plugin, "_RETRY_SECONDS", 0.001)
+    run_once = AsyncMock(side_effect=aiohttp.ClientError("reset"))
+    monkeypatch.setattr(slack_plugin, "_run_once", run_once)
+    async def _run():
+        task = asyncio.create_task(slack_plugin.start())
+        await asyncio.sleep(0.05)
+        alive = not task.done()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        return alive, run_once.await_count
+    alive, attempts = asyncio.run(_run())
+    assert alive and attempts >= 2
