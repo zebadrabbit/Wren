@@ -279,6 +279,10 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 #today { padding: 18px 20px 14px; width: 100%; flex: none; max-height: 40vh; overflow-y: auto;
          background: var(--well); border-bottom: 1px solid var(--line-2); }
 #today > * { max-width: 760px; margin-left: auto; margin-right: auto; }
+/* past the cap, a fade along the bottom says there is more; .more is set
+   from scroll position, so it goes once the last card is in view */
+#today.more::after { content: ""; display: block; position: sticky; bottom: 0; height: 36px;
+  margin-top: -36px; background: linear-gradient(transparent, var(--well)); pointer-events: none; }
 #today[hidden] { display: none; }
 #today .thead { display: flex; align-items: center; gap: 8px; font-size: 12px; letter-spacing: .08em;
                 text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
@@ -1301,6 +1305,13 @@ async function showRead(intent) {
 // weather and calendar reads are cached server-side. A changed-data check
 // would earn its keep only if a section ever got expensive.
 let tline = 0, tlineTimer = 0;   // which fact the folded head shows, and its rotation
+let myName = null;               // from /api/me; the panel's greeting is to the reader
+function todayCue() {
+  const box = $("#today");
+  box.classList.toggle("more", box.scrollHeight - box.scrollTop - box.clientHeight > 4);
+}
+$("#today").onscroll = todayCue;
+new ResizeObserver(todayCue).observe($("#today"));
 async function loadToday() {
   const box = $("#today"), mine = token;
   try {
@@ -1311,8 +1322,11 @@ async function loadToday() {
     clearInterval(tlineTimer);    // the head it was driving is about to be replaced
     box.innerHTML = '<div class="thead"><span id="tline">Today</span><button type="button" id="tfold"></button></div><div class="tmount"></div>';
     briefingCard(card.data || {}, box.querySelector(".tmount"));
-    // Folded, the head line rotates through what the panel would have said:
-    // the date, then the weather's first clause ("69°F and clear").
+    // The card's own greeting says the date; here the head says it, so the
+    // greeting is to the reader, on the reader's clock.
+    box.querySelector(".bgreet").textContent = greeting(myName);
+    // Open, the head line is the date. Folded, it rotates through what the
+    // panel would have said: the date, then the weather's first clause.
     const facts = ["Today: " + new Date().toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })];
     const w = (card.data || {}).weather;
     if (w && !/^couldn/.test(w)) facts.push("Today: " + w.split(/[,.]/)[0]);
@@ -1328,9 +1342,10 @@ async function loadToday() {
       fold.textContent = closed ? "show" : "hide";
       fold.setAttribute("aria-expanded", closed ? "false" : "true");
       clearInterval(tlineTimer);
-      line.textContent = closed ? facts[tline % facts.length] : "Today";
+      line.textContent = closed ? facts[tline % facts.length] : facts[0];
       if (closed && facts.length > 1)
         tlineTimer = setInterval(() => { line.textContent = facts[++tline % facts.length]; }, 6000);
+      todayCue();
     };
     show();
     fold.onclick = () => {
@@ -1882,7 +1897,11 @@ async function start() {
   // name again -- loadTimeline() hands this same promise on to showEmpty().
   // One request serves them all, and each still fails closed on its own.
   const me = api("/api/me");
-  me.then(m => { $("#whoname").textContent = m.name || "Signed in"; drawReads(m.skills || []); showModel(m.model); }).catch(() => {});
+  me.then(m => {
+    $("#whoname").textContent = m.name || "Signed in"; drawReads(m.skills || []); showModel(m.model);
+    myName = m.name || null;
+    const g = $("#today .bgreet"); if (g) g.textContent = greeting(myName);   // drawn before the name arrived
+  }).catch(() => {});
   setNarrow();
   await loadTimeline(me);
   loadToday();
