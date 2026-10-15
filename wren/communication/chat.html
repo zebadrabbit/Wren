@@ -264,7 +264,12 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 /* clamp so the greeting still fits a phone without a second media query */
 #greet { font-size: clamp(24px, 3.4vw, 32px); font-weight: 500; margin: 0 0 4px; }
 /* ── the Today panel: the briefing, pinned above the timeline ───────────── */
-#today { max-width: 760px; margin: 18px auto 0; padding: 0 20px; width: 100%; }
+/* flex: none and a cap, because a flex item's min-height is its content: a
+   full briefing in one column on a phone squeezed #log to its padding and
+   pushed the composer off screen (review, 2026-10-14). Past the cap the
+   panel scrolls on its own. */
+#today { max-width: 760px; margin: 18px auto 0; padding: 0 20px; width: 100%;
+         flex: none; max-height: 40vh; overflow-y: auto; }
 #today[hidden] { display: none; }
 #today .thead { display: flex; align-items: center; gap: 8px; font-size: 12px; letter-spacing: .08em;
                 text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
@@ -583,12 +588,14 @@ main footer { padding: 10px 20px 18px; }
           <button type="submit">Add</button>
           <span class="savestat" id="pstat"></span>
         </form>
-        <p class="phint">To give someone a second app, add the same name again with
-        the other app and their id there.</p>
+        <p class="phint">Someone on both apps: add them with Discord first, then add
+        the same name again with Telegram and their id there. Discord added after
+        Telegram would change how they sign in, so Wren says no to that order.</p>
         <h4>Sign-in links</h4>
         <p class="phint">To let someone use this page, make them a sign-in token on
-        the computer Wren runs on, then send them a link with it:</p>
-        <pre>./manage.sh token add THEIR_ID</pre>
+        the computer Wren runs on, using the sign-in id shown on their row above,
+        then send them a link with it:</p>
+        <pre>./manage.sh token add &lt;their sign-in id&gt;</pre>
         <pre>https://your-wren/#token=THE_TOKEN</pre>
         <p class="phint">Opening that link signs their browser in and drops the
         token from the address bar. Tokens are never shown here.</p>
@@ -1294,7 +1301,11 @@ async function loadToday() {
     if (!card || card.kind !== "briefing") { box.hidden = true; return; }
     box.innerHTML = '<div class="thead">Today<button type="button" id="tfold"></button></div><div class="tmount"></div>';
     briefingCard(card.data || {}, box.querySelector(".tmount"));
-    let closed = false; try { closed = localStorage.getItem("wren_today") === "closed"; } catch (e) {}
+    // A choice the reader made wins ("" is "keep it open"). Nothing stored:
+    // folded on a phone, where even capped the open panel is most of the
+    // screen; open on a desktop. Same breakpoint as the 700px media block.
+    let stored = null; try { stored = localStorage.getItem("wren_today"); } catch (e) {}
+    let closed = stored === null ? matchMedia("(max-width: 700px)").matches : stored === "closed";
     const fold = box.querySelector("#tfold");
     const show = () => {
       box.classList.toggle("closed", closed);
@@ -1688,10 +1699,13 @@ async function loadPeople() {
   for (const p of people) {
     const row = document.createElement("div"); row.className = "prow";
     row.innerHTML = '<span class="dot ok"></span><span class="pname"></span><span class="pstate"></span>' +
-                    '<button class="premove" type="button">Remove</button>';
+                    '<button class="premove" type="button">Remove</button><span class="why"></span>';
     row.querySelector(".pname").textContent = p.alias;
+    // ids arrive as strings and are shown as they came: a Discord id is past
+    // what a JS number holds exactly, so never parse or add to one
     row.querySelector(".pstate").textContent =
       ["discord", "telegram"].filter(s => p[s]).map(s => s + " " + p[s]).join(" · ") || "no app yet";
+    row.querySelector(".why").textContent = p.wren_id ? "signs in as " + p.wren_id : "";
     const rm = row.querySelector(".premove");
     // inline confirm: the first click arms, the second removes, anything else disarms
     rm.onclick = async () => {

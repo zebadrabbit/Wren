@@ -526,3 +526,17 @@ def test_panel_has_a_people_tab_with_the_invite_explanation():
     assert "/api/contacts" in html
     assert "#token=" in html                      # the invite link is explained here
     assert "manage.sh token add" in html           # and only here (owner's panel)
+
+
+def test_the_today_panel_is_capped_and_folds_on_a_phone():
+    # A full briefing in one column on a phone was taller than the screen:
+    # #today is a flex item (min-height:auto), so it squeezed #log to its
+    # padding and pushed the composer below the fold (review, 2026-10-14).
+    page = _page()
+    rule = page[page.index("#today {"):]
+    rule = rule[:rule.index("}")]
+    assert "flex: none" in rule and "max-height: 40vh" in rule and "overflow-y: auto" in rule
+    # first visit at phone width starts folded; a choice the reader made wins
+    body = page[page.index("async function loadToday"):]
+    body = body[:body.index("\n}\n")]
+    assert 'matchMedia("(max-width: 700px)")' in body
