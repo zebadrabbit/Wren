@@ -154,13 +154,21 @@ DM the bot on Matrix, from Element or any client. Needs `MATRIX_HOMESERVER`,
    Help & About → Access Token*; or
    `curl -XPOST https://home.net/_matrix/client/v3/login -d '{"type":"m.login.password","identifier":{"type":"m.id.user","user":"wren"},"password":"…"}'`.
    That is `MATRIX_TOKEN`. `MATRIX_HOMESERVER` is the server's base URL.
+   If you copied it from Element, **close the tab, do not sign out**: signing
+   out of that session revokes the token, and Wren's next sync fails with
+   `M_UNKNOWN_TOKEN`. The `curl` login makes a session of its own and has no
+   such trap.
 3. `MATRIX_OWNER_ID` is your own id (`@you:home.net`).
 
 Add `matrix` to `COMMUNICATION_PLUGINS` and restart. **Wren opens the room**:
 at startup it creates an unencrypted direct room and invites you, if there isn't one already; accept it
 and talk there. Wren cannot read encrypted rooms in this version, so do not
 start the chat from your side with encryption on (Element's default); if you
-already did, leave that room and use the one Wren made. The typing indicator
+already did, the first time you write there Wren invites you to a room it can
+read, so leave the encrypted one and use that. A Synapse with
+`encryption_enabled_by_default_for_room_type` set to `invite` or `all`
+encrypts every new room, Wren's own included, and Wren cannot talk on it
+at all; set it to `off` (the default) for this to work. The typing indicator
 is Wren's "heard you". Media is read through the homeserver's authenticated
 download endpoint (Matrix 1.11, Synapse 1.111 or newer).
 

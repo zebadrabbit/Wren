@@ -46,6 +46,7 @@ _MAX_MESSAGE_CHARS = 32000
 
 _me: str = ""                          # the bot's own id, from whoami at start
 _rooms: dict[str, set[str]] = {}       # room id -> joined members, from sync
+_created: dict[str, str] = {}          # matrix id -> the room Wren made for them this run
 
 
 def is_active() -> bool:
@@ -129,19 +130,41 @@ def _matrix_user_id(user_id: int) -> str | None:
     return contacts.surface_id("matrix", user_id)
 
 
-async def _dm_room(matrix_id: str) -> str:
-    """The direct room with this person: the joined room whose members are
-    exactly the two of us, else a new one. Wren creates it unencrypted and
-    invites them, so nobody has to find the encryption toggle; a
-    trusted_private_chat shares history, so a message sent before they
-    accept is waiting when they do."""
+def _find_dm(matrix_id: str) -> str | None:
+    """The joined room whose members are exactly the two of us and that Wren
+    can read. An encrypted one does not count: replies sent there would be
+    plaintext in a room whose messages Wren cannot read back."""
     for room_id, members in _rooms.items():
-        if members == {_me, matrix_id}:
+        if members == {_me, matrix_id} and room_id not in _encrypted:
             return room_id
+    return None
+
+
+async def _dm_room(matrix_id: str) -> str:
+    """The direct room with this person (see _find_dm), else a new one. Wren
+    creates it unencrypted and invites them, so nobody has to find the
+    encryption toggle; a trusted_private_chat shares history, so a message
+    sent before they accept is waiting when they do."""
+    if not _me:
+        # Before whoami has answered, {"", them} would be cached as their
+        # room and every later message sent into a fresh one. Raised, not
+        # False: notify()'s caller retries, and whoami will have answered.
+        raise RuntimeError("matrix: not signed in yet")
+    room_id = _find_dm(matrix_id)
+    if room_id is not None:
+        return room_id
+    made = _created.get(matrix_id)
+    if made is not None and _rooms.get(made) == {_me, matrix_id}:
+        # The room Wren made for them this run came back encrypted, so the
+        # homeserver encrypts every new room (see README). Another would be
+        # too, and one per sync would bury them in invites; what Wren sends
+        # there still reaches them.
+        return made
     body = await _api("POST", f"{V3}/createRoom",
                       json={"is_direct": True, "invite": [matrix_id], "preset": "trusted_private_chat"})
     room_id = body["room_id"]
     _rooms[room_id] = {_me, matrix_id}
+    _created[matrix_id] = room_id
     return room_id
 
 
@@ -218,7 +241,12 @@ _SYNC_FILTER = _json.dumps({
 # since the last token (process-local, as telegram_plugin's offset is).
 # Acting on a message hours late is worse than not acting.
 _STALE_SECONDS = 30 * 60
-_encrypted: set[str] = set()          # rooms already warned about
+# Rooms Wren cannot read: m.room.encryption in their state, or m.room.encrypted
+# events in their timeline. Never a DM room (see _find_dm). Encryption cannot
+# be turned off once on, so a room never leaves this set.
+_encrypted: set[str] = set()
+_ENCRYPTION_TYPES = ("m.room.encryption", "m.room.encrypted")
+_warned: set[str] = set()             # encrypted rooms already logged and answered with an invite
 
 
 def _is_stale(event: dict) -> bool:
@@ -227,13 +255,18 @@ def _is_stale(event: dict) -> bool:
 
 
 def _learn_rooms(rooms: dict) -> None:
-    """Fold a sync's membership into _rooms. State events carry the members
-    who were already there; timeline events carry joins and leaves since."""
+    """Fold a sync's membership and encryption into _rooms and _encrypted.
+    State events carry what was already true; timeline events carry what
+    changed since. Runs on the initial sync too, so an encrypted room is
+    known before start() looks for the owner's room."""
     for room_id, room in (rooms.get("join") or {}).items():
         members = _rooms.setdefault(room_id, set())
         events = list((room.get("state") or {}).get("events") or []) + \
                  list((room.get("timeline") or {}).get("events") or [])
         for ev in events:
+            if ev.get("type") in _ENCRYPTION_TYPES:
+                _encrypted.add(room_id)
+                continue
             if ev.get("type") != "m.room.member":
                 continue
             who = ev.get("state_key")
@@ -311,6 +344,35 @@ async def _handle(room_id: str, event: dict) -> None:
     await core.handle_message(user_id, text, MatrixChannel(room_id), files=files)
 
 
+async def _redirect(room_id: str, events: list) -> None:
+    """Someone Wren knows wrote in an encrypted direct room, which Wren
+    cannot read: say so in the log, once, and invite them to one it can
+    (_dm_room skips encrypted rooms, so this opens a new one unless it
+    exists already). A failed invite is tried again on their next message."""
+    if room_id in _warned:
+        return
+    writer = next((ev.get("sender") for ev in events
+                   if ev.get("type") in ("m.room.encrypted", "m.room.message")
+                   and ev.get("sender") not in (None, _me) and _known(ev.get("sender"))), None)
+    if writer is None:
+        return
+    _warned.add(room_id)
+    try:
+        readable = await _dm_room(writer)
+    except Exception as e:
+        _warned.discard(room_id)
+        logging.warning(f"matrix: room {room_id} is encrypted and Wren cannot read it; could not "
+                        f"open one it can for {writer}: {_scrub(str(e))}")
+        return
+    if readable == room_id:
+        logging.warning(f"matrix: the homeserver encrypted room {room_id}, which Wren made, so Wren "
+                        "cannot read replies there; set encryption_enabled_by_default_for_room_type "
+                        "to off (see README)")
+    else:
+        logging.warning(f"matrix: room {room_id} is encrypted and Wren cannot read it; "
+                        f"invited {writer} to {readable} (see README)")
+
+
 async def _sync_once(since: str | None) -> str:
     """One /sync round trip. Returns the token for the next call. With no
     token this is the initial sync: it carries history, so it only teaches
@@ -328,21 +390,18 @@ async def _sync_once(since: str | None) -> str:
                         if ev.get("type") == "m.room.member" and ev.get("state_key") == _me), None)
         if inviter and _known(inviter):
             try:
-                await _api("POST", f"{V3}/rooms/{room_id}/join")
+                await _api("POST", f"{V3}/rooms/{room_id}/join", json={})
             except Exception as e:
                 logging.warning(f"matrix: join {room_id} failed: {_scrub(str(e))}")
     if since is None:
         return body["next_batch"]
     for room_id, room in (rooms.get("join") or {}).items():
         events = (room.get("timeline") or {}).get("events") or []
-        if any(ev.get("type") == "m.room.encrypted" for ev in events):
-            if room_id not in _encrypted:
-                _encrypted.add(room_id)
-                logging.warning(f"matrix: room {room_id} is encrypted and Wren cannot read it; "
-                                "let Wren open the direct room instead (see README)")
-            continue
         if len(_rooms.get(room_id, ())) != 2:
             continue                             # a group room, or membership unknown yet
+        if room_id in _encrypted:
+            await _redirect(room_id, events)
+            continue
         for ev in events:
             try:
                 await _handle(room_id, ev)
@@ -369,11 +428,12 @@ async def start() -> None:
             if not _me:
                 _me = (await _api("GET", f"{V3}/account/whoami"))["user_id"]
                 logging.info(f"Matrix plugin online as {_me}")
-            if config.MATRIX_OWNER_ID and not any(m == {_me, config.MATRIX_OWNER_ID} for m in _rooms.values()):
+            if config.MATRIX_OWNER_ID and _find_dm(config.MATRIX_OWNER_ID) is None:
                 # The owner's door is opened from this side, unencrypted, so
                 # their first step is accepting an invite rather than finding
                 # the encryption toggle. Runs once the initial sync has shown
-                # whether such a room already exists (since is None before).
+                # whether such a room already exists (since is None before);
+                # an encrypted one does not count.
                 if since is not None:
                     try:
                         await _dm_room(config.MATRIX_OWNER_ID)

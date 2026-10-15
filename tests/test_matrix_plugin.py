@@ -28,6 +28,9 @@ def clean(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "MATRIX_OWNER_ID", OWNER)
     monkeypatch.setattr(matrix_plugin, "_me", ME)
     monkeypatch.setattr(matrix_plugin, "_rooms", {})
+    monkeypatch.setattr(matrix_plugin, "_encrypted", set())
+    monkeypatch.setattr(matrix_plugin, "_warned", set())
+    monkeypatch.setattr(matrix_plugin, "_created", {})
     yield
     router.reset()
 
@@ -137,6 +140,60 @@ def test_dm_room_reuses_the_two_member_room_with_that_person(monkeypatch):
     monkeypatch.setattr(matrix_plugin, "_api", api)
     assert asyncio.run(matrix_plugin._dm_room(OWNER)) == "!a:home.net"
     assert api.calls == []
+
+def test_dm_room_skips_an_encrypted_room_and_creates_a_readable_one(monkeypatch):
+    matrix_plugin._rooms["!enc:home.net"] = {ME, KIM}
+    matrix_plugin._encrypted.add("!enc:home.net")
+    api = Recorder({("POST", "/_matrix/client/v3/createRoom"): {"room_id": "!new:home.net"}})
+    monkeypatch.setattr(matrix_plugin, "_api", api)
+    assert asyncio.run(matrix_plugin._dm_room(KIM)) == "!new:home.net"
+    assert [c[1] for c in api.calls] == ["/_matrix/client/v3/createRoom"]
+
+def test_a_homeserver_that_encrypts_every_room_gets_one_room_not_one_per_sync(monkeypatch, caplog):
+    # encryption_enabled_by_default_for_room_type: Wren's own room comes back
+    # encrypted. Making another each loop would only make another encrypted one.
+    monkeypatch.setattr(matrix_plugin, "_me", "")
+    api = Recorder({("GET", f"{matrix_plugin.V3}/account/whoami"): {"user_id": ME},
+                    ("POST", f"{matrix_plugin.V3}/createRoom"): {"room_id": "!o:home.net"}})
+    monkeypatch.setattr(matrix_plugin, "_api", api)
+    syncs = []
+    async def fake_sync(since):
+        syncs.append(since)
+        if since is not None:
+            matrix_plugin._encrypted.update(matrix_plugin._rooms)   # the server encrypted it
+        await asyncio.sleep(0.001)
+        return "s1"
+    monkeypatch.setattr(matrix_plugin, "_sync_once", fake_sync)
+    async def _run():
+        task = asyncio.create_task(matrix_plugin.start())
+        while len(syncs) < 5:
+            await asyncio.sleep(0.005)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    asyncio.run(_run())
+    assert len([c for c in api.calls if c[1].endswith("/createRoom")]) == 1
+    assert asyncio.run(matrix_plugin._dm_room(OWNER)) == "!o:home.net"   # notify still lands somewhere
+
+def test_the_owner_writing_in_wrens_own_encrypted_room_names_the_server_setting(monkeypatch, caplog):
+    matrix_plugin._rooms["!o:home.net"] = {ME, OWNER}
+    matrix_plugin._created[OWNER] = "!o:home.net"
+    matrix_plugin._encrypted.add("!o:home.net")
+    api = Recorder({("GET", f"{matrix_plugin.V3}/sync"): _sync(_joined(
+        "!o:home.net", [ME, OWNER], [{"type": "m.room.encrypted", "sender": OWNER, "content": {}}]))})
+    monkeypatch.setattr(matrix_plugin, "_api", api)
+    with caplog.at_level(logging.WARNING):
+        asyncio.run(matrix_plugin._sync_once("s1"))
+    assert "encryption_enabled_by_default_for_room_type" in caplog.text
+    assert not [c for c in api.calls if c[1].endswith("/createRoom")]
+
+def test_dm_room_before_whoami_raises_and_caches_nothing(monkeypatch):
+    monkeypatch.setattr(matrix_plugin, "_me", "")
+    api = Recorder({("POST", "/_matrix/client/v3/createRoom"): {"room_id": "!new:home.net"}})
+    monkeypatch.setattr(matrix_plugin, "_api", api)
+    with pytest.raises(RuntimeError):
+        asyncio.run(matrix_plugin.notify(1, "dinner"))        # raised = transient, retried
+    assert api.calls == [] and matrix_plugin._rooms == {}
 
 def test_dm_room_creates_an_unencrypted_direct_room_and_caches_it(monkeypatch):
     api = Recorder({("POST", "/_matrix/client/v3/createRoom"): {"room_id": "!new:home.net"}})
@@ -313,16 +370,17 @@ def test_invites_from_known_people_are_joined_and_others_ignored(monkeypatch):
     api = Recorder({("GET", f"{matrix_plugin.V3}/sync"): _sync(invited=invited)})
     monkeypatch.setattr(matrix_plugin, "_api", api)
     asyncio.run(matrix_plugin._sync_once("s1"))
-    joins = [c[1] for c in api.calls if c[0] == "POST" and c[1].endswith("/join")]
-    assert joins == [f"{matrix_plugin.V3}/rooms/!k:home.net/join"]
+    joins = [c for c in api.calls if c[0] == "POST" and c[1].endswith("/join")]
+    assert [c[1] for c in joins] == [f"{matrix_plugin.V3}/rooms/!k:home.net/join"]
+    assert joins[0][2] == {}                         # a body, as the spec requires
 
 
-def test_an_encrypted_room_is_skipped_and_logged_once(monkeypatch, caplog):
-    matrix_plugin._encrypted.clear()
+def test_an_encrypted_room_is_skipped_logged_once_and_answered_with_one_invite(monkeypatch, caplog):
     room = _joined("!e:home.net", [ME, OWNER], [
         {"type": "m.room.encrypted", "sender": OWNER, "content": {}},
         {"type": "m.room.encrypted", "sender": OWNER, "content": {}}])
-    api = Recorder({("GET", f"{matrix_plugin.V3}/sync"): _sync(room)})
+    api = Recorder({("GET", f"{matrix_plugin.V3}/sync"): _sync(room),
+                    ("POST", f"{matrix_plugin.V3}/createRoom"): {"room_id": "!o:home.net"}})
     monkeypatch.setattr(matrix_plugin, "_api", api)
     handle = AsyncMock()
     monkeypatch.setattr(core, "handle_message", handle)
@@ -331,6 +389,54 @@ def test_an_encrypted_room_is_skipped_and_logged_once(monkeypatch, caplog):
         asyncio.run(matrix_plugin._sync_once("s2"))
     handle.assert_not_awaited()
     assert caplog.text.count("encrypted") == 1
+    creates = [c for c in api.calls if c[1].endswith("/createRoom")]
+    assert len(creates) == 1 and creates[0][2]["invite"] == [OWNER]
+    assert matrix_plugin._rooms["!o:home.net"] == {ME, OWNER}
+
+
+def test_encryption_in_room_state_marks_the_room_encrypted(monkeypatch):
+    # No m.room.encrypted event yet -- the room was made with encryption on
+    # and nobody has written. The state event alone is enough.
+    room = {"!e:home.net": {"state": {"events": [
+        _member(ME), _member(OWNER),
+        {"type": "m.room.encryption", "state_key": "", "sender": OWNER,
+         "content": {"algorithm": "m.megolm.v1.aes-sha2"}}]},
+        "timeline": {"events": []}}}
+    api = Recorder({("GET", f"{matrix_plugin.V3}/sync"): _sync(room, next_batch="s1"),
+                    ("POST", f"{matrix_plugin.V3}/createRoom"): {"room_id": "!o:home.net"}})
+    monkeypatch.setattr(matrix_plugin, "_api", api)
+    asyncio.run(matrix_plugin._sync_once(None))              # the initial sync
+    assert "!e:home.net" in matrix_plugin._encrypted
+    assert matrix_plugin._find_dm(OWNER) is None
+    assert asyncio.run(matrix_plugin._dm_room(OWNER)) == "!o:home.net"
+
+
+def test_a_known_persons_message_in_an_encrypted_room_opens_one_readable_room(monkeypatch):
+    contacts.register("kim", "matrix", KIM)
+    matrix_plugin._rooms["!e:home.net"] = {ME, KIM}
+    matrix_plugin._encrypted.add("!e:home.net")
+    api = Recorder({("GET", f"{matrix_plugin.V3}/sync"): _sync(
+                        _joined("!e:home.net", [ME, KIM], [_msg(KIM, "hello?")])),
+                    ("POST", f"{matrix_plugin.V3}/createRoom"): {"room_id": "!k:home.net"}})
+    monkeypatch.setattr(matrix_plugin, "_api", api)
+    handle = AsyncMock()
+    monkeypatch.setattr(core, "handle_message", handle)
+    asyncio.run(matrix_plugin._sync_once("s1"))
+    asyncio.run(matrix_plugin._sync_once("s2"))
+    handle.assert_not_awaited()
+    creates = [c for c in api.calls if c[1].endswith("/createRoom")]
+    assert len(creates) == 1 and creates[0][2]["invite"] == [KIM]
+
+
+def test_a_stranger_in_an_encrypted_room_gets_no_invite(monkeypatch):
+    matrix_plugin._rooms["!e:home.net"] = {ME, "@who:else.org"}
+    matrix_plugin._encrypted.add("!e:home.net")
+    api = Recorder({("GET", f"{matrix_plugin.V3}/sync"): _sync(_joined(
+        "!e:home.net", [ME, "@who:else.org"],
+        [{"type": "m.room.encrypted", "sender": "@who:else.org", "content": {}}]))})
+    monkeypatch.setattr(matrix_plugin, "_api", api)
+    asyncio.run(matrix_plugin._sync_once("s1"))
+    assert not [c for c in api.calls if c[1].endswith("/createRoom")]
 
 
 def test_stale_message_gets_the_offline_notice(monkeypatch):
@@ -398,6 +504,27 @@ def test_start_learns_who_it_is_opens_the_owners_room_and_registers(monkeypatch)
     assert "matrix" in asyncio.run(_run())
     assert matrix_plugin._me == ME
     assert matrix_plugin._rooms == {"!o:home.net": {ME, OWNER}}
+
+
+def test_start_does_not_count_an_encrypted_room_as_the_owners(monkeypatch):
+    monkeypatch.setattr(matrix_plugin, "_rooms", {"!enc:home.net": {ME, OWNER}})
+    matrix_plugin._encrypted.add("!enc:home.net")
+    api = Recorder({("GET", f"{matrix_plugin.V3}/account/whoami"): {"user_id": ME},
+                    ("POST", f"{matrix_plugin.V3}/createRoom"): {"room_id": "!o:home.net"}})
+    monkeypatch.setattr(matrix_plugin, "_api", api)
+    async def idle(since):
+        await asyncio.sleep(0.01)
+        return since or "s1"
+    monkeypatch.setattr(matrix_plugin, "_sync_once", idle)
+    async def _run():
+        task = asyncio.create_task(matrix_plugin.start())
+        await asyncio.sleep(0.05)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    asyncio.run(_run())
+    assert matrix_plugin._rooms["!o:home.net"] == {ME, OWNER}
+    assert len([c for c in api.calls if c[1].endswith("/createRoom")]) == 1
 
 
 def test_start_feeds_each_since_into_the_next_sync(monkeypatch):
