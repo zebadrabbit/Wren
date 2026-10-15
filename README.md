@@ -102,9 +102,7 @@ first added with, whichever door that was; the shopping list is the
 household's on all of them. A reminder or a "send to hubby" with no surface
 named reaches them on the default `NOTIFY_VIA` surface if they are on it, and
 otherwise on whichever running surface they are (with `NOTIFY_VIA=any`, only
-their surfaces are tried at all).
-
-Slack ids look like `U0123ABCDEF` and Matrix ids like `@kim:home.net`; a person first added on one of those gets a Wren id minted from it, so removing and re-adding them keeps their notes.
+their surfaces are tried at all). Slack ids look like `U0123ABCDEF` and Matrix ids like `@kim:home.net`; a person first added on one of those gets a Wren id minted from it, so removing and re-adding them keeps their notes.
 
 Long-polls `getUpdates` over `aiohttp`; there is no Telegram client library in
 the dependency list. Private chats only — group messages are ignored. The Bot
@@ -155,7 +153,7 @@ DM the bot on Matrix, from Element or any client. Needs `MATRIX_HOMESERVER`,
 3. `MATRIX_OWNER_ID` is your own id (`@you:home.net`).
 
 Add `matrix` to `COMMUNICATION_PLUGINS` and restart. **Wren opens the room**:
-at startup it creates an unencrypted direct room and invites you; accept it
+at startup it creates an unencrypted direct room and invites you, if there isn't one already; accept it
 and talk there. Wren cannot read encrypted rooms in this version, so do not
 start the chat from your side with encryption on (Element's default); if you
 already did, leave that room and use the one Wren made. The typing indicator
@@ -166,7 +164,7 @@ Edits to a message are ignored, so correcting a typo does not run the command tw
 
 Other people: "add @kim:home.net as kim on matrix", or the People tab. Wren
 invites them to a direct room the first time it has something to tell them,
-and accepts a direct-room invite from anyone it knows.
+and accepts an invite from anyone it knows.
 
 ### `http` — role: chat (passive for proactive notifications)
 
@@ -411,9 +409,11 @@ to add one and a button to remove one (the same thing as "add 123 as hubby" in
 chat, through `/api/contacts`). The tab also explains the sign-in command and
 the invite link. It does not make tokens: they are credentials, so they are
 never returned by an endpoint and never editable from the page. Each row shows
-the id the person signs in as (their first-added id, shown as the app spells
-it); run `./manage.sh token add <that id>` on the host, restart, and send the
-person the link it prints. The form offers the apps in `COMMUNICATION_PLUGINS`.
+the number the person signs in as. For someone first added on Discord or
+Telegram it is that id; for someone first added on Slack or Matrix it is a
+number Wren minted from their id. Run `./manage.sh token add <that number>` on
+the host to give them the web chat, restart, and send the person the link it
+prints. The form offers the apps in `COMMUNICATION_PLUGINS`.
 
 ### Where notifications go
 
