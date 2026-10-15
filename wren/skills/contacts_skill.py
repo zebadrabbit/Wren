@@ -9,7 +9,7 @@ DESTRUCTIVE = ["remove_contact"]
 CONFIRM = {"remove_contact": 'remove the contact "{content}"'}
 PLUGIN_NAME = "Contacts"
 
-PROMPT_GUIDELINES = """- add_contact: owner wants to add a new whitelisted contact, or give an existing one their id on another surface (e.g. "add 123456789012345678 as hubby", "add 987654321 as hubby on telegram"); content is the raw numeric user ID, person is the alias
+PROMPT_GUIDELINES = """- add_contact: owner wants to add a new whitelisted contact, or give an existing one their id on another surface (e.g. "add 123456789012345678 as hubby", "add 987654321 as hubby on telegram"); content is the raw user ID exactly as given (a number, a Slack id like U0123ABCDEF, or a Matrix id like @kim:home.net), person is the alias
 - remove_contact: owner wants to remove a whitelisted contact (e.g. "remove hubby"); person is the alias to remove
 - list_contacts: owner wants to see who's currently whitelisted (e.g. "who's whitelisted", "list contacts")"""
 
@@ -51,14 +51,11 @@ async def handle(intent: str, ctx: Ctx) -> None:
         if not alias:
             await ctx.channel.send("Who should I add?")
             return
-        if not id_raw.isdigit():
-            await ctx.channel.send("That doesn't look like a user ID.")
-            return
         named = router.named_surface(ctx.text)
         surface = named if named in contacts.SURFACES else _default_surface()
         try:
-            new = contacts.register(alias, surface, int(id_raw), reserved=config.whitelist())
-        except contacts.Taken as e:
+            new = contacts.register(alias, surface, id_raw, reserved=config.whitelist())
+        except (contacts.Invalid, contacts.Taken) as e:
             await ctx.channel.send(str(e))
             return
         await ctx.channel.send(flourish.flourish(

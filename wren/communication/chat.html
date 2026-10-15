@@ -596,13 +596,12 @@ main footer { padding: 10px 20px 18px; }
         <form id="padd" class="pset">
           <input id="palias" placeholder="name, e.g. hubby" aria-label="name" required>
           <select id="psurface" aria-label="app"></select>
-          <input id="pid" placeholder="their id in that app" aria-label="id" inputmode="numeric" required>
+          <input id="pid" placeholder="their id in that app" aria-label="id" required>
           <button type="submit">Add</button>
           <span class="savestat" id="pstat"></span>
         </form>
-        <p class="phint">Someone on both apps: add them with Discord first, then add
-        the same name again with Telegram and their id there. Discord added after
-        Telegram would change how they sign in, so Wren says no to that order.</p>
+        <p class="phint">Someone on two apps: add them once, then add the same name
+        again with the other app and their id there. Their notes stay theirs whichever came first.</p>
         <h4>Sign-in links</h4>
         <p class="phint">To let someone use this page, make them a sign-in token on
         the computer Wren runs on, using the sign-in id shown on their row above,
@@ -708,7 +707,10 @@ function dayLabel(iso, now = new Date()) {
   if (diff === 1) return "Yesterday";
   return d.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
 }
-const DOOR = { telegram: "Telegram", discord: "Discord", voice: "voice" };
+const DOOR = { telegram: "Telegram", discord: "Discord", slack: "Slack", matrix: "Matrix", voice: "voice" };
+// what an id looks like on each app, as the add form's hint
+const PLACEHOLDER = { discord: "123456789012345678", telegram: "123456789",
+                      slack: "U0123ABCDEF", matrix: "@name:home.net" };
 function turnLabel(row) {
   if (row.kind === "notice") return row.channel === "web" || !row.channel ? "sent here" : "sent to " + (DOOR[row.channel] || row.channel);
   if (row.channel === "voice") return "by voice";
@@ -1305,6 +1307,7 @@ async function showRead(intent) {
 // weather and calendar reads are cached server-side. A changed-data check
 // would earn its keep only if a section ever got expensive.
 let tline = 0, tlineTimer = 0;   // which fact the folded head shows, and its rotation
+let surfaces = [];               // from /api/me; the apps the People form offers
 let myName = null;               // from /api/me; the panel's greeting is to the reader
 function todayCue() {
   const box = $("#today");
@@ -1725,10 +1728,11 @@ async function loadPeople() {
   catch (e) { $("#perr").textContent = String(e.message || e); return; }
   const sel = $("#psurface");
   if (!sel.options.length) {
-    // ponytail: surfaces hardcoded to the two the server accepts; ceiling is a third chat plugin
-    for (const s of ["discord", "telegram"]) {
-      const o = document.createElement("option"); o.value = o.textContent = s; sel.append(o);
+    for (const s of (surfaces.length ? surfaces : ["discord", "telegram"])) {
+      const o = document.createElement("option"); o.value = s; o.textContent = DOOR[s] || s; sel.append(o);
     }
+    sel.onchange = () => { $("#pid").placeholder = PLACEHOLDER[sel.value] || "their id in that app"; };
+    sel.onchange();
   }
   if (!people.length) { box.innerHTML = '<p class="phint">Just you so far.</p>'; return; }
   for (const p of people) {
@@ -1739,7 +1743,7 @@ async function loadPeople() {
     // ids arrive as strings and are shown as they came: a Discord id is past
     // what a JS number holds exactly, so never parse or add to one
     row.querySelector(".pstate").textContent =
-      ["discord", "telegram"].filter(s => p[s]).map(s => s + " " + p[s]).join(" · ") || "no app yet";
+      Object.keys(DOOR).filter(s => p[s]).map(s => (DOOR[s] || s) + " " + p[s]).join(" · ") || "no app yet";
     row.querySelector(".why").textContent = p.wren_id ? "signs in as " + p.wren_id : "";
     const rm = row.querySelector(".premove");
     // inline confirm: the first click arms, the second removes, anything else disarms
@@ -1899,7 +1903,7 @@ async function start() {
   const me = api("/api/me");
   me.then(m => {
     $("#whoname").textContent = m.name || "Signed in"; drawReads(m.skills || []); showModel(m.model);
-    myName = m.name || null;
+    myName = m.name || null; surfaces = m.surfaces || [];
     const g = $("#today .bgreet"); if (g) g.textContent = greeting(myName);   // drawn before the name arrived
   }).catch(() => {});
   setNarrow();

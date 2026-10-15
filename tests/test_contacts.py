@@ -198,3 +198,8 @@ def test_a_surface_id_is_unique_across_people():
     contacts.register("kim", "slack", "U0123ABCDEF")
     with pytest.raises(contacts.Taken, match="another name"):
         contacts.register("sam", "slack", "U0123ABCDEF")
+
+
+def test_non_ascii_digits_are_refused():
+    with pytest.raises(contacts.Invalid):
+        contacts.register("kim", "telegram", "١٢")

@@ -236,6 +236,9 @@ def register_routes(app: web.Application, authenticate) -> None:
             name = alias.title() if alias and alias != "owner" else None
         return web.json_response({
             "name": name,
+            # which apps a person can be added on here, for the People tab's
+            # form: the configured chat plugins that hold ids of their own
+            "surfaces": [s for s in config.COMMUNICATION_PLUGINS if s in contacts.SURFACES],
             "skills": [registry.skill_key(p) for p in registry.PLUGINS
                        if registry.is_enabled(p)],
             # so the top bar can show which model is answering; the model
@@ -306,7 +309,8 @@ def register_routes(app: web.Application, authenticate) -> None:
 
     async def add_contact(request):
         """Body checks here; the rules are contacts.register, shared with the
-        chat skill, and a refusal is a 409 with its reason."""
+        chat skill: a shape refusal is a 400, a taken name or id a 409, each
+        with its reason."""
         _owner(request)
         body = await _json_object(request)
         alias, surface, raw_id = body.get("alias"), body.get("surface"), body.get("id")
@@ -317,10 +321,12 @@ def register_routes(app: web.Application, authenticate) -> None:
             return web.json_response({"error": '"owner" is the placeholder for you, not a contact'}, status=400)
         if surface not in contacts.SURFACES:
             return web.json_response({"error": f"surface must be one of {', '.join(contacts.SURFACES)}"}, status=400)
-        if not isinstance(raw_id, (str, int)) or isinstance(raw_id, bool) or not (str(raw_id).strip().isascii() and str(raw_id).strip().isdigit()):
-            return web.json_response({"error": "id must be the number that app calls them"}, status=400)
+        if not isinstance(raw_id, (str, int)) or isinstance(raw_id, bool):
+            return web.json_response({"error": "id must be the id that app calls them"}, status=400)
         try:
-            new = contacts.register(alias, surface, int(str(raw_id).strip()), reserved=config.whitelist())
+            new = contacts.register(alias, surface, str(raw_id), reserved=config.whitelist())
+        except contacts.Invalid as e:
+            return web.json_response({"error": str(e)}, status=400)
         except contacts.Taken as e:
             return web.json_response({"error": str(e)}, status=409)
         return web.json_response(_contact_row(alias), status=201 if new else 200)

@@ -15,14 +15,14 @@ SURFACES = ("discord", "telegram", "slack", "matrix")
 # The one place an id's shape is known. The doors relay the refusal; they
 # do not check digits themselves.
 ID_SHAPE = {
-    "discord": re.compile(r"\d+"),
-    "telegram": re.compile(r"\d+"),
+    "discord": re.compile(r"[0-9]+"),
+    "telegram": re.compile(r"[0-9]+"),
     "slack": re.compile(r"[UW][A-Z0-9]{8,}"),          # U0123ABCDEF, W for enterprise grid
     "matrix": re.compile(r"@[^:\s]+:[^\s]+"),           # @kim:home.net
 }
 # Surfaces whose id IS a number. Their id is the person's Wren id when it is
 # the first one they are added with; readers hand it back as an int.
-NUMERIC = frozenset(s for s, shape in ID_SHAPE.items() if shape.pattern == r"\d+")
+NUMERIC = frozenset({"discord", "telegram"})
 
 
 def _col(surface: str) -> str:

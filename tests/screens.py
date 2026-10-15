@@ -102,6 +102,7 @@ def seed(tmp: pathlib.Path):
     # the People tab: a Discord id JSON would round, and a Telegram-first person
     _api("/api/contacts", {"alias": "hubby", "surface": "discord", "id": SNOWFLAKE})
     _api("/api/contacts", {"alias": "mum", "surface": "telegram", "id": "5550001"})
+    _api("/api/contacts", {"alias": "kim", "surface": "slack", "id": "U0123ABCDEF"})
     # the Telegram sentence below is only a transcript row; this is what makes
     # the Packing space exist
     _api("/api/dispatch", {"intent": "add_shopping_item", "content": "tent", "list": "packing"})
@@ -162,6 +163,7 @@ async def shoot(out: pathlib.Path):
                     await page.wait_for_selector("#pcontacts .prow")
                     people = await page.inner_text("#pcontacts")
                     assert SNOWFLAKE in people, f"the Discord id was mangled: {people!r}"
+                    assert "Slack U0123ABCDEF" in people, f"no Slack id on kim's row: {people!r}"
                     assert "signs in as 5550001" in people, f"no sign-in id on the Telegram row: {people!r}"
                     await page.screenshot(path=str(out / f"{name}-people.png"))
                     await page.click("#pclose")

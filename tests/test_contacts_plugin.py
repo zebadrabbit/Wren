@@ -35,7 +35,7 @@ def test_owner_adds_contact():
 def test_owner_add_contact_non_numeric_id():
     ch = CollectingChannel()
     asyncio.run(contacts_plugin.handle("add_contact", Ctx(user_id=1, channel=ch, content="not-a-number", person="hubby")))
-    assert ch.sent == ["That doesn't look like a user ID."]
+    assert ch.sent == ["That doesn't look like a discord id."]
     assert contacts.all() == {}
 
 def test_owner_add_contact_empty_alias():
@@ -112,6 +112,19 @@ def test_owner_adds_a_contact_on_a_named_surface(monkeypatch):
     _assert_flourished(ch.sent[-1], "Added hubby on telegram.")
     assert contacts.wren_id("telegram", 555) == 555
     assert contacts.surfaces_of(555) == ["telegram"]
+
+def test_owner_adds_a_slack_contact(monkeypatch):
+    monkeypatch.setattr(config, "COMMUNICATION_PLUGINS", ["discord", "slack"])
+    ch = CollectingChannel()
+    _add(ch, "U0123ABCDEF", "kim", text="add U0123ABCDEF as kim on slack")
+    _assert_flourished(ch.sent[-1], "Added kim on slack.")
+    assert contacts.surfaces_of(contacts.all()["kim"]) == ["slack"]
+
+def test_a_slack_shaped_id_on_discord_is_refused_with_the_surface_named(monkeypatch):
+    monkeypatch.setattr(config, "COMMUNICATION_PLUGINS", ["discord", "slack"])
+    ch = CollectingChannel()
+    _add(ch, "U0123ABCDEF", "kim")
+    assert ch.sent == ["That doesn't look like a discord id."]
 
 def test_owner_adds_a_second_surface_to_an_existing_contact(monkeypatch):
     monkeypatch.setattr(config, "COMMUNICATION_PLUGINS", ["discord", "telegram"])

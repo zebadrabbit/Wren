@@ -404,14 +404,34 @@ def test_add_a_contact_then_a_second_surface_then_remove():
     {"alias": "", "surface": "discord", "id": "1"},
     {"alias": "owner", "surface": "discord", "id": "1"},
     {"alias": "x", "surface": "sms", "id": "1"},
-    {"alias": "x", "surface": "discord", "id": "abc"},
     {"alias": "x", "surface": "discord"},
     {"alias": 5, "surface": "discord", "id": "1"},
-    {"alias": "x", "surface": "discord", "id": "\u00b2"},
 ])
 def test_add_contact_rejects_bad_bodies(body):
     status, out = call("post", "/api/contacts", token=TOKEN_OWNER, json=body)
     assert status == 400 and "error" in out
+
+
+@pytest.mark.parametrize("surface,raw", [("discord", "abc"), ("discord", "\u00b2"),
+                                         ("slack", "u0123abcdef"), ("matrix", "kim:home.net")])
+def test_add_contact_relays_the_stores_shape_refusal(surface, raw):
+    status, out = call("post", "/api/contacts", token=TOKEN_OWNER,
+                       json={"alias": "x", "surface": surface, "id": raw})
+    assert status == 400 and out["error"] == f"That doesn't look like a {surface} id."
+
+
+def test_add_a_slack_contact_over_http():
+    status, row = call("post", "/api/contacts", token=TOKEN_OWNER,
+                       json={"alias": "kim", "surface": "slack", "id": "U0123ABCDEF"})
+    assert status == 201
+    assert row["slack"] == "U0123ABCDEF" and row["discord"] is None and row["matrix"] is None
+    assert row["wren_id"] == str(contacts.mint("slack", "U0123ABCDEF"))
+
+
+def test_me_lists_the_configured_surfaces_in_order(monkeypatch):
+    monkeypatch.setattr(config, "COMMUNICATION_PLUGINS", ["http", "slack", "discord", "gmail"])
+    status, body = call("get", "/api/me", token=TOKEN_OTHER)
+    assert status == 200 and body["surfaces"] == ["slack", "discord"]
 
 
 def test_add_contact_refuses_a_surface_the_person_already_has():
