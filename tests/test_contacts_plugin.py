@@ -55,7 +55,7 @@ def test_owner_add_contact_taken_alias():
     contacts.add("hubby", 222222222222222222)
     ch = CollectingChannel()
     asyncio.run(contacts_plugin.handle("add_contact", Ctx(user_id=1, channel=ch, content="333333333333333333", person="hubby")))
-    assert ch.sent == ["That name's already taken."]
+    assert ch.sent == ["hubby already has a discord id."]
 
 def test_owner_add_contact_alias_matches_owner():
     ch = CollectingChannel()
@@ -127,7 +127,16 @@ def test_a_surface_the_contact_already_has_is_taken(monkeypatch):
     contacts.add("hubby", 42, surface="telegram")
     ch = CollectingChannel()
     _add(ch, "43", "hubby", text="add 43 as hubby on telegram")
-    assert ch.sent == ["That name's already taken."]
+    assert ch.sent == ["hubby already has a telegram id."]
+
+def test_chat_refuses_discord_for_a_telegram_first_contact(monkeypatch):
+    # same rule as the People tab: a Discord id would become their Wren id
+    monkeypatch.setattr(config, "COMMUNICATION_PLUGINS", ["discord", "telegram"])
+    contacts.add("kim", 55, surface="telegram")
+    ch = CollectingChannel()
+    _add(ch, "123456789012345678", "kim", text="add 123456789012345678 as kim on discord")
+    assert "Discord first" in ch.sent[-1]
+    assert contacts.all() == {"kim": 55}
 
 def test_an_unknown_surface_word_is_not_a_surface(monkeypatch):
     # same rule as reminders' "via": a word this install does not run is part

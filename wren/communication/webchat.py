@@ -2,7 +2,6 @@ import importlib
 import logging
 import pathlib
 import pkgutil
-import sqlite3
 
 from aiohttp import web
 
@@ -306,11 +305,8 @@ def register_routes(app: web.Application, authenticate) -> None:
         return web.json_response([_contact_row(a) for a in sorted(contacts.all())])
 
     async def add_contact(request):
-        """The same rules as contacts_skill.add_contact, over HTTP: the owner's
-        name and the placeholder "owner" are taken, a surface a person already
-        has an id on is taken, and an id already registered under another
-        name is a conflict. ponytail: kept in step by hand; a shared helper would be
-        the right move the third time a rule is added."""
+        """Body checks here; the rules are contacts.register, shared with the
+        chat skill, and a refusal is a 409 with its reason."""
         _owner(request)
         body = await _json_object(request)
         alias, surface, raw_id = body.get("alias"), body.get("surface"), body.get("id")
@@ -323,30 +319,11 @@ def register_routes(app: web.Application, authenticate) -> None:
             return web.json_response({"error": f"surface must be one of {', '.join(contacts.SURFACES)}"}, status=400)
         if not isinstance(raw_id, (str, int)) or isinstance(raw_id, bool) or not (str(raw_id).strip().isascii() and str(raw_id).strip().isdigit()):
             return web.json_response({"error": "id must be the number that app calls them"}, status=400)
-        surface_id = int(str(raw_id).strip())
-        existing = alias in contacts.all()
-        if alias in config.whitelist() and not existing:
-            return web.json_response({"error": "that name is taken"}, status=409)
-        if existing and surface in contacts.surfaces_of(contacts.all()[alias]):
-            return web.json_response({"error": f"{alias} already has a {surface} id"}, status=409)
-        if existing and surface == "discord" and contacts.all()[alias] == contacts.get(alias)["telegram"]:
-            # Their Wren id is COALESCE(discord, telegram), so a Discord id
-            # added now would become who they are: their token, notes and
-            # reminders stay filed under the Telegram id and nothing finds them.
-            # ponytail: refused here only; contacts_skill's "add 555 as kim on
-            # discord" still allows it -- that is the pre-existing id model,
-            # and a stable Wren id per person is the real fix.
-            return web.json_response(
-                {"error": "that would change how they sign in and leave their saved things "
-                          "behind; add Discord first for new people"}, status=409)
         try:
-            if existing:
-                contacts.set_id(alias, surface, surface_id)
-            else:
-                contacts.add(alias, surface_id, surface=surface)
-        except sqlite3.IntegrityError:
-            return web.json_response({"error": "that id is already registered under another name"}, status=409)
-        return web.json_response(_contact_row(alias), status=200 if existing else 201)
+            new = contacts.register(alias, surface, int(str(raw_id).strip()), reserved=config.whitelist())
+        except contacts.Taken as e:
+            return web.json_response({"error": str(e)}, status=409)
+        return web.json_response(_contact_row(alias), status=201 if new else 200)
 
     async def remove_contact(request):
         _owner(request)

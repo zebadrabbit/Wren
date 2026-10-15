@@ -65,6 +65,40 @@ def set_id(alias: str, surface: str, surface_id: int) -> bool:
         return cur.rowcount > 0
 
 
+class Taken(ValueError):
+    """A refusal the person can read: the reason is the message."""
+
+
+def register(alias: str, surface: str, surface_id: int, reserved=()) -> bool:
+    """Add a person, or give an existing one their id on another surface:
+    the one rule set behind "add 555 as kim on telegram" and the People tab.
+    True when the person is new. Raises Taken, with the reason, when the name
+    is reserved (the owner's) and not already a contact, when the person
+    already has an id on that surface, when a Discord id would change who a
+    Telegram-first person signs in as (the COALESCE rule below: their notes,
+    reminders and token stay filed under the Telegram id), or when the id is
+    registered under another name."""
+    _col(surface)
+    alias = alias.strip().lower()
+    row = get(alias)
+    if row is None:
+        if alias in reserved:
+            raise Taken("That name's already taken.")
+    elif row[surface] is not None:
+        raise Taken(f"{alias} already has a {surface} id.")
+    elif surface == "discord" and row["telegram"] is not None:
+        raise Taken("That would change how they sign in and leave their saved things "
+                    "behind; add Discord first for new people.")
+    try:
+        if row is None:
+            add(alias, surface_id, surface=surface)
+        else:
+            set_id(alias, surface, surface_id)
+    except sqlite3.IntegrityError:
+        raise Taken("That user ID is already registered under another name.") from None
+    return row is None
+
+
 def get(alias: str) -> dict | None:
     """One contact's row: alias and the id on each surface (None where unset)."""
     with db.conn() as con:

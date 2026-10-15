@@ -1,5 +1,3 @@
-import sqlite3
-
 from .. import config
 from .. import contacts
 from .. import flourish
@@ -58,23 +56,13 @@ async def handle(intent: str, ctx: Ctx) -> None:
             return
         named = router.named_surface(ctx.text)
         surface = named if named in contacts.SURFACES else _default_surface()
-        existing = alias in contacts.all()
-        # An existing contact gets a second surface; the owner's name, or a
-        # surface the contact already has an id on, is taken.
-        if (alias in config.whitelist() and not existing) or (
-                existing and surface in contacts.surfaces_of(contacts.all()[alias])):
-            await ctx.channel.send("That name's already taken.")
-            return
         try:
-            if existing:
-                contacts.set_id(alias, surface, int(id_raw))
-            else:
-                contacts.add(alias, int(id_raw), surface=surface)
-        except sqlite3.IntegrityError:
-            await ctx.channel.send("That user ID is already registered under another name.")
+            new = contacts.register(alias, surface, int(id_raw), reserved=config.whitelist())
+        except contacts.Taken as e:
+            await ctx.channel.send(str(e))
             return
         await ctx.channel.send(flourish.flourish(
-            f"Added {alias} on {surface}." if (named or existing) else f"Added {alias}."))
+            f"Added {alias} on {surface}." if (named or not new) else f"Added {alias}."))
 
     elif intent == "remove_contact":
         alias = (ctx.person or "").strip().lower()
