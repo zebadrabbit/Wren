@@ -32,8 +32,8 @@ def SPACES() -> list[dict]:
             for name in shopping.list_names()]
 
 
-PROMPT_GUIDELINES = """- add_shopping_item: user wants to add an item to the shared shopping list, or to another named list ("add a tent to the packing list") — same intents, content is the item only
-- remove_shopping_item: user got/bought/already has a SPECIFIC named item and wants that one item off the shopping list
+PROMPT_GUIDELINES = """- add_shopping_item: user wants to add one or more items to the shared shopping list, or to another named list ("add a tent to the packing list") — same intents, content is the items only, comma-separated ("milk, eggs" for "add milk and eggs")
+- remove_shopping_item: user got/bought/already has SPECIFIC named items and wants those off the shopping list, content is the items only, comma-separated
 - restore_shopping_item: user wants an item they just removed put BACK on the list ("undo", "put the milk back", "I still need the eggs after all")
 - clear_shopping: user wants the WHOLE shopping list emptied ("clear the shopping list", "empty my shopping list", "wipe the list", "start a fresh list") — the list itself is the target, not an item on it
 - recall_shopping: user wants to see the current shopping list
@@ -60,14 +60,25 @@ def _list_name(ctx: Ctx) -> str:
         name = (ctx.list_name or "").strip().lower()
     return "shopping" if not name or name in _SHOPPING_NAMES else name
 
+# "milk, eggs and bread" -> three items. ponytail: splitting on " and " also
+# splits "mac and cheese"; the upgrade is a JSON list from the classifier.
+_SPLIT = re.compile(r"\s*,\s*|\s+and\s+", re.I)
+
+def _items(content: str) -> list[str]:
+    return [i for i in _SPLIT.split(content or "") if i]
+
+def _names(items: list[str]) -> str:
+    return ", ".join(items[:-1]) + (" and " if len(items) > 1 else "") + items[-1]
+
 def _on(name: str) -> str:
     """The suffix that names a list in a reply, empty for the default one."""
     return "" if name == "shopping" else f" the {name} list"
 
 async def _undo_remove(ctx: Ctx) -> None:
     lst = _list_name(ctx)
-    if shopping.restore(ctx.content, list_name=lst):
-        await ctx.channel.send(flourish.flourish(f"Put {ctx.content} back."))
+    back = [i for i in _items(ctx.content) if shopping.restore(i, list_name=lst)]
+    if back:
+        await ctx.channel.send(flourish.flourish(f"Put {_names(back)} back."))
     else:
         await ctx.channel.send(f"{ctx.content} is already back on the list.")
 
@@ -94,23 +105,23 @@ async def handle(intent: str, ctx: Ctx) -> None:
         if not added:
             await ctx.channel.send("I couldn't read any items off that picture.")
         else:
-            names = ", ".join(added[:-1]) + (" and " if len(added) > 1 else "") + added[-1]
             await ctx.channel.send(flourish.flourish(
-                f"Added {names}{' to' + _on(lst) if lst != 'shopping' else ''}."))
+                f"Added {_names(added)}{' to' + _on(lst) if lst != 'shopping' else ''}."))
 
     elif intent == "add_shopping_item":
-        _, was_new = shopping.add(ctx.content, added_by=config.id_to_name()[ctx.user_id], list_name=lst)
-        if was_new:
+        who = config.id_to_name()[ctx.user_id]
+        added = [i for i in _items(ctx.content) if shopping.add(i, added_by=who, list_name=lst)[1]]
+        if added:
             await ctx.channel.send(flourish.flourish(
-                f"Added {ctx.content}{' to' + _on(lst) if lst != 'shopping' else ''}."))
+                f"Added {_names(added)}{' to' + _on(lst) if lst != 'shopping' else ''}."))
         else:
             await ctx.channel.send("Already on the list.")
 
     elif intent == "remove_shopping_item":
-        removed = shopping.remove(ctx.content, list_name=lst)
+        removed = [i for i in _items(ctx.content) if shopping.remove(i, list_name=lst)]
         if removed:
             await ctx.channel.send(flourish.flourish(
-                f"Got it, removed {ctx.content}{' from' + _on(lst) if lst != 'shopping' else ''}."))
+                f"Got it, removed {_names(removed)}{' from' + _on(lst) if lst != 'shopping' else ''}."))
         else:
             await ctx.channel.send(f"{ctx.content} wasn't on the list.")
 

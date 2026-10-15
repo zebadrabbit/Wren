@@ -287,3 +287,26 @@ def test_undo_clear_restores_exactly_what_the_clear_removed():
     asyncio.run(shopping_plugin.UNDO["clear_shopping"](ctx))
     assert sorted(i["item"] for i in shopping.active_items()) == ["eggs", "milk"]
     _assert_flourished(ctx.channel.sent[-1], "Put 2 items back.")
+
+def test_add_several_items():
+    ch = CollectingChannel()
+    asyncio.run(shopping_plugin.handle("add_shopping_item", Ctx(user_id=1, channel=ch, content="milk, eggs and bread")))
+    _assert_flourished(ch.sent[-1], "Added milk, eggs and bread.")
+    assert [i["item"] for i in shopping.active_items()] == ["milk", "eggs", "bread"]
+
+def test_add_several_items_only_names_the_new_ones():
+    shopping.add("milk", "owner")
+    ch = CollectingChannel()
+    asyncio.run(shopping_plugin.handle("add_shopping_item", Ctx(user_id=1, channel=ch, content="milk and eggs")))
+    _assert_flourished(ch.sent[-1], "Added eggs.")
+
+def test_remove_several_items_and_undo():
+    shopping.add("milk", "owner"); shopping.add("eggs", "owner")
+    ch = CollectingChannel()
+    ctx = Ctx(user_id=1, channel=ch, content="milk and eggs")
+    asyncio.run(shopping_plugin.handle("remove_shopping_item", ctx))
+    _assert_flourished(ch.sent[-1], "Got it, removed milk and eggs.")
+    assert shopping.active_items() == []
+    asyncio.run(shopping_plugin.UNDO["remove_shopping_item"](ctx))
+    _assert_flourished(ch.sent[-1], "Put milk and eggs back.")
+    assert [i["item"] for i in shopping.active_items()] == ["milk", "eggs"]
