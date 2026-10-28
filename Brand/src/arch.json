@@ -13,7 +13,7 @@
    "key": "github",
    "name": "GitHub Watcher",
    "role": "input",
-   "canNotify": null,
+   "canNotify": false,
    "stub": false
   },
   {
@@ -21,7 +21,7 @@
    "key": "gmail",
    "name": "Gmail (IMAP) Watcher",
    "role": "input",
-   "canNotify": null,
+   "canNotify": false,
    "stub": false
   },
   {
@@ -30,6 +30,22 @@
    "name": "HTTP / Web Chat",
    "role": "chat",
    "canNotify": false,
+   "stub": false
+  },
+  {
+   "module": "matrix_plugin",
+   "key": "matrix",
+   "name": "Matrix",
+   "role": "chat",
+   "canNotify": true,
+   "stub": false
+  },
+  {
+   "module": "slack_plugin",
+   "key": "slack",
+   "name": "Slack",
+   "role": "chat",
+   "canNotify": true,
    "stub": false
   },
   {
@@ -135,7 +151,7 @@
   }
  ],
  "totals": {
-  "chat": 3,
+  "chat": 5,
   "input": 2,
   "stubs": 0,
   "skills": 10,
