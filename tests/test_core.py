@@ -306,7 +306,7 @@ def test_voice_confirm_send_failure_does_not_arm_a_blind_confirmation():
 def test_voice_non_destructive_intent_acts_immediately():
     from wren import settings
     settings.init_db(); shopping_store.init_db()
-    ch = _voice("add milk", "add_shopping_item", "milk")
+    _voice("add milk", "add_shopping_item", "milk")
     assert [i["item"] for i in shopping_store.active_items()] == ["milk"]
     assert OWNER not in core._pending
 

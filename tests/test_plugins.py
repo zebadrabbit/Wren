@@ -14,7 +14,7 @@ from wren.communication import gmail_plugin as email_plugin
 from wren.skills import reminder_skill as reminder_plugin
 from wren.skills import contacts_skill as contacts_plugin
 from wren.skills import pins_skill as pins_plugin
-from wren.skills import shopping_skill, notes_skill, reminder_skill, pins_skill, contacts_skill, memory_skill
+from wren.skills import pins_skill
 
 def test_all_intents_includes_both_plugins():
     intents = plugins.all_intents()
@@ -268,7 +268,6 @@ def test_file_intents_are_declared_by_the_skills_that_take_files():
 
 
 def test_undo_for_finds_the_inverse_a_skill_declares():
-    from wren.skills import shopping_skill, reminder_skill, notes_skill, pins_skill, memory_skill, contacts_skill
     for intent in ("remove_shopping_item", "clear_shopping", "cancel_reminder", "discard_idea",
                    "unpin_note", "forget_memory", "remove_contact"):
         assert callable(registry.undo_for(intent)), intent

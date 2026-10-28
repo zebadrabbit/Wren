@@ -1,4 +1,4 @@
-import os, asyncio, pytest
+import os, pytest
 os.environ.setdefault("DISCORD_TOKEN", "test")
 os.environ.setdefault("WREN_OWNER_ID", "1")
 os.environ.setdefault("LLM_PROVIDERS", "lmstudio")

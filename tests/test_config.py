@@ -73,7 +73,6 @@ def test_validate_timezone_strips_whitespace():
 
 def test_web_lookup_defaults_empty(monkeypatch):
     # unset -> empty strings (feature disabled)
-    import importlib
     from wren import config as cfg
     assert isinstance(cfg.SEARXNG_URL, str)
     assert isinstance(cfg.FIRECRAWL_URL, str)

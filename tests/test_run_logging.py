@@ -10,13 +10,12 @@ import logging
 from datetime import date
 from unittest.mock import patch
 
-import pytest
 
 # F1: httpx logs "HTTP Request: GET <full url> ..." at INFO, and CALENDAR_URLS
 # is a capability URL -- letting that line through at INFO writes the secret
 # straight into the journal. wren.run must raise the httpx logger to WARNING
 # at import, before anything else can log through it.
-import wren.run  # noqa: E402  (import triggers the logging setup under test)
+import wren.run  # noqa: E402,F401  (import triggers the logging setup under test)
 
 from wren import config
 from wren.skills import calendar_skill

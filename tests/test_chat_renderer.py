@@ -9,7 +9,7 @@ the already-escaped string; these tests are what stop that ordering from being
 
 Skipped when node is absent — it is a dev-time check, not a runtime dependency.
 """
-import os, re, shutil, subprocess, pathlib, tempfile, textwrap
+import os, re, shutil, subprocess, pathlib, tempfile
 
 import pytest
 
@@ -495,7 +495,6 @@ def test_the_undo_window_is_a_named_constant():
 def test_undo_restores_rather_than_re_adding():
     # re-adding INSERTs a second row and inflates the "you often get"
     # suggestions; restore_shopping_item flips the original row back
-    src = PAGE.read_text(encoding="utf-8")
     block = _shopping_card_source()
     assert "restore_shopping_item" in block
     assert "add_shopping_item" not in block.split(".cundo")[1].split("mount.querySelector")[0]

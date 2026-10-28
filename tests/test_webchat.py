@@ -11,10 +11,8 @@ from aiohttp.test_utils import TestClient, TestServer
 
 from wren import config
 from wren import conversations
-from wren import core
 from wren import registry
 from wren.communication import http_plugin as http_surface
-from wren.communication import webchat
 
 TOKEN_A, USER_A = "tok-a", 1
 TOKEN_B, USER_B = "tok-b", 2
