@@ -47,8 +47,15 @@ def synthesize(text: str) -> bytes:
     """A complete WAV file (mono, 16-bit, the voice's own sample rate)."""
     voice = _load()          # before the writer opens: a wave file closed with no
     buf = io.BytesIO()       # params set raises wave.Error and would mask TTSUnavailable
-    with wave.open(buf, "wb") as wf:
-        voice.synthesize_wav(text, wf)
+    try:
+        with wave.open(buf, "wb") as wf:
+            voice.synthesize_wav(text, wf)
+    except wave.Error:
+        # piper skips sentences with no phonemes ("...", an em dash, whitespace)
+        # and sets the WAV params only on the first chunk, so a reply with
+        # nothing sayable leaves the writer unconfigured and its close raises.
+        # That is "nothing to say", not a failure.
+        return b""
     return buf.getvalue()
 
 

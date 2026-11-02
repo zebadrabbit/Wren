@@ -94,6 +94,15 @@ def test_synthesize_returns_wav_bytes(voice_path, monkeypatch):
         assert wf.getframerate() == 22050
 
 
+def test_synthesize_returns_empty_bytes_when_nothing_is_sayable(voice_path, monkeypatch):
+    # piper skips sentences with no phonemes ("...", an em dash, whitespace) and
+    # then never sets the WAV params; that must read as "nothing to say", not an error
+    module = _fake_piper()
+    module.PiperVoice.synthesize_wav = lambda self, text, wav_file: None
+    monkeypatch.setitem(sys.modules, "piper", module)
+    assert tts.synthesize("...") == b""
+
+
 def test_voice_is_loaded_once_and_cached(voice_path, monkeypatch):
     record = {}
     monkeypatch.setitem(sys.modules, "piper", _fake_piper(record=record))

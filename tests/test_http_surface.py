@@ -644,8 +644,25 @@ def test_voice_speak_passes_unicode_through(monkeypatch):
 
 
 def test_voice_speak_with_dry_run_still_speaks(monkeypatch):
+    from wren import db
+    seen = []
     _speaking(monkeypatch, "Added milk.")
+
+    async def fake(user_id, text, channel, *, source="text", files=None):
+        seen.append(db.in_dry_run())
+        await channel.send("Added milk.")
+    monkeypatch.setattr(core, "handle_message", fake)
     status, ctype, body = call_raw("post", "/voice?speak=1&dry_run=1", token="good-token", data=b"RIFFfake")
     assert status == 200
     assert ctype.startswith("audio/wav")
     assert body == b"RIFFfakeWAVE"
+    assert seen == [True]
+
+
+def test_voice_speak_unsayable_reply_is_204(monkeypatch):
+    from wren import tts
+    _speaking(monkeypatch, "...")
+    monkeypatch.setattr(tts, "synthesize", lambda text: b"")
+    status, _, body = call_raw("post", "/voice?speak=1", token="good-token", data=b"RIFFfake")
+    assert status == 204
+    assert body == b""

@@ -207,6 +207,8 @@ async def voice(request: web.Request) -> web.Response:
     except Exception as e:
         logging.error(f"speech synthesis failed: {e}")
         return web.json_response({"error": "speech synthesis failed"}, status=500)
+    if not wav:
+        return web.Response(status=204)      # the reply had nothing sayable in it
     return web.Response(body=wav, content_type="audio/wav")
 
 
