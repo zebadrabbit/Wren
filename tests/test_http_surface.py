@@ -37,6 +37,20 @@ def call(method, path, **kw):
     return asyncio.run(_request(method, path, **kw))
 
 
+async def _request_raw(method, path, *, token=None, **kw):
+    """Like _request, but for non-JSON bodies: (status, content type, raw bytes)."""
+    headers = kw.pop("headers", {})
+    if token is not None:
+        headers["Authorization"] = f"Bearer {token}"
+    async with TestClient(TestServer(http_surface.build_app())) as client:
+        resp = await getattr(client, method)(path, headers=headers, **kw)
+        return resp.status, resp.headers.get("Content-Type", ""), await resp.read()
+
+
+def call_raw(method, path, **kw):
+    return asyncio.run(_request_raw(method, path, **kw))
+
+
 def _replies(*texts, files=()):
     outbound = files
 
@@ -523,3 +537,115 @@ def test_notify_is_only_delivered_to_someone_with_a_token():
     # the router's own reaches() check on the passive fallback
     assert asyncio.run(http_surface.notify(1, "dinner")) is True
     assert asyncio.run(http_surface.notify(424242, "dinner")) is False
+
+
+# --- /voice?speak=1 ----------------------------------------------------------
+
+def _speaking(monkeypatch, *replies, transcript="add milk"):
+    """Patch stt, core and tts for a speak test; returns the dict tts records into."""
+    from wren import stt, tts
+    seen = {}
+    monkeypatch.setattr(stt, "transcribe", lambda _audio: transcript)
+    monkeypatch.setattr(core, "handle_message", _replies(*replies))
+    monkeypatch.setattr(tts, "synthesize",
+                        lambda text: (seen.setdefault("text", text), b"RIFFfakeWAVE")[1])
+    return seen
+
+
+def test_voice_speak_returns_wav(monkeypatch):
+    seen = _speaking(monkeypatch, "Added milk.", "Anything else?")
+    status, ctype, body = call_raw("post", "/voice?speak=1", token="good-token", data=b"RIFFfake")
+    assert status == 200
+    assert ctype.startswith("audio/wav")
+    assert body == b"RIFFfakeWAVE"
+    assert seen["text"] == "Added milk. Anything else?"
+
+
+def test_voice_speak_accepts_true_and_yes(monkeypatch):
+    _speaking(monkeypatch, "ok")
+    for flag in ("true", "yes"):
+        status, ctype, _ = call_raw("post", f"/voice?speak={flag}", token="good-token", data=b"RIFFfake")
+        assert (status, ctype[:9]) == (200, "audio/wav"), flag
+
+
+def test_voice_speak_without_flag_is_still_json(monkeypatch):
+    seen = _speaking(monkeypatch, "Added milk.", "Anything else?")
+    status, body = call("post", "/voice", token="good-token", data=b"RIFFfake")
+    assert status == 200
+    assert body["replies"] == ["Added milk.", "Anything else?"]
+    assert "text" not in seen
+
+
+def test_voice_speak_empty_transcript_is_204(monkeypatch):
+    seen = _speaking(monkeypatch, "never", transcript="   ")
+    status, _, body = call_raw("post", "/voice?speak=1", token="good-token", data=b"RIFFfake")
+    assert status == 204
+    assert body == b""
+    assert "text" not in seen
+
+
+def test_voice_speak_no_replies_is_204(monkeypatch):
+    seen = _speaking(monkeypatch)
+    status, _, _ = call_raw("post", "/voice?speak=1", token="good-token", data=b"RIFFfake")
+    assert status == 204
+    assert "text" not in seen
+
+
+def test_voice_speak_non_whitelisted_is_403_json(monkeypatch):
+    seen = _speaking(monkeypatch)
+    monkeypatch.setattr(config, "id_to_name", lambda: {})
+    status, body = call("post", "/voice?speak=1", token="good-token", data=b"RIFFfake")
+    assert status == 403
+    assert body["error"] == "user not whitelisted"
+    assert "text" not in seen
+
+
+def test_voice_speak_stt_unavailable_is_503_json(monkeypatch):
+    from wren import stt
+    _speaking(monkeypatch, "ok")
+
+    def unavailable(_audio):
+        raise stt.STTUnavailable("not installed")
+    monkeypatch.setattr(stt, "transcribe", unavailable)
+    status, body = call("post", "/voice?speak=1", token="good-token", data=b"RIFFfake")
+    assert status == 503
+    assert body["error"] == "not installed"
+
+
+def test_voice_speak_tts_unavailable_is_503_json(monkeypatch):
+    from wren import tts
+    _speaking(monkeypatch, "ok")
+
+    def unavailable(_text):
+        raise tts.TTSUnavailable("set WREN_TTS_VOICE")
+    monkeypatch.setattr(tts, "synthesize", unavailable)
+    status, body = call("post", "/voice?speak=1", token="good-token", data=b"RIFFfake")
+    assert status == 503
+    assert body["error"] == "set WREN_TTS_VOICE"
+
+
+def test_voice_speak_tts_failure_is_500_json(monkeypatch):
+    from wren import tts
+    _speaking(monkeypatch, "ok")
+
+    def boom(_text):
+        raise RuntimeError("onnx exploded")
+    monkeypatch.setattr(tts, "synthesize", boom)
+    status, body = call("post", "/voice?speak=1", token="good-token", data=b"RIFFfake")
+    assert status == 500
+    assert body["error"] == "speech synthesis failed"
+
+
+def test_voice_speak_passes_unicode_through(monkeypatch):
+    seen = _speaking(monkeypatch, "Added 🥛 — done.")
+    status, _, _ = call_raw("post", "/voice?speak=1", token="good-token", data=b"RIFFfake")
+    assert status == 200
+    assert seen["text"] == "Added 🥛 — done."
+
+
+def test_voice_speak_with_dry_run_still_speaks(monkeypatch):
+    _speaking(monkeypatch, "Added milk.")
+    status, ctype, body = call_raw("post", "/voice?speak=1&dry_run=1", token="good-token", data=b"RIFFfake")
+    assert status == 200
+    assert ctype.startswith("audio/wav")
+    assert body == b"RIFFfakeWAVE"

@@ -107,13 +107,18 @@ def _wants_dry_run(request: web.Request) -> bool:
     return request.query.get("dry_run", "").lower() in ("1", "true", "yes")
 
 
-async def _dispatch(user_id: int, text: str, *, source: str = "text",
-                    dry: bool = False, files: list[Inbound] | None = None,
-                    name: str = "web", **extra) -> web.Response:
-    """dry: run against a discarded snapshot of the database (see db.dry_run)
-    and echo `dry_run: true` so a caller can never mistake which one it got.
-    For testing a live install without touching its data. The payload is
-    built inside the snapshot: the rows it reports exist only there."""
+def _wants_speech(request: web.Request) -> bool:
+    return request.query.get("speak", "").lower() in ("1", "true", "yes")
+
+
+async def _handle(user_id: int, text: str, *, source: str = "text",
+                  dry: bool = False, files: list[Inbound] | None = None,
+                  name: str = "web", **extra) -> tuple[dict, int]:
+    """(payload, status). dry: run against a discarded snapshot of the
+    database (see db.dry_run) and echo `dry_run: true` so a caller can never
+    mistake which one it got. For testing a live install without touching its
+    data. The payload is built inside the snapshot: the rows it reports exist
+    only there."""
     channel = CollectingChannel(name=name)
     if dry:
         extra["dry_run"] = True
@@ -128,10 +133,13 @@ async def _dispatch(user_id: int, text: str, *, source: str = "text",
         # maps to a user who is not whitelisted. Say so rather than returning
         # an empty 200 that looks like a bug.
         if user_id not in config.id_to_name():
-            return web.json_response(
-                {"error": "user not whitelisted"}, status=403
-            )
-    return web.json_response(payload)
+            return {"error": "user not whitelisted"}, 403
+    return payload, 200
+
+
+async def _dispatch(user_id: int, text: str, **kw) -> web.Response:
+    payload, status = await _handle(user_id, text, **kw)
+    return web.json_response(payload, status=status)
 
 
 async def health(request: web.Request) -> web.Response:
@@ -169,10 +177,37 @@ async def voice(request: web.Request) -> web.Response:
         logging.error(f"transcription failed: {e}")
         return web.json_response({"error": "transcription failed"}, status=500)
 
+    speak = _wants_speech(request)
     if not transcript.strip():
+        if speak:
+            return web.Response(status=204)
         return web.json_response({"transcript": "", "replies": [], "files": []})
-    return await _dispatch(user_id, transcript, source="voice", name="voice", dry=_wants_dry_run(request),
-                           transcript=transcript)
+    if not speak:
+        return await _dispatch(user_id, transcript, source="voice", name="voice", dry=_wants_dry_run(request),
+                               transcript=transcript)
+
+    # speak=1: the hardware voice device has a speaker and no screen, so the
+    # reply goes back as a WAV instead of JSON. Errors stay JSON.
+    payload, status = await _handle(user_id, transcript, source="voice", name="voice",
+                                    dry=_wants_dry_run(request), transcript=transcript)
+    if status != 200:
+        return web.json_response(payload, status=status)
+    replies = payload["replies"]
+    if not replies:
+        return web.Response(status=204)
+
+    from .. import tts
+
+    try:
+        # a thread for the same reason as transcription: CPU-bound for hundreds
+        # of milliseconds on an event loop shared with every door
+        wav = await asyncio.to_thread(tts.synthesize, " ".join(replies))
+    except tts.TTSUnavailable as e:
+        return web.json_response({"error": str(e)}, status=503)
+    except Exception as e:
+        logging.error(f"speech synthesis failed: {e}")
+        return web.json_response({"error": "speech synthesis failed"}, status=500)
+    return web.Response(body=wav, content_type="audio/wav")
 
 
 class _QuietPolls(logging.Filter):
