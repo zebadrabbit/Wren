@@ -12,3 +12,5 @@ _check_imports.py
 wren/surfaces/
 .claude/
 .session-scratch/
+
+.worktrees/
