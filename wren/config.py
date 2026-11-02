@@ -103,6 +103,8 @@ WREN_STT_MODEL = os.environ.get("WREN_STT_MODEL", "base.en")
 # when it's there, and int8 keeps a CPU-only host usable.
 WREN_STT_DEVICE = os.environ.get("WREN_STT_DEVICE", "auto")
 WREN_STT_COMPUTE = os.environ.get("WREN_STT_COMPUTE", "int8")
+# path to a Piper voice .onnx (its .json sits beside it); unset = /voice?speak=1 returns 503
+WREN_TTS_VOICE = os.environ.get("WREN_TTS_VOICE", "")
 
 _provider_names = [p.strip() for p in os.environ.get("LLM_PROVIDERS", "").split(",") if p.strip()]
 LLM_CHAIN = [c for c in (providers.resolve(name) for name in _provider_names) if c is not None]
