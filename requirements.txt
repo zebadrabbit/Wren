@@ -8,3 +8,6 @@ aiohttp>=3.9
 
 # Optional — speech-to-text for the /voice endpoint. Wren runs fine without it.
 # faster-whisper>=1.0
+
+# Optional — text-to-speech for /voice?speak=1 (the hardware voice device). Wren runs fine without it.
+# piper-tts>=1.3

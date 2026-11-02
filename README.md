@@ -203,7 +203,7 @@ The machine API, used by the desktop voice client:
 |---|---|---|
 | `GET /health` | — | `{"ok": true}` |
 | `POST /message` | `{"text": "..."}` or multipart `text` + `file` parts | `{"replies": [...], "files": [{filename, mime, data}], "cards": [...], "messages": [...]}` |
-| `POST /voice` | raw WAV bytes | `{"transcript": "...", "replies": [...]}` |
+| `POST /voice` | raw WAV bytes | `{"transcript": "...", "replies": [...]}`; with `?speak=1`, the reply as `audio/wav` (204 when there is nothing to say) |
 
 All routes but `/health` need `Authorization: Bearer <token>`. Files come
 back base64-encoded.
@@ -480,6 +480,13 @@ reply arrives as a native desktop notification. Linux also needs PortAudio
 Tune `WREN_STT_MODEL` (`tiny.en` → `large-v3`) and `WREN_STT_DEVICE` /
 `WREN_STT_COMPUTE` to your hardware — the defaults (`base.en`, `auto`,
 `int8`) are chosen to stay usable on a CPU-only host.
+
+A device with a speaker and no screen (the ESP32 voice device) calls
+`/voice?speak=1` and gets the reply back as speech, synthesized on the Wren
+host by [Piper](https://github.com/OHF-Voice/piper1-gpl): `pip install
+piper-tts`, download a voice as shown in `.env.example`, set
+`WREN_TTS_VOICE` to the `.onnx` path, restart. Without it that request
+returns 503; the plain `/voice` is unaffected either way.
 
 Voice requests are one-shot for the client, but they are written to your
 timeline like everything else, so the next thing you type can refer back to
