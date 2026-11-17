@@ -9,6 +9,7 @@ from .. import recall
 from .. import config
 from .. import filetypes
 from .. import flourish
+from .reminder_skill import _format_local
 
 INTENTS = ["save_note", "recall_notes", "save_idea", "recall_ideas", "discard_idea", "expand_idea", "export_notes"]
 # a captioned photo is a note with an attachment; core routes it here
@@ -105,7 +106,7 @@ def _build_export(user_id: int) -> str | None:
     if plain:
         for n in plain:
             tag_suffix = f" (tags: {n['tags']})" if n["tags"] else ""
-            lines.append(f"- [{n['created_at'][:10]}] {n['content']}{_marker(n['id'])}{tag_suffix}")
+            lines.append(f"- [{_format_local(n['created_at'])[:10]}] {n['content']}{_marker(n['id'])}{tag_suffix}")
     else:
         lines.append("_None._")
     lines.append("")
@@ -186,7 +187,7 @@ async def handle(intent: str, ctx: Ctx) -> None:
                     for n in matches]
             if rows:
                 text = _summary(
-                    [f"[{n['created_at'][:10]}] {n['content']}{_marker(n['id'])}"
+                    [f"[{_format_local(n['created_at'])[:10]}] {n['content']}{_marker(n['id'])}"
                      + (f" (tags: {n['tags']})" if n["tags"] else "")
                      for n in matches],
                     [r["tags"] for r in rows], "notes")

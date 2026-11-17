@@ -958,7 +958,7 @@ function notesCard(data, mount, files) {
     const mark = (n.files || []).length ? ' <span class="cwhen">📎' + (n.files || []).length + "</span>" : "";
     return '<li data-tags="' + esc((n.tags || []).join(",")) + '">' + thumb +
       '<span class="citem">' + esc(n.content) + mark + "</span>" +
-      '<span class="cwhen">' + esc((n.created_at || "").slice(0, 10)) + "</span>" +
+      '<span class="cwhen">' + esc(n.created_at ? parseIso(n.created_at).toLocaleDateString("en-CA") : "") + "</span>" +
     "</li>";
   }).join("");
   mount.innerHTML =

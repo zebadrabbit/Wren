@@ -230,6 +230,10 @@ def recall(records: list[dict], query: str) -> str:
 def chat(text: str, history: list[dict] | None = None,
          memories: list[str] | None = None) -> str:
     system = f"You are Wren, a personal assistant. Short, structured, ready. No filler. Answer directly, no reasoning or thinking process shown. /no_think Today is {_now()}."
+    # Every command with no intent lands here ("clear out my notes" did, and
+    # got "Notes cleared." with nothing deleted). This reply cannot act.
+    system += (" You cannot save, delete, clear, send or schedule anything in this reply:"
+               " if asked to, say you can't, and never say it is done.")
     if memories:
         # Plain bullets, and an explicit licence to ignore them: without it a
         # small model treats anything in its prompt as something it was just

@@ -681,3 +681,13 @@ def test_items_in_returns_nothing_for_garbage_or_no_images(monkeypatch):
     monkeypatch.setattr(providers, "ollama_chat", lambda *a, **k: ("not json", {}))
     assert brain.items_in(_files(), "") == []
     assert brain.items_in([], "") == []
+
+def test_chat_is_told_it_cannot_act():
+    # 2026-11-16: "Clear out my notes." has no intent, so it reached chat, and
+    # the model answered "Notes cleared." with nothing deleted. Chat is the
+    # catch-all for every command Wren lacks; it must not report one as done.
+    client = _client_returning("I can't do that.")
+    with patch.object(brain, "_get_client", return_value=client):
+        brain.chat("clear out my notes")
+    system = client.chat.completions.create.call_args.kwargs["messages"][0]["content"]
+    assert "never say it is done" in system

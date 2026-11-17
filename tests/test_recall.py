@@ -80,3 +80,15 @@ def test_calendar_is_skipped_when_unconfigured_and_a_dead_feed_does_not_fail_the
     monkeypatch.setattr(config, "CALENDAR_URLS", ["https://cal.example/x.ics"])
     assert [r["source"] for r in recall.gather(1, "dentist", notes.search(1))] == ["note"]
     assert called == [1]
+
+
+def test_note_dates_are_local_not_utc(monkeypatch):
+    # 02:24 UTC on the 17th is 20:24 on the 16th in Chicago; the note said
+    # "(note 2026-11-17)" the evening it was taken
+    from wren import db
+    monkeypatch.setattr(config, "TIMEZONE", "America/Chicago")
+    note_id = notes.save(1, "bananas are mildly radioactive", [])
+    with db.conn() as con:
+        con.execute("UPDATE notes SET created_at=? WHERE id=?",
+                    ("2026-11-17T02:24:31.154241+00:00", note_id))
+    assert recall.gather(1, "bananas", notes.search(1))[0]["when"] == "2026-11-16"

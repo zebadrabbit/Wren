@@ -475,3 +475,15 @@ def test_expand_idea_runs_the_model_off_the_event_loop():
     with patch.object(brain, "expand", side_effect=fake):
         asyncio.run(notes_plugin.handle("expand_idea", Ctx(user_id=1, channel=ch, content="treehouse")))
     assert seen == [False]
+
+
+def test_recall_listing_dates_notes_in_local_time(monkeypatch):
+    from wren import config, db
+    monkeypatch.setattr(config, "TIMEZONE", "America/Chicago")
+    note_id = notes.save(1, "bananas are mildly radioactive", [])
+    with db.conn() as con:
+        con.execute("UPDATE notes SET created_at=? WHERE id=?",
+                    ("2026-11-17T02:24:31.154241+00:00", note_id))
+    ch = CollectingChannel()
+    asyncio.run(notes_plugin.handle("recall_notes", Ctx(user_id=1, channel=ch, content="", tags=[])))
+    assert "[2026-11-16] bananas" in ch.sent[0]

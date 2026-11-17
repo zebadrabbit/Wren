@@ -31,10 +31,10 @@ def gather(user_id: int, question: str, notes: list[dict]) -> list[dict]:
     tag-filtered candidate set, so a real tag match keeps narrowing. With no
     overlap anywhere, the CAP most recent notes -- the old behaviour, bounded.
     """
-    records = [{"source": "note", "when": n["created_at"][:10], "note_id": n["id"],
+    records = [{"source": "note", "when": _format_local(n["created_at"])[:10], "note_id": n["id"],
                 "content": n["content"], "tags": n["tags"]}
                for n in notes]
-    records += [{"source": "memory", "when": m["last_seen_at"][:10], "content": m["fact"]}
+    records += [{"source": "memory", "when": _format_local(m["last_seen_at"])[:10], "content": m["fact"]}
                 for m in memories.all_for(user_id)]
     records += [{"source": "reminder", "content": r["content"],
                  "when": _format_local(r["fire_at"]) + (f", {_format_repeat(r['repeat'])}" if r.get("repeat") else "")}
