@@ -4,6 +4,7 @@ import hmac
 import json
 import logging
 import sys
+import time
 
 from aiohttp import web
 
@@ -166,6 +167,7 @@ async def voice(request: web.Request) -> web.Response:
     audio = await request.read()
     if not audio:
         return web.json_response({"error": "empty audio body"}, status=400)
+    t0 = time.perf_counter()
     try:
         # to_thread, not a direct call: transcription is CPU-bound and takes
         # seconds. Inline it would freeze the event loop this shares with the
@@ -176,6 +178,7 @@ async def voice(request: web.Request) -> web.Response:
     except Exception as e:
         logging.error(f"transcription failed: {e}")
         return web.json_response({"error": "transcription failed"}, status=500)
+    t_stt = time.perf_counter()
 
     speak = _wants_speech(request)
     if not transcript.strip():
@@ -190,6 +193,7 @@ async def voice(request: web.Request) -> web.Response:
     # reply goes back as a WAV instead of JSON. Errors stay JSON.
     payload, status = await _handle(user_id, transcript, source="voice", name="voice",
                                     dry=_wants_dry_run(request), transcript=transcript)
+    t_llm = time.perf_counter()
     if status != 200:
         return web.json_response(payload, status=status)
     replies = payload["replies"]
@@ -209,6 +213,12 @@ async def voice(request: web.Request) -> web.Response:
         return web.json_response({"error": "speech synthesis failed"}, status=500)
     if not wav:
         return web.Response(status=204)      # the reply had nothing sayable in it
+    t_tts = time.perf_counter()
+    # where a slow spoken reply spends its time (the device only sees the total)
+    rate = int.from_bytes(wav[24:28], "little") or 22050
+    logging.info("voice: stt %.1fs (%.1fs audio) | llm %.1fs | tts %.1fs (%.1fs audio, %d KB) | total %.1fs",
+                 t_stt - t0, max(len(audio) - 44, 0) / 32000, t_llm - t_stt,
+                 t_tts - t_llm, max(len(wav) - 44, 0) / (rate * 2), len(wav) // 1024, t_tts - t0)
     return web.Response(body=wav, content_type="audio/wav")
 
 
