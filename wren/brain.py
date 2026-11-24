@@ -246,7 +246,10 @@ def chat(text: str, history: list[dict] | None = None,
     ]
     if history:
         messages.extend(history)
-    messages.append({"role": "user", "content": text})
+    # The clock rides with the question, not only in the system prompt: a small
+    # model continues the pattern in its history instead (after a few "17:31"
+    # answers it said 17:42 at 17:53). Prompt-only; the stored turn is untouched.
+    messages.append({"role": "user", "content": f"[now: {_now()}]" + chr(10) + text})
     return _complete(messages, temperature=0.7, max_tokens=400)
 
 def expand(idea_text: str) -> str:

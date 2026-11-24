@@ -260,7 +260,10 @@ def test_chat_without_history_matches_original_shape():
     messages = client.chat.completions.create.call_args.kwargs["messages"]
     assert len(messages) == 2
     assert messages[0]["role"] == "system"
-    assert messages[1] == {"role": "user", "content": "hey"}
+    # the clock rides with the question (a small model otherwise copies an old time from history)
+    assert messages[1]["role"] == "user"
+    assert messages[1]["content"].startswith("[now: ") and messages[1]["content"].endswith("
+hey")
 
 def test_chat_with_history_inserts_between_system_and_final_user_message():
     client = _client_returning("Hello.")
@@ -275,7 +278,8 @@ def test_chat_with_history_inserts_between_system_and_final_user_message():
     assert messages[0]["role"] == "system"
     assert messages[1] == {"role": "user", "content": "earlier question"}
     assert messages[2] == {"role": "assistant", "content": "earlier reply"}
-    assert messages[3] == {"role": "user", "content": "follow-up question"}
+    assert messages[3]["role"] == "user" and messages[3]["content"].endswith("
+follow-up question")
 
 def test_chat_with_empty_history_list_matches_no_history_shape():
     client = _client_returning("Hello.")
