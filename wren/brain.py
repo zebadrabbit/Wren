@@ -29,7 +29,7 @@ Known contacts: {contacts}
 Guidelines:
 - send_to_person: user wants to send a message or note to someone
 - help: user wants to know what Wren can do, asks for help, or asks to see available commands
-- status: user wants to know Wren's operational status — active LLM backend/model/endpoint, uptime, token usage
+- status: user wants to know Wren's operational status — active LLM backend/model/endpoint, uptime, token usage. Asking the time of day or the date ("what time is it", "what's today's date") is NOT status, it is chat
 - list_plugins: user wants to know what plugins/capabilities Wren currently has active (e.g. "what plugins do you have", "what's active")
 {plugin_guidelines}
 - chat: anything else (questions, casual conversation, and every greeting,
