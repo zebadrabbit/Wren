@@ -3,6 +3,7 @@ import base64
 import hmac
 import json
 import logging
+import re
 import sys
 import time
 
@@ -157,6 +158,26 @@ async def message(request: web.Request) -> web.Response:
     return await _dispatch(user_id, text, dry=_wants_dry_run(request), files=files)
 
 
+_SPEAK_MAX_CHARS = 600      # ~40 s of speech; Piper runs ~2x realtime and the device gives up at 60 s
+
+
+def _speakable(text: str) -> str:
+    """What is worth saying out loud from a reply written for a screen: no
+    source list, no URLs, no (citation) asides, and not all of a long answer.
+    Bench 2026-11-24: a web answer with five tracking URLs never finished
+    synthesizing before the voice device timed out."""
+    lines = [ln for ln in text.splitlines() if not re.match(r"\s*\d+\.\s.*https?://", ln)]
+    out = re.sub(r"https?://\S+", "", " ".join(lines))
+    out = re.sub(r"\s*\([^()]*\)", "", out)          # "(Paris - Wikipedia)", "(40.7 sq mi)"
+    out = re.sub(r"[*_#`]+", "", out)
+    out = re.sub(r"\s+", " ", out).strip()
+    if len(out) > _SPEAK_MAX_CHARS:
+        cut = out[:_SPEAK_MAX_CHARS]
+        end = max(cut.rfind(". "), cut.rfind("? "), cut.rfind("! "))
+        out = (cut[:end + 1] if end > 0 else cut) + " There is more in the chat."
+    return out
+
+
 async def voice(request: web.Request) -> web.Response:
     user_id = _authenticate(request)
     if user_id is None:
@@ -205,7 +226,7 @@ async def voice(request: web.Request) -> web.Response:
     try:
         # a thread for the same reason as transcription: CPU-bound for hundreds
         # of milliseconds on an event loop shared with every door
-        wav = await asyncio.to_thread(tts.synthesize, " ".join(replies))
+        wav = await asyncio.to_thread(tts.synthesize, _speakable("\n".join(replies)))
     except tts.TTSUnavailable as e:
         return web.json_response({"error": str(e)}, status=503)
     except Exception as e:
